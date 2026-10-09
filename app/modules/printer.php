@@ -69,7 +69,7 @@ function printer_asset_link_summary(PDO $pdo, array $printer): string
     $maintId = (int)($printer['maintenance_asset_id'] ?? 0);
     if ($maintId > 0) {
         if (!empty($printer['maintenance_asset_code'])) {
-            $lines[] = 'MNT ID: ' . $printer['maintenance_asset_code'];
+            
         } else {
             $stmt = $pdo->prepare('SELECT maintenance_asset_code FROM maintenance_assets WHERE id=?');
             $stmt->execute([$maintId]);
@@ -280,8 +280,8 @@ function printer_asset_link_detail_html(PDO $pdo, array $printer): string
         $stmt->execute([$itemId]);
         $item = $stmt->fetch() ?: null;
     }
-    $html = '<section class="panel"><div class="split"><div><h2>Tautan Manajemen Aset</h2><p class="muted">Relasi Printer ke Unit Aset dan Maintenance Asset ID.</p></div><a class="btn" href="' . route_url('printer_form', ['prn_id' => $printer['prn_id'] ?? '']) . '">Edit Relasi</a></div>';
-    $html .= '<div class="grid two"><div class="mini-card"><strong>Maintenance Asset ID</strong><br><span class="badge">' . e($maintenanceAssetCode !== '' ? $maintenanceAssetCode : '-') . '</span></div>';
+    $html = '<section class="panel"><div class="split"><div><h2>Tautan Manajemen Aset</h2><p class="muted">Relasi Printer ke Unit Aset.</p></div><a class="btn" href="' . route_url('printer_form', ['prn_id' => $printer['prn_id'] ?? '']) . '">Edit Relasi</a></div>';
+    $html .= '<div class="grid two">';
     if ($item) {
         $rawMode = (string)($item['asset_mode'] ?? 'standalone');
         $mode = $rawMode === 'group' ? 'Bundle (Parent Aset)' : ($rawMode === 'child' ? 'Bundle (Child Aset)' : 'Single');
@@ -333,6 +333,10 @@ function printer_form_html(array $printer, bool $editing): string
     return $html;
 }
 
+/**
+ * Modul Printer: Daftar Printer
+ * Proses: Menampilkan seluruh data mesin printer yang terdaftar di jaringan perusahaan.
+ */
 function handle_route_printers(PDO $pdo): void
 {
     $user = require_regulation('printers', 'view');
@@ -368,6 +372,10 @@ function handle_route_printers(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Printer: Form Input
+ * Proses: Menangani pembuatan atau pembaruan spesifikasi teknis dan tipe dari printer.
+ */
 function handle_route_printer_form(PDO $pdo): void
 {
     $prnId = strtoupper(trim((string)($_GET['prn_id'] ?? '')));
@@ -485,6 +493,10 @@ function handle_route_printer_form(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Printer: Detail
+ * Proses: Menampilkan profil rincian printer, riwayat tinta/perbaikan, dan QR Code printer tersebut.
+ */
 function handle_route_printer_detail(PDO $pdo): void
 {
     $user = require_regulation('printers', 'view');
@@ -526,7 +538,7 @@ function handle_route_printer_detail(PDO $pdo): void
     $actionsHtml .= '<a class="btn" download="PcConnect-Label-' . e($assetCode) . '.png" href="' . route_url('qr_png', ['code' => $assetCode]) . '">Download Label PNG</a>';
     $actionsHtml .= '<a class="btn" href="' . mobile_asset_url($assetCode) . '">Mobile QR URL</a>';
 
-    echo '<section class="panel"><div class="split"><div><h1>' . e($printer['prn_id']) . '</h1><p>' . e($printer['printer_name']) . ' - ' . e($printer['location'] ?: 'Lokasi belum diisi') . '</p><p><span class="badge">Maintenance Asset ID ' . e($assetCode) . '</span></p></div><div class="actions">' . $actionsHtml . '</div></div></section>';
+    echo '<section class="panel"><div class="split"><div><h1>' . e($printer['prn_id']) . '</h1><p>' . e($printer['printer_name']) . ' - ' . e($printer['location'] ?: 'Lokasi belum diisi') . '</p></div><div class="actions">' . $actionsHtml . '</div></div></section>';
     if (!empty($printer['latitude']) && !empty($printer['longitude'])) {
         $mapUrl = 'https://www.google.com/maps?q=' . rawurlencode((string)$printer['latitude'] . ',' . (string)$printer['longitude']);
         echo '<section class="panel"><h2>Lokasi Printer</h2><table><tr><th>Nama Lokasi</th><td>' . e($printer['location'] ?: '-') . '</td></tr><tr><th>GPS</th><td>' . e($printer['latitude'] . ', ' . $printer['longitude']) . '</td></tr><tr><th>Radius Scan</th><td>' . e($printer['location_radius_m'] ?: 5) . ' meter</td></tr></table><p><a class="btn" target="_blank" rel="noopener" href="' . e($mapUrl) . '">Buka di Google Maps</a></p></section>';
@@ -537,6 +549,10 @@ function handle_route_printer_detail(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Printer: Update Lokasi
+ * Proses: Menangani pemindahan lokasi (mutasi ruangan/departemen) dari mesin printer.
+ */
 function handle_route_printer_location(PDO $pdo): void
 {
     $user = require_role(['admin']);
@@ -581,6 +597,14 @@ function handle_route_printer_location(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Printer: Update Lokasi
+ * Proses: Menangani pemindahan lokasi (mutasi ruangan/departemen) dari mesin printer.
+ */
+/**
+ * Modul Printer: Master Lokasi
+ * Proses: Menampilkan ringkasan distribusi printer berdasarkan lokasi dan gedung.
+ */
 function handle_route_printer_locations(PDO $pdo): void
 {
     $user = require_role(['admin']);

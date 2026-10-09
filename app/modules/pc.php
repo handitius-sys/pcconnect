@@ -538,14 +538,8 @@ function pc_asset_link_detail_html(PDO $pdo, array $pc): string
         $stmt->execute([$itemId]);
         $item = $stmt->fetch() ?: null;
     }
-    $html = '<section class="panel"><div class="split"><div><h2>Tautan Manajemen Aset</h2><p class="muted">Relasi PC ke Unit Aset dan Maintenance Asset ID.</p></div><a class="btn" href="' . route_url('pc_form', ['pc_id' => $pc['pc_id'] ?? '']) . '">Edit Relasi</a></div>';
-    $html .= '<div class="grid two"><div class="mini-card"><strong>Maintenance Asset ID</strong><br>';
-    if ($itemId <= 0) {
-        $html .= '<span class="badge danger">Belum Sync ke Unit Aset</span><p class="muted">Maintenance Asset & QR hanya dibuat setelah PC disinkronkan ke Unit Aset.</p>';
-    } else {
-        $html .= '<span class="badge ok">' . e($maintenanceAssetCode !== '' ? $maintenanceAssetCode : 'Tersinkronisasi') . '</span>';
-    }
-    $html .= '</div>';
+    $html = '<section class="panel"><div class="split"><div><h2>Tautan Manajemen Aset</h2><p class="muted">Relasi PC ke Unit Aset.</p></div><a class="btn" href="' . route_url('pc_form', ['pc_id' => $pc['pc_id'] ?? '']) . '">Edit Relasi</a></div>';
+    $html .= '<div class="grid one">';
     if ($item) {
         $rawMode = (string)($item['asset_mode'] ?? 'standalone');
         $mode = $rawMode === 'group' ? 'Bundle (Parent Aset)' : ($rawMode === 'child' ? 'Bundle (Child Aset)' : 'Single');
@@ -579,8 +573,8 @@ function pc_form_html(array $pc, bool $editing): string
         $pcSubtitle = $editing ? 'Identitas PC' : 'PcID, Secret QR, dan Computer Name dibuat otomatis.';
     }
     $html = '<style>.pc-form textarea{min-height:112px;font-family:Consolas,monospace;font-size:13px}.pc-form input,.pc-form textarea,.pc-form select{font-size:14px}.pc-form .identity-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.pc-form .location-grid{display:grid;grid-template-columns:minmax(220px,1.2fr) repeat(3,minmax(120px,.55fr));gap:14px}.pc-form .analysis-grid-edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pc-form .analysis-grid-edit details{border:1px solid #dfe5ee;border-radius:8px;padding:12px;background:#fff}.pc-form .analysis-grid-edit summary{font-weight:700;cursor:pointer}.pc-form .analysis-grid-edit details.wide{grid-column:1/-1}.pc-form .gps-status{border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:10px;margin-top:12px}.pc-form .coord-help{font-size:12px;color:#475569}.pc-form .footer-actions{position:sticky;bottom:0;background:#fff;border:1px solid #dfe5ee;border-radius:8px;padding:12px;margin-top:16px;box-shadow:0 -8px 22px rgba(15,23,42,.06)}@media(max-width:980px){.pc-form .identity-grid,.pc-form .location-grid,.pc-form .analysis-grid-edit{grid-template-columns:1fr}.pc-form .analysis-grid-edit details.wide{grid-column:auto}.pc-form .footer-actions{position:static}}</style>';
-    $html .= '<form class="pc-form" method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">';
-    $html .= '<section class="panel"><div class="split"><div><h1>' . ($editing ? 'Edit ' . e($pcTitle) : 'Tambah PC Baru') . '</h1><p>' . e($pcSubtitle) . '</p>' . ($assetCode !== '' ? '<p><span class="badge">Maintenance Asset ID ' . e($assetCode) . '</span></p>' : (!$hasSync && $editing ? '<p><span class="badge danger">Belum Tersinkron ke Asset Item</span></p>' : '')) . '</div><div class="actions"><a class="btn" href="' . route_url('pcs') . '">Kembali ke Data PC</a>';
+    $html .= '<form id="pcForm" class="pc-form" method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">';
+    $html .= '<section class="panel"><div class="split"><div><h1>' . ($editing ? 'Edit ' . e($pcTitle) : 'Tambah PC Baru') . '</h1><p>' . e($pcSubtitle) . '</p>' . (!$hasSync && $editing ? '<p><span class="badge danger">Belum Tersinkron ke Asset Item</span></p>' : '') . '</div><div class="actions"><a class="btn" href="' . route_url('pcs') . '">Kembali ke Data PC</a>';
     if ($assetCode !== '') {
         $html .= '<a class="btn" download="PcConnect-Label-' . e($assetCode) . '.png" href="' . route_url('qr_png', ['code' => $assetCode]) . '">Download Label PNG</a>';
         $html .= '<a class="btn" href="' . route_url('pc_location', ['pc_id' => $pc['pc_id']]) . '">Set Lokasi GPS</a>';
@@ -628,33 +622,16 @@ function pc_form_html(array $pc, bool $editing): string
         . '<p class="muted" style="margin:0;">Jalankan Command Prompt (CMD) Administrator untuk collect otomatis spesifikasi dan telemetri PC ini ke PcConnect.</p>'
         . '</div>'
         . '<div class="actions">'
-        . '<a class="btn primary" href="' . e($runnerDownloadUrl) . '" style="background:#0284c7;border-color:#0284c7;">📥 Download PcNalisa-Run-' . e($effectivePcId) . '.cmd</a>'
-        . '<a class="btn" href="' . e($agentDownloadUrl) . '">📄 Script PcNalisa.ps1</a>'
+        . '<a class="btn good" href="' . e($runnerDownloadUrl) . '">📥 Download PcNalisa-run-' . e($effectivePcId) . '</a>'
+        . '<a class="btn" href="' . e($agentDownloadUrl) . '">📄 Script PS1</a>'
+        . '<a class="btn" href="' . route_url('upload_analysis', ['pc_id' => $effectivePcId]) . '">📤 Upload JSON Analisa</a>'
         . '</div>'
         . '</div>'
-        . '<div style="margin-top:14px;padding:12px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;">'
-        . '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-        . '<strong style="font-size:13px;color:#1e293b;">Command CMD (Run as Administrator):</strong>'
-        . '<button type="button" class="btn" id="btnCopyCmd" onclick="copyCmdSnippet()" style="padding:3px 10px;font-size:12px;">📋 Salin Command CMD</button>'
-        . '</div>'
-        . '<pre id="cmdSnippetText" style="margin:0;padding:10px;background:#0f172a;color:#38bdf8;border-radius:6px;font-size:12px;white-space:pre-wrap;word-break:break-all;font-family:Consolas, monospace;">' . e($cmdExec) . '</pre>'
-        . '<details style="margin-top:10px;font-size:12px;color:#475569;">'
-        . '<summary style="cursor:pointer;font-weight:600;">Opsi Python di CMD Administrator</summary>'
-        . '<div style="margin-top:6px;">'
-        . '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-        . '<span>Command Python:</span>'
-        . '<button type="button" class="btn" id="btnCopyPy" onclick="copyPySnippet()" style="padding:2px 8px;font-size:11px;">📋 Salin Python</button>'
-        . '</div>'
-        . '<pre id="pySnippetText" style="margin:0;padding:8px;background:#1e293b;color:#a5f3fc;border-radius:4px;font-size:11px;white-space:pre-wrap;word-break:break-all;font-family:Consolas, monospace;">' . e($pyExec) . '</pre>'
-        . '</div>'
-        . '</details>'
-        . '<div style="margin-top:10px;font-size:12px;color:#334155;line-height:1.5;">'
-        . '<strong>Petunjuk:</strong> Buka CMD (Command Prompt) sebagai <em>Administrator</em> di PC target, paste command di atas lalu tekan Enter. Analisa hardware/software akan berjalan dan otomatis terkirim (Collect) ke PcConnect untuk PcID ini.'
-        . '</div>'
+        . '<div style="margin-top:10px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;">'
+        . '<strong>Catatan Manual:</strong> Jika mengunduh file Script PS1, buka folder tempat file terunduh, ketik <code>cmd</code> di address bar folder (atau Open in Terminal), lalu jalankan:<br>'
+        . '<code style="background:#fef3c7;padding:2px 4px;border-radius:4px;font-family:Consolas,monospace;">powershell -ExecutionPolicy Bypass -File PcNalisa-' . e($effectivePcId) . '.ps1</code>'
         . '</div>'
         . '</section>';
-
-    $html .= pc_asset_link_form_html($pc);
 
     $mapHref = (!empty($pc['latitude']) && !empty($pc['longitude'])) ? 'https://www.google.com/maps?q=' . rawurlencode((string)$pc['latitude'] . ',' . (string)$pc['longitude']) : 'https://www.google.com/maps';
     $html .= saved_location_datalist_html();
@@ -662,20 +639,32 @@ function pc_form_html(array $pc, bool $editing): string
 
     $html .= '<section class="panel"><h2>Kondisi & Rekomendasi</h2><div class="grid two"><label>Kondisi Fisik<textarea name="physical_condition" placeholder="Catatan kondisi awal PC">' . e($pc['physical_condition']) . '</textarea></label><label>AI Recommendation<textarea name="ai_recommendation" placeholder="Rekomendasi maintenance">' . e($pc['ai_recommendation']) . '</textarea></label></div></section>';
 
-    $html .= '<section class="panel"><h2>Data Analisa PcNalisa</h2><p class="muted">Bagian ini otomatis diisi dari upload/agent PcNalisa. Edit manual hanya jika perlu koreksi.</p><div class="analysis-grid-edit">';
+    $html .= '</form><section class="analysis-grid">';
     $analysisFields = [
         'general_specs' => 'Spesifikasi Umum',
         'software' => 'Software',
         'device_management' => 'Device Management',
         'benchmark' => 'Benchmark',
-        'startup_analysis' => 'Startup Analysis',
+        'startup_analysis' => 'Startup Analisa',
     ];
     foreach ($analysisFields as $name => $label) {
-        $open = $name === 'device_management' || $name === 'startup_analysis' ? ' open' : '';
-        $wide = in_array($name, ['device_management', 'startup_analysis'], true) ? ' class="wide"' : '';
-        $html .= '<details' . $wide . $open . '><summary>' . e($label) . '</summary><label>' . e($label) . '<textarea name="' . e($name) . '" placeholder="Boleh isi manual atau nanti diisi otomatis dari PcNalisa JSON">' . e($pc[$name]) . '</textarea></label></details>';
+        $wide = in_array($name, ['device_management', 'startup_analysis'], true) ? ' wide-panel' : '';
+        $data = null;
+        if (!empty($pc[$name])) {
+            $data = json_decode($pc[$name], true);
+        }
+        $neatHtml = $data && function_exists('render_analysis_section') 
+            ? render_analysis_section($label, $data) 
+            : '<p class="muted">Belum ada data JSON atau format tidak valid.</p>';
+            
+        $html .= '<div class="panel' . $wide . '"><h2>' . e($label) . '</h2>';
+        $html .= '<div style="margin-bottom:12px;">' . $neatHtml . '</div>';
+        $html .= '<label style="font-size:12px;color:#64748b;margin-bottom:4px;display:block;">Edit Manual Raw JSON (Hati-hati)</label>';
+        $html .= '<textarea form="pcForm" name="' . e($name) . '" style="width:100%; min-height:80px; font-family:Consolas,monospace; font-size:12px; margin-bottom:8px;" placeholder="Boleh isi manual atau nanti diisi otomatis dari PcNalisa JSON">' . e($pc[$name] ?? '') . '</textarea>';
+        $html .= '</div>';
     }
-    $html .= '</div></section><section class="footer-actions"><div class="actions"><button class="btn primary">' . ($editing ? 'Simpan Perubahan' : 'Tambah PC') . '</button><a class="btn" href="' . route_url('pcs') . '">Batal</a>';
+    $html .= '</section><form id="pcForm" class="pc-form" method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">';
+    $html .= '<section class="footer-actions"><div class="actions"><button type="submit" form="pcForm" class="btn primary">' . ($editing ? 'Simpan Perubahan' : 'Tambah PC') . '</button><a class="btn" href="' . route_url('pcs') . '">Batal</a>';
     if ($editing && has_regulation('pcs', 'delete')) {
         $html .= '<button type="submit" class="btn danger" form="deletePcForm" onclick="return confirm(\'Hapus PC ' . e($pc['pc_id']) . '? Semua data riwayat dan relasi PC ini akan dihapus.\');">Hapus PC</button>';
     }
@@ -904,21 +893,34 @@ function decode_json_payload(string $raw): array
 
 function ingest_analysis_payload(PDO $pdo, array $payload): array
 {
+    ensure_pc_schema($pdo);
     $pcId = strtoupper(trim((string)($payload['pc_id'] ?? '')));
     $owner = trim((string)($payload['owner_name'] ?? ''));
     $computerName = trim((string)($payload['computer_name'] ?? ''));
-    $specs = is_array($payload['general_specs'] ?? null) ? json_encode($payload['general_specs'], JSON_UNESCAPED_UNICODE) : (string)($payload['general_specs'] ?? '');
-    $software = is_array($payload['software'] ?? null) ? json_encode($payload['software'], JSON_UNESCAPED_UNICODE) : (string)($payload['software'] ?? '');
-    $device = is_array($payload['device_management'] ?? null) ? json_encode($payload['device_management'], JSON_UNESCAPED_UNICODE) : (string)($payload['device_management'] ?? '');
-    $benchmark = is_array($payload['benchmark'] ?? null) ? json_encode($payload['benchmark'], JSON_UNESCAPED_UNICODE) : (string)($payload['benchmark'] ?? '');
-    $startup = is_array($payload['startup_analysis'] ?? null) ? json_encode($payload['startup_analysis'], JSON_UNESCAPED_UNICODE) : (string)($payload['startup_analysis'] ?? '');
-    $summary = analytical_summary([
-        'general_specs' => $specs,
-        'software' => $software,
-        'device_management' => $device,
-        'benchmark' => $benchmark,
-        'startup_analysis' => $startup,
+    $encode = function($val) {
+        if (is_array($val)) return json_encode($val, JSON_UNESCAPED_UNICODE);
+        if (is_string($val) && trim($val) !== '') {
+            json_decode($val);
+            if (json_last_error() === JSON_ERROR_NONE) return $val;
+            return json_encode(['raw' => $val], JSON_UNESCAPED_UNICODE);
+        }
+        return '{}';
+    };
+
+    $specs = $encode($payload['general_specs'] ?? $payload['hardware'] ?? null);
+    $software = $encode($payload['software'] ?? null);
+    $device = $encode($payload['device_management'] ?? $payload['devices'] ?? null);
+    $benchmark = $encode($payload['benchmark'] ?? null);
+    $startup = $encode($payload['startup_analysis'] ?? $payload['startup'] ?? null);
+    
+    $summaryArray = analytical_summary([
+        'hardware' => is_array($payload['general_specs'] ?? $payload['hardware'] ?? null) ? ($payload['general_specs'] ?? $payload['hardware']) : [],
+        'software' => is_array($payload['software'] ?? null) ? $payload['software'] : [],
+        'devices' => is_array($payload['device_management'] ?? $payload['devices'] ?? null) ? ($payload['device_management'] ?? $payload['devices']) : [],
+        'benchmark' => is_array($payload['benchmark'] ?? null) ? $payload['benchmark'] : [],
+        'startup' => is_array($payload['startup_analysis'] ?? $payload['startup'] ?? null) ? ($payload['startup_analysis'] ?? $payload['startup']) : [],
     ]);
+    $summary = json_encode($summaryArray, JSON_UNESCAPED_UNICODE);
 
     $stmt = $pdo->prepare('SELECT pc_id, security_code, asset_item_id FROM pcs WHERE pc_id = ?');
     $stmt->execute([$pcId]);
@@ -976,6 +978,22 @@ function ensure_pc_schema(PDO $pdo): void
                     $c = detect_pc_category($nr['general_specs'] ?? '', $nr['computer_name'] ?? '');
                     $up->execute([$c !== '' ? $c : 'CMP', (int)$nr['id']]);
                 }
+            }
+        }
+
+        if (db_table_exists($pdo, 'analysis_runs')) {
+            if (db_column_exists($pdo, 'analysis_runs', 'payload') && db_column_exists($pdo, 'analysis_runs', 'raw_payload')) {
+                // If both exist, drop the old payload column to avoid "doesn't have a default value" errors
+                try { $pdo->exec('ALTER TABLE analysis_runs DROP COLUMN payload'); } catch (Throwable $ignored) {}
+            } elseif (db_column_exists($pdo, 'analysis_runs', 'payload') && !db_column_exists($pdo, 'analysis_runs', 'raw_payload')) {
+                try { $pdo->exec('ALTER TABLE analysis_runs CHANGE payload raw_payload LONGTEXT NULL'); } catch (Throwable $ignored) {}
+            }
+            
+            if (!db_column_exists($pdo, 'analysis_runs', 'raw_payload')) {
+                try { $pdo->exec('ALTER TABLE analysis_runs ADD COLUMN raw_payload LONGTEXT NULL AFTER pc_id'); } catch (Throwable $ignored) {}
+            }
+            if (!db_column_exists($pdo, 'analysis_runs', 'summary')) {
+                try { $pdo->exec('ALTER TABLE analysis_runs ADD COLUMN summary LONGTEXT NULL AFTER raw_payload'); } catch (Throwable $ignored) {}
             }
         }
     } catch (Throwable $ignored) {
@@ -1062,7 +1080,7 @@ function handle_route_pcs(PDO $pdo): void
     $stmt->execute($params);
 
     $addBtn = has_regulation('pcs', 'create') ? '<a class="btn primary" href="' . route_url('pc_form') . '">+ Tambah PC</a>' : '';
-    echo '<section class="panel"><div class="split"><h1>Data PC</h1><div class="actions">' . $addBtn . '<a class="btn" href="' . route_url('pc_locations') . '">Kelola Lokasi GPS</a><a class="btn" href="' . route_url('upload_analysis') . '">Upload JSON Analisa</a><a class="btn" href="' . route_url('export_excel', ['type' => 'pcs']) . '">Export Excel</a></div></div>';
+    echo '<section class="panel"><div class="split"><h1>Data PC</h1><div class="actions">' . $addBtn . '<a class="btn" href="' . route_url('pc_locations') . '">Kelola Lokasi GPS</a><a class="btn" href="' . route_url('export_excel', ['type' => 'pcs']) . '">Export Excel</a></div></div>';
     echo '<form method="get" class="actions" style="margin:16px 0 8px 0;flex-wrap:wrap;gap:8px;align-items:center;">';
     echo '<input type="hidden" name="route" value="pcs">';
     echo '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $filterGroupId, true, 'Semua Komoditas') . '</select>';
@@ -1314,61 +1332,22 @@ function handle_route_pc_detail(PDO $pdo): void
     echo '<p>'
         . '<span class="badge ok">Komoditas: ' . e($groupName) . '</span> '
         . '<span class="badge ok">Kategori: ' . e($categoryLabel) . '</span> '
-        . ($hasSync && $assetCode !== '' ? '<span class="badge">Maintenance Asset ID ' . e($assetCode) . '</span> ' : '<span class="badge danger">Belum Sinkron ke Asset Item</span> ')
+        . (!$hasSync ? '<span class="badge danger">Belum Sinkron ke Asset Item</span> ' : '')
         . '<span class="badge">NIK ' . e($pc['employee_nik'] ?? '-') . '</span>'
         . '</p>';
-    echo '</div><div class="actions"><a class="btn primary" href="' . route_url('ticket_form', ['pc_id' => $pcId]) . '">+ Buat Tiket / Reparasi</a>';
+    echo '</div><div class="actions">';
     if (has_regulation('pcs', 'edit')) {
         echo '<a class="btn" href="' . route_url('pc_form', ['pc_id' => $pcId]) . '">Edit PC</a>';
     }
     if (has_regulation('pcs', 'delete')) {
-        echo '<form method="post" action="' . route_url('pcs') . '" style="display:inline;" onsubmit="return confirm(\'Hapus PC ' . e($pcId) . '? Semua relasi dan riwayat PC ini akan dihapus.\');">'
-            . csrf_field()
-            . '<input type="hidden" name="action" value="delete_pc">'
-            . '<input type="hidden" name="pc_id" value="' . e($pcId) . '">'
-            . '<button type="submit" class="btn danger">Hapus PC</button>'
-            . '</form>';
+        echo '';
     }
-    echo '<a class="btn good" href="' . route_url('download_runner_cmd', ['pc_id' => $pcId, 'token' => (string)config_value('agent_token')]) . '">📥 Download Runner .CMD</a><a class="btn" href="' . route_url('download_agent', ['pc_id' => $pcId, 'token' => (string)config_value('agent_token')]) . '">📄 Script PS1</a><a class="btn" href="' . route_url('pc_location', ['pc_id' => $pcId]) . '">Set Lokasi GPS</a><a class="btn" href="' . route_url('upload_analysis', ['pc_id' => $pcId]) . '">Upload JSON Analisa</a>';
+    echo '<a class="btn" href="' . route_url('pc_location', ['pc_id' => $pcId]) . '">Set Lokasi GPS</a>';
     if ($hasSync && $assetCode !== '') {
-        echo '<a class="btn" href="' . mobile_asset_url($assetCode) . '">Mobile QR URL</a>';
+        echo '';
     }
     echo '</div></div></section>';
     echo pc_asset_link_detail_html($pdo, $pc);
-
-    // Corrective Tickets & Repairs Panel
-    if (db_table_exists($pdo, 'corrective_tickets')) {
-        $tStmt = $pdo->prepare("SELECT t.*, 
-            (SELECT COUNT(*) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS repair_count,
-            (SELECT COALESCE(SUM(cr.repair_cost), 0) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS total_repair_cost,
-            (SELECT COALESCE(SUM(crp.part_cost), 0) FROM corrective_repairs cr JOIN corrective_repair_parts crp ON crp.repair_id = cr.id WHERE cr.ticket_id = t.id) AS total_part_cost
-            FROM corrective_tickets t
-            WHERE t.pc_id = ? OR (t.asset_item_id IS NOT NULL AND t.asset_item_id = ?)
-            ORDER BY t.created_at DESC");
-        $tStmt->execute([$pcId, (int)($pc['asset_item_id'] ?? 0)]);
-        $pcTickets = $tStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        echo '<section class="panel"><div class="split"><h2>Riwayat Tiket & Reparasi (Corrective Maintenance)</h2><a class="btn primary" href="' . route_url('ticket_form', ['pc_id' => $pcId]) . '">+ Laporkan Kerusakan PC Ini</a></div>';
-        if (!$pcTickets) {
-            echo '<p class="muted">Belum ada tiket atau perbaikan yang tercatat untuk PC ini.</p>';
-        } else {
-            echo '<table><thead><tr><th>Tiket & Tanggal</th><th>Prioritas</th><th>Subjek & Keluhan</th><th>Pelapor</th><th>Status</th><th>Total Biaya</th><th>Aksi</th></tr></thead><tbody>';
-            foreach ($pcTickets as $pt) {
-                $cost = (float)$pt['total_repair_cost'] + (float)$pt['total_part_cost'];
-                echo '<tr>';
-                echo '<td><strong>' . e($pt['ticket_code']) . '</strong><br><span class="muted">' . e(date('d M Y H:i', strtotime($pt['created_at']))) . '</span></td>';
-                echo '<td>' . ticket_priority_badge($pt['priority']) . '</td>';
-                echo '<td><strong>' . e($pt['subject']) . '</strong><br><span class="muted">' . e(mb_strimwidth((string)$pt['description'], 0, 60, '...')) . '</span></td>';
-                echo '<td>' . e($pt['reporter_name']) . '</td>';
-                echo '<td>' . ticket_status_badge($pt['status']) . '</td>';
-                echo '<td>' . ($cost > 0 ? '<strong>Rp ' . number_format($cost, 0, ',', '.') . '</strong>' : '<span class="muted">Rp 0</span>') . '</td>';
-                echo '<td><a class="btn" href="' . route_url('ticket_detail', ['id' => $pt['id']]) . '">Lihat / Handle</a></td>';
-                echo '</tr>';
-            }
-            echo '</tbody></table>';
-        }
-        echo '</section>';
-    }
 
     if (!empty($pc['latitude']) && !empty($pc['longitude'])) {
         $mapUrl = 'https://www.google.com/maps?q=' . rawurlencode((string)$pc['latitude'] . ',' . (string)$pc['longitude']);
@@ -1608,7 +1587,7 @@ function handle_route_download_runner_cmd(): void
     $cmd .= ')' . "\r\n";
     $cmd .= 'echo [*] Hak akses Administrator terverifikasi.' . "\r\n";
     $cmd .= 'echo [*] Mengunduh script telemetri untuk ' . $pcId . '...' . "\r\n";
-    $cmd .= 'set "TARGET_PS1=%TEMP%\\PcNalisa-' . $pcId . '.ps1"' . "\r\n";
+    $cmd .= 'set "TARGET_PS1=%~dp0PcNalisa-' . $pcId . '.ps1"' . "\r\n";
     $cmd .= 'set "AGENT_URL=' . $downloadUrl . '"' . "\r\n";
     $cmd .= 'powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; [Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; (New-Object System.Net.WebClient).DownloadFile(\'%AGENT_URL%\', \'%TARGET_PS1%\')"' . "\r\n";
     $cmd .= 'if not exist "%TARGET_PS1%" (' . "\r\n";

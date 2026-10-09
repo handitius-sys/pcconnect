@@ -20,6 +20,10 @@ function require_corrective_technician(): array
     return $user;
 }
 
+/**
+ * Modul Field Service: Login Mobile
+ * Proses: Halaman login khusus untuk teknisi lapangan (Field Service) yang dioptimasi untuk mobile.
+ */
 function handle_route_mobile_service_login(PDO $pdo): void
 {
     ensure_corrective_maintenance_schema($pdo);
@@ -105,7 +109,7 @@ function handle_route_mobile_service_login(PDO $pdo): void
             </form>
 
             <div class="login-footer">
-                Khusus teknisi role <strong>Corrective Maintenance</strong>.<br>
+                Khusus teknisi role Corrective Maintenance.<br>
                 Sesi otomatis logout jika tidak aktif selama 30 menit.
             </div>
         </div>
@@ -114,6 +118,10 @@ function handle_route_mobile_service_login(PDO $pdo): void
     <?php
 }
 
+/**
+ * Modul Field Service: Logout Mobile
+ * Proses: Mengakhiri sesi teknisi lapangan dan kembali ke halaman login mobile.
+ */
 function handle_route_mobile_service_logout(): never
 {
     unset($_SESSION['user_id'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
@@ -121,118 +129,10 @@ function handle_route_mobile_service_logout(): never
     redirect_to('mobile_service_login');
 }
 
-function render_mobile_service_header(string $title, ?array $user): void
-{
-    $flash = flash();
-    ?>
-    <!doctype html>
-    <html lang="id">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
-        <title><?= e($title) ?> - PcConnect Field Service</title>
-        <style>
-            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-            body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; padding-bottom: 72px; }
-            a { text-decoration: none; color: inherit; }
-            header { background: #1e293b; border-bottom: 1px solid #334155; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
-            .brand { font-weight: 700; font-size: 15px; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
-            .tech-info { font-size: 12px; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
-            .container { padding: 14px; max-width: 600px; margin: 0 auto; }
-            .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-            .card h2 { margin: 0 0 10px; font-size: 16px; color: #f1f5f9; }
-            .btn { display: block; width: 100%; text-align: center; border: none; border-radius: 8px; padding: 12px 16px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.2); margin-top: 8px; }
-            .btn-primary { background: #0284c7; color: #fff; }
-            .btn-primary:active { background: #0369a1; }
-            .btn-success { background: #059669; color: #fff; }
-            .btn-success:active { background: #047857; }
-            .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
-            .btn-danger { background: #e11d48; color: #fff; }
-            .badge { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 600; }
-            .badge-open { background: #fee2e2; color: #991b1b; }
-            .badge-progress { background: #fef3c7; color: #92400e; }
-            .badge-resolved { background: #dcfce7; color: #166534; }
-            .flash { padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size: 14px; }
-            .flash-ok { background: #065f46; color: #d1fae5; border: 1px solid #047857; }
-            .flash-err { background: #881337; color: #ffe4e6; border: 1px solid #be123c; }
-            label { display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin: 10px 0 4px; }
-            input, select, textarea { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; }
-            input:focus, select:focus, textarea:focus { border-color: #38bdf8; }
-            .nav-bottom { position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; border-top: 1px solid #334155; display: grid; grid-template-columns: repeat(3, 1fr); padding: 8px 0; z-index: 50; }
-            .nav-item { text-align: center; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-            .nav-item.active { color: #38bdf8; font-weight: 600; }
-            .nav-icon { font-size: 18px; }
-            .scan-box { width: 100%; max-width: 320px; height: 260px; margin: 12px auto; border-radius: 12px; overflow: hidden; background: #000; border: 2px dashed #38bdf8; position: relative; }
-        </style>
-    </head>
-    <body>
-        <header>
-            <div class="brand">🛠️ PcConnect <span>Field Service</span></div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                <div class="tech-info">
-                    <span>👤 <?= e($user['name'] ?? 'Teknisi') ?></span>
-                    <span style="font-size:10px;padding:2px 6px;background:#0369a1;color:#fff;border-radius:4px;font-weight:700;">
-                        <?= e(function_exists('role_label') ? role_label((string)($user['role'] ?? '')) : ($user['role'] ?? '')) ?>
-                    </span>
-                </div>
-                <a href="<?= route_url('mobile_service_logout') ?>" onclick="return confirm('Keluar dari PcConnect Field Service?')" style="background:#dc2626;color:#fff;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:3px;" title="Keluar">
-                    🚪 Logout
-                </a>
-            </div>
-        </header>
-        <div class="container">
-            <?php if ($flash): ?>
-                <div class="flash <?= $flash['type'] === 'err' ? 'flash-err' : 'flash-ok' ?>">
-                    <?= e($flash['message']) ?>
-                </div>
-            <?php endif; ?>
-    <?php
-}
-
-function render_mobile_service_footer(string $activeTab = 'dashboard'): void
-{
-    ?>
-        </div>
-        <nav class="nav-bottom">
-            <a href="<?= route_url('mobile_service') ?>" class="nav-item <?= $activeTab === 'dashboard' ? 'active' : '' ?>">
-                <span class="nav-icon">🏠</span>
-                <span>Home</span>
-            </a>
-            <a href="<?= route_url('mobile_service_scan') ?>" class="nav-item <?= $activeTab === 'scan' ? 'active' : '' ?>">
-                <span class="nav-icon">📷</span>
-                <span>Scan QR</span>
-            </a>
-            <a href="<?= route_url('mobile_service_tasks') ?>" class="nav-item <?= $activeTab === 'tasks' ? 'active' : '' ?>">
-                <span class="nav-icon">📋</span>
-                <span>Daftar Tugas</span>
-            </a>
-        </nav>
-
-        <!-- Auto-logout Inactivity Timer (30 Menit) -->
-        <script>
-        (function() {
-            var idleTimeout = 30 * 60 * 1000; // 30 menit
-            var timer;
-            function resetTimer() {
-                clearTimeout(timer);
-                timer = setTimeout(function() {
-                    alert('Sesi Anda berakhir karena tidak ada aktivitas selama 30 menit.');
-                    window.location.href = '<?= route_url('mobile_service_logout') ?>';
-                }, idleTimeout);
-            }
-            window.onload = resetTimer;
-            document.onmousemove = resetTimer;
-            document.onkeypress = resetTimer;
-            document.ontouchstart = resetTimer;
-            document.onclick = resetTimer;
-            document.onscroll = resetTimer;
-        })();
-        </script>
-    </body>
-    </html>
-    <?php
-}
-
+/**
+ * Modul Field Service: Dashboard
+ * Proses: Menampilkan menu utama atau antarmuka utama teknisi lapangan.
+ */
 function handle_route_mobile_service(PDO $pdo): void
 {
     $user = require_corrective_technician();
@@ -257,45 +157,61 @@ function handle_route_mobile_service(PDO $pdo): void
                                   ORDER BY t.priority = 'critical' DESC, t.created_at DESC
                                   LIMIT 4")->fetchAll(PDO::FETCH_ASSOC);
 
-    render_mobile_service_header('Field Service Mobile', $user);
+    render_mobile_header('Field Service Mobile', $user);
     ?>
     <!-- Action Cards -->
-    <div class="card" style="background:linear-gradient(135deg, #0369a1, #0f172a);border-color:#0284c7;">
-        <h2 style="font-size:18px;color:#fff;margin-bottom:6px;">⚡ Perbaikan Cepat di Tempat</h2>
-        <p style="font-size:13px;color:#e0f2fe;margin:0 0 14px;">Scan QR Unit Aset untuk buka case baru atau langsung selesaikan di lokasi.</p>
+    <div class="panel" style="background:linear-gradient(135deg, #0369a1, #0f172a);border-color:#0284c7;">
+        <h2 style="font-size:18px;color:#0369a1;margin-bottom:6px;">⚡ Perbaikan Cepat di Tempat</h2>
+        <p style="font-size:13px;color:#475569;margin:0 0 14px;">Scan QR Unit Aset untuk buka case baru atau langsung selesaikan di lokasi.</p>
         <a href="<?= route_url('mobile_service_scan') ?>" class="btn btn-primary" style="font-size:16px;padding:14px;background:#38bdf8;color:#0f172a;font-weight:700;">
             📷 SCAN QR CODE UNIT
         </a>
     </div>
 
     <!-- Ringkasan Status -->
+    <?php
+    $renderCorrectiveCard = function($number, $label, $iconPath, $themeIdx) {
+        $themes = [
+            ['#eff6ff', '#1e3a8a', '#3b82f6'], // blue
+            ['#f0fdf4', '#14532d', '#22c55e'], // green
+            ['#fffbeb', '#78350f', '#f59e0b'], // yellow
+            ['#fef2f2', '#7f1d1d', '#ef4444'], // red
+        ];
+        $t = $themes[$themeIdx];
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        return '<div style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 4px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 14px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">'
+             . '<div style="position: absolute; right: -8px; top: -8px; width: 65px; height: 65px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 24px; display: block; margin-bottom: 2px; line-height: 1;">' . e($number) . ''
+             . '<span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">' . e($label) . '</span>'
+             . '</div></div>';
+    };
+    ?>
     <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;margin-bottom:14px;">
-        <div class="card" style="margin:0;padding:12px;text-align:center;">
-            <div style="font-size:24px;font-weight:800;color:#f87171;"><?= (int)($stats['count_open'] ?? 0) ?></div>
-            <div style="font-size:12px;color:#94a3b8;">Tiket Masuk</div>
-        </div>
-        <div class="card" style="margin:0;padding:12px;text-align:center;">
-            <div style="font-size:24px;font-weight:800;color:#fbbf24;"><?= (int)($stats['count_progress'] ?? 0) ?></div>
-            <div style="font-size:12px;color:#94a3b8;">Sedang Dikerjakan</div>
-        </div>
+        <?= $renderCorrectiveCard((int)($stats['count_open'] ?? 0), 'Tiket Masuk', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z', 3) ?>
+        <?= $renderCorrectiveCard((int)($stats['count_progress'] ?? 0), 'Sedang Dikerjakan', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 2) ?>
+        <?= $renderCorrectiveCard((int)($stats['count_pending_part'] ?? 0), 'Tunggu Sparepart', 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', 0) ?>
+        <?= $renderCorrectiveCard((int)($stats['count_resolved_today'] ?? 0), 'Selesai Hari Ini', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 1) ?>
     </div>
 
     <!-- Tiket Butuh Tindakan -->
-    <div class="card">
+    <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <h2 style="margin:0;">🚨 Tugas Tiket Menunggu</h2>
-            <a href="<?= route_url('mobile_service_tasks') ?>" style="font-size:12px;color:#38bdf8;">Lihat Semua →</a>
+            <a href="<?= route_url('mobile_service_tasks') ?>" style="font-size:12px;color:#0284c7;">Lihat Semua →</a>
         </div>
 
         <?php if (!$recentTickets): ?>
-            <p style="font-size:13px;color:#94a3b8;margin:10px 0;">Tidak ada tiket kerusakan yang menunggu.</p>
+            <p style="font-size:13px;color:#64748b;margin:10px 0;">Tidak ada tiket kerusakan yang menunggu.</p>
         <?php else: ?>
             <?php foreach ($recentTickets as $t): ?>
-                <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:10px;">
+                <div style="background:#fff;;border-radius:8px;padding:12px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
-                            <span style="font-weight:700;color:#38bdf8;font-size:14px;"><?= e($t['ticket_code']) ?></span>
-                            <div style="font-size:12px;color:#cbd5e1;font-weight:600;margin-top:2px;">
+                            <span style="font-weight:700;color:#0284c7;font-size:14px;"><?= e($t['ticket_code']) ?></span>
+                            <div style="font-size:12px;color:#64748b;font-weight:600;margin-top:2px;">
                                 <?= e($t['display_asset_code']) ?>
                             </div>
                         </div>
@@ -304,7 +220,7 @@ function handle_route_mobile_service(PDO $pdo): void
                         </div>
                     </div>
                     <p style="font-size:13px;margin:6px 0;color:#e2e8f0;"><?= e($t['subject']) ?></p>
-                    <div style="font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                    <div style="font-size:11px;color:#64748b;display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
                         <span>📍 <?= e($t['location_label'] ?: '-') ?></span>
                         <a href="<?= route_url('mobile_service_ticket', ['id' => $t['id']]) ?>" class="btn btn-primary" style="display:inline-block;width:auto;padding:6px 12px;font-size:12px;margin:0;">
                             Buka Tiket →
@@ -315,9 +231,13 @@ function handle_route_mobile_service(PDO $pdo): void
         <?php endif; ?>
     </div>
     <?php
-    render_mobile_service_footer('dashboard');
+    render_mobile_footer('dashboard');
 }
 
+/**
+ * Modul Field Service: Scan Aset
+ * Proses: Membuka antarmuka kamera/scanner barcode bagi teknisi untuk memindai aset di lapangan.
+ */
 function handle_route_mobile_service_scan(PDO $pdo): void
 {
     $user = require_corrective_technician();
@@ -346,14 +266,14 @@ function handle_route_mobile_service_scan(PDO $pdo): void
         }
     }
 
-    render_mobile_service_header('Scan QR Unit Lapangan', $user);
+    render_mobile_header('Scan QR Unit Lapangan', $user);
     ?>
-    <div class="card" style="text-align:center;">
+    <div class="panel" style="text-align:center;">
         <h2>📷 Scan QR Unit Aset</h2>
-        <p style="font-size:13px;color:#94a3b8;margin:0 0 12px;">Arahkan kamera ke stiker QR Code pada unit fisik.</p>
+        <p style="font-size:13px;color:#64748b;margin:0 0 12px;">Arahkan kamera ke stiker QR Code pada unit fisik.</p>
 
         <div id="reader" style="width:100%;max-width:320px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000;"></div>
-        <p id="camStatus" style="font-size:12px;color:#38bdf8;margin-top:8px;">Menyiapkan kamera live scan...</p>
+        <p id="camStatus" style="font-size:12px;color:#0284c7;margin-top:8px;">Menyiapkan kamera live scan...</p>
 
         <form method="post" id="scanForm" style="margin-top:16px;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -391,9 +311,13 @@ function handle_route_mobile_service_scan(PDO $pdo): void
     })();
     </script>
     <?php
-    render_mobile_service_footer('scan');
+    render_mobile_footer('scan');
 }
 
+/**
+ * Modul Field Service: Direct Action
+ * Proses: Mengambil tindakan langsung pada aset setelah berhasil di-scan tanpa melalui jadwal (ad-hoc).
+ */
 function handle_route_mobile_service_direct(PDO $pdo): void
 {
     $user = require_corrective_technician();
@@ -458,16 +382,29 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         $stmt = $pdo->prepare("INSERT INTO corrective_tickets (
             ticket_code, asset_category, asset_item_id, maintenance_asset_id, pc_id, company_id, 
             location_label, reporter_name, reporter_nik, issue_category, priority, 
-            subject, description, photo_before, status, assigned_technician_name, resolved_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            subject, description, photo_before, status, assigned_technician_name, resolved_at,
+            handled_by_type, handled_by_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'internal', ?)");
 
         $stmt->execute([
             $code, $assetCat, $unit['asset_item_id'], $maintId, $unit['pc_id'] ?: null,
             (int)($unit['company_id'] ?? 0) ?: null, $unit['location_label'] ?? '',
             $unit['custodian_name'] ?: $user['name'], $unit['custodian_nik'] ?? '', 'hardware', $priority,
-            $subject, $desc, $photoBefore, $status, $user['name'], $resolvedAt
+            $subject, $desc, $photoBefore, $status, $user['name'], $resolvedAt,
+            (int)$user['id']
         ]);
         $ticketId = (int)$pdo->lastInsertId();
+
+        // Save requested actions if checked
+        if (!empty($_POST['requested_actions']) && is_array($_POST['requested_actions'])) {
+            $actStmt = $pdo->prepare("INSERT INTO corrective_ticket_actions (ticket_id, job_action_id, action_title) VALUES (?, ?, ?)");
+            foreach ($_POST['requested_actions'] as $actId) {
+                $aRow = $pdo->query("SELECT action_name AS action_title FROM corrective_action_types WHERE id = " . (int)$actId)->fetch();
+                if ($aRow) {
+                    $actStmt->execute([$ticketId, (int)$actId, $aRow['action_title']]);
+                }
+            }
+        }
 
         // 2. Simpan Tindakan Reparasi
         $repStmt = $pdo->prepare("INSERT INTO corrective_repairs (
@@ -492,30 +429,30 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         redirect_to('mobile_service');
     }
 
-    render_mobile_service_header('Eksekusi Perbaikan di Tempat', $user);
+    render_mobile_header('Eksekusi Perbaikan di Tempat', $user);
     ?>
-    <div class="card" style="border-left:4px solid #38bdf8;">
+    <div class="panel" style="border-left:4px solid #38bdf8;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
             <span class="badge" style="background:#0284c7;color:#fff;">UNIT TERVERIFIKASI</span>
             <?php if (!empty($unit['group_name']) || !empty($unit['type_name'])): ?>
-                <span class="badge" style="background:#1e293b;color:#38bdf8;border:1px solid #0284c7;font-size:11px;">
+                <span class="badge" style="background:#fff;color:#0284c7;border:1px solid #0284c7;font-size:11px;">
                     <?= e($unit['group_name'] ?: 'IT') ?> &bull; <?= e($unit['type_name'] ?: ($unit['asset_category'] ?? 'Comp')) ?>
                 </span>
             <?php endif; ?>
         </div>
-        <h2 style="margin:4px 0 2px;color:#38bdf8;"><?= e($unit['item_asset_code'] ?: ($unit['asset_code'] ?? 'Unit Aset')) ?></h2>
-        <div style="font-size:14px;font-weight:600;color:#f8fafc;margin-top:2px;"><?= e($unit['name']) ?></div>
+        <h2 style="margin:4px 0 2px;color:#0284c7;"><?= e($unit['item_asset_code'] ?: ($unit['asset_code'] ?? 'Unit Aset')) ?></h2>
+        <div style="font-size:14px;font-weight:600;;margin-top:2px;"><?= e($unit['name']) ?></div>
         <?php if (!empty($unit['job_desk_name'])): ?>
             <div style="font-size:12px;color:#a5f3fc;margin-top:4px;background:#0369a1;padding:3px 8px;border-radius:6px;display:inline-block;">
-                📋 <strong>Job Desk:</strong> <?= e($unit['job_desk_name']) ?>
+                📋 Job Desk: <?= e($unit['job_desk_name']) ?>
             </div>
         <?php endif; ?>
-        <div style="font-size:12px;color:#94a3b8;margin-top:6px;">
+        <div style="font-size:12px;color:#64748b;margin-top:6px;">
             👤 Pemegang: <?= e($unit['custodian_name'] ?: '-') ?> | 📍 Lokasi: <?= e($unit['location_label'] ?: '-') ?>
         </div>
     </div>
 
-    <div class="card">
+    <div class="panel">
         <h2>📝 Form Eksekusi Cepat di Lokasi</h2>
         <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -537,10 +474,37 @@ function handle_route_mobile_service_direct(PDO $pdo): void
                 <input type="file" name="photo_before" accept="image/*" capture="environment">
             </label>
 
+            <?php
+            // Ambil checklist tindakan Job Desk jika ada
+            $mobileActions = [];
+            if (!empty($unit['job_desk_name'])) {
+                $mActStmt = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? ORDER BY action_name");
+                $mActStmt->execute([$unit['job_desk_name']]);
+                $mobileActions = $mActStmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            ?>
+            <?php if (!empty($mobileActions)): ?>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px; margin:12px 0;">
+                    <span style="font-weight:700; font-size:13px; color:#0369a1; display:block; margin-bottom:8px;">
+                        📋 Checklist Tindakan (<?= e($unit['job_desk_name']) ?>):
+                    </span>
+                    <?php foreach ($mobileActions as $mAct): ?>
+                        <label style="display:flex; align-items:center; gap:8px; font-weight:normal; font-size:13px; margin-bottom:6px; cursor:pointer;">
+                            <input type="checkbox" name="requested_actions[]" value="<?= (int)$mAct['id'] ?>">
+                            <span><?= e($mAct['action_title']) ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
             <label>Jenis Tindakan Perbaikan (<?= e($unit['job_desk_name'] ?: 'Job Desk Corrective') ?>) *
                 <select name="action_type" required>
                     <?= corrective_action_type_options($pdo, null, (int)($unit['asset_group_id'] ?? 0), (int)($unit['asset_type_id'] ?? 0), $unit['job_desk_name'] ?? null) ?>
                 </select>
+            </label>
+
+            <label>Biaya Service / Jasa Perbaikan (Rp)
+                <input type="number" name="repair_cost" value="0" placeholder="0">
             </label>
 
             <label>Tindakan & Solusi yang Dilakukan *
@@ -548,8 +512,8 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             </label>
 
             <!-- Penggantian Part -->
-            <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:12px 0;">
-                <span style="font-weight:700;font-size:13px;color:#38bdf8;">📦 Ada Penggantian Sparepart?</span>
+            <div style="background:#fff;;border-radius:8px;padding:12px;margin:12px 0;">
+                <span style="font-weight:700;font-size:13px;color:#0284c7;">📦 Ada Penggantian Sparepart?</span>
                 <label>Nama Part Baru
                     <input name="part_new_name" placeholder="Misal: SSD 512GB Kingston">
                 </label>
@@ -583,9 +547,13 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         </form>
     </div>
     <?php
-    render_mobile_service_footer('scan');
+    render_mobile_footer('scan');
 }
 
+/**
+ * Modul Field Service: Daftar Tugas
+ * Proses: Menampilkan daftar tugas maintenance/perbaikan yang ditugaskan kepada teknisi saat ini.
+ */
 function handle_route_mobile_service_tasks(PDO $pdo): void
 {
     $user = require_corrective_technician();
@@ -601,21 +569,21 @@ function handle_route_mobile_service_tasks(PDO $pdo): void
             ORDER BY t.priority = 'critical' DESC, t.created_at DESC";
     $tickets = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
-    render_mobile_service_header('Daftar Tugas Tiket', $user);
+    render_mobile_header('Daftar Tugas Tiket', $user);
     ?>
-    <div class="card">
+    <div class="panel">
         <h2>📋 Daftar Tiket Menunggu Tindakan (<?= count($tickets) ?>)</h2>
-        <p style="font-size:13px;color:#94a3b8;margin:0 0 12px;">Pilih tiket untuk eksekusi atau verifikasi di lokasi.</p>
+        <p style="font-size:13px;color:#64748b;margin:0 0 12px;">Pilih tiket untuk eksekusi atau verifikasi di lokasi.</p>
 
         <?php if (!$tickets): ?>
             <p style="font-size:14px;color:#10b981;text-align:center;padding:24px 0;">🎉 Luar biasa! Seluruh tiket kerusakan telah selesai ditangani.</p>
         <?php else: ?>
             <?php foreach ($tickets as $t): ?>
-                <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:12px;">
+                <div style="background:#fff;;border-radius:10px;padding:14px;margin-bottom:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
-                            <span style="font-weight:700;color:#38bdf8;font-size:15px;"><?= e($t['ticket_code']) ?></span>
-                            <div style="font-size:13px;font-weight:600;color:#f8fafc;margin-top:2px;">
+                            <span style="font-weight:700;color:#0284c7;font-size:15px;"><?= e($t['ticket_code']) ?></span>
+                            <div style="font-size:13px;font-weight:600;;margin-top:2px;">
                                 📍 <?= e($t['display_asset_code']) ?> - <?= e($t['asset_name'] ?: '-') ?>
                             </div>
                         </div>
@@ -625,7 +593,7 @@ function handle_route_mobile_service_tasks(PDO $pdo): void
                     </div>
 
                     <p style="font-size:14px;margin:8px 0;color:#e2e8f0;font-weight:600;"><?= e($t['subject']) ?></p>
-                    <p style="font-size:12px;color:#94a3b8;margin:4px 0;"><?= e(mb_strimwidth((string)$t['description'], 0, 80, '...')) ?></p>
+                    <p style="font-size:12px;color:#64748b;margin:4px 0;"><?= e(mb_strimwidth((string)$t['description'], 0, 80, '...')) ?></p>
 
                     <div style="font-size:11px;color:#64748b;margin-top:6px;">
                         Pelapor: <?= e($t['reporter_name']) ?> | Lokasi: <?= e($t['location_label'] ?: '-') ?>
@@ -639,9 +607,13 @@ function handle_route_mobile_service_tasks(PDO $pdo): void
         <?php endif; ?>
     </div>
     <?php
-    render_mobile_service_footer('tasks');
+    render_mobile_footer('tasks');
 }
 
+/**
+ * Modul Field Service: Penanganan Tiket
+ * Proses: Memungkinkan teknisi merespon, memperbarui, atau menutup tiket masalah langsung dari HP.
+ */
 function handle_route_mobile_service_ticket(PDO $pdo): void
 {
     $user = require_corrective_technician();
@@ -674,13 +646,13 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
     $ticketGroupId = (int)($unit['asset_group_id'] ?? ($ticket['ma_group_id'] ?: ($ticket['ai_group_id'] ?? 0)));
     $ticketTypeId = (int)($unit['asset_type_id'] ?? ($ticket['ma_type_id'] ?: ($ticket['ai_type_id'] ?? 0)));
 
-    render_mobile_service_header('Kerjakan Tiket #' . $ticket['ticket_code'], $user);
+    render_mobile_header('Kerjakan Tiket #' . $ticket['ticket_code'], $user);
     ?>
-    <div class="card" style="border-left:4px solid #38bdf8;">
+    <div class="panel" style="border-left:4px solid #38bdf8;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div>
-                <span style="font-size:12px;color:#94a3b8;">Tiket ID</span>
-                <h2 style="margin:0;color:#38bdf8;font-size:18px;"><?= e($ticket['ticket_code']) ?></h2>
+                <span style="font-size:12px;color:#64748b;">Tiket ID</span>
+                <h2 style="margin:0;color:#0284c7;font-size:18px;"><?= e($ticket['ticket_code']) ?></h2>
             </div>
             <div>
                 <?= ticket_status_badge($ticket['status']) ?>
@@ -688,29 +660,29 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
         </div>
 
         <div style="margin-top:10px;font-size:13px;line-height:1.6;">
-            <div><strong>Unit Aset:</strong> <span style="color:#38bdf8;font-weight:700;"><?= e($unit['item_asset_code'] ?: ($ticket['display_asset_code'] ?: '-')) ?></span> (<?= e($ticket['asset_name'] ?: '-') ?>)</div>
+            <div>Unit Aset: <span style="color:#0284c7;font-weight:700;"><?= e($unit['item_asset_code'] ?: ($ticket['display_asset_code'] ?: '-')) ?></span> (<?= e($ticket['asset_name'] ?: '-') ?>)</div>
             <?php if (!empty($unit['group_name']) || !empty($unit['type_name'])): ?>
-                <div><strong>Kategori:</strong> <span style="color:#38bdf8;font-weight:600;"><?= e($unit['group_name'] ?: 'IT') ?> &bull; <?= e($unit['type_name'] ?: ($unit['asset_category'] ?? 'Comp')) ?></span></div>
+                <div>Kategori: <span style="color:#0284c7;font-weight:600;"><?= e($unit['group_name'] ?: 'IT') ?> &bull; <?= e($unit['type_name'] ?: ($unit['asset_category'] ?? 'Comp')) ?></span></div>
             <?php endif; ?>
             <?php if (!empty($unit['job_desk_name'])): ?>
-                <div style="margin-top:4px;"><span style="font-size:12px;color:#a5f3fc;background:#0369a1;padding:3px 8px;border-radius:6px;display:inline-block;">📋 <strong>Job Desk:</strong> <?= e($unit['job_desk_name']) ?></span></div>
+                <div style="margin-top:4px;"><span style="font-size:12px;color:#a5f3fc;background:#0369a1;padding:3px 8px;border-radius:6px;display:inline-block;">📋 Job Desk: <?= e($unit['job_desk_name']) ?></span></div>
             <?php endif; ?>
-            <div><strong>Lokasi:</strong> <?= e($ticket['location_label'] ?: '-') ?></div>
-            <div><strong>Pelapor:</strong> <?= e($ticket['reporter_name']) ?> <?= $ticket['reporter_contact'] ? '(' . e($ticket['reporter_contact']) . ')' : '' ?></div>
+            <div>Lokasi: <?= e($ticket['location_label'] ?: '-') ?></div>
+            <div>Pelapor: <?= e($ticket['reporter_name']) ?> <?= $ticket['reporter_contact'] ? '(' . e($ticket['reporter_contact']) . ')' : '' ?></div>
         </div>
 
-        <div style="background:#0f172a;border-radius:6px;padding:10px;margin-top:10px;">
-            <div style="font-weight:700;color:#f8fafc;font-size:13px;"><?= e($ticket['subject']) ?></div>
-            <div style="font-size:12px;color:#cbd5e1;margin-top:4px;"><?= nl2br(e($ticket['description'] ?: '-')) ?></div>
+        <div style="background:#fff;border-radius:6px;padding:10px;margin-top:10px;">
+            <div style="font-weight:700;;font-size:13px;"><?= e($ticket['subject']) ?></div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;"><?= nl2br(e($ticket['description'] ?: '-')) ?></div>
             <?php if ($ticket['photo_before']): ?>
                 <div style="margin-top:8px;">
-                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank" style="color:#38bdf8;font-size:12px;">📷 Lihat Foto Kerusakan Awal</a>
+                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank" style="color:#0284c7;font-size:12px;">📷 Lihat Foto Kerusakan Awal</a>
                 </div>
             <?php endif; ?>
         </div>
     </div>
 
-    <div class="card">
+    <div class="panel">
         <h2>🛠️ Form Tindakan Perbaikan</h2>
         <form method="post" action="<?= route_url('ticket_action') ?>" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -732,8 +704,8 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
             </label>
 
             <!-- Penggantian Part -->
-            <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:12px 0;">
-                <span style="font-weight:700;font-size:13px;color:#38bdf8;">📦 Pasang Sparepart Baru? (Opsional)</span>
+            <div style="background:#fff;;border-radius:8px;padding:12px;margin:12px 0;">
+                <span style="font-weight:700;font-size:13px;color:#0284c7;">📦 Pasang Sparepart Baru? (Opsional)</span>
                 <label>Nama Part Baru
                     <input name="parts[0][new_name]" placeholder="Misal: SSD 512GB NVMe">
                 </label>
@@ -768,6 +740,7 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
         </form>
     </div>
     <?php
-    render_mobile_service_footer('tasks');
+    render_mobile_footer('tasks');
 }
+
 

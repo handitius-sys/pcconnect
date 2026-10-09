@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS asset_master_items (
 CREATE TABLE IF NOT EXISTS asset_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     asset_code VARCHAR(80) NOT NULL UNIQUE,
+    alias_code VARCHAR(150) NULL,
     master_item_id BIGINT NULL,
     brand_id INT NULL,
     company_id INT NULL,

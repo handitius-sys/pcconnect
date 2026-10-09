@@ -441,17 +441,16 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
 
         // h. Match via asset_items directly (auto-link / auto-create maintenance_asset if needed)
         if ($hasAssetItems) {
-            $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, asset_group_id, asset_type_id, asset_category, location_label, custodian_name, custodian_nik, maintenance_asset_id FROM asset_items WHERE asset_code = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, asset_group_id, asset_type_id, asset_category, location_label, custodian_name, custodian_nik FROM asset_items WHERE asset_code = ? LIMIT 1");
             $stmt->execute([$code]);
             $aiRow = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($aiRow) {
-                if (!empty($aiRow['maintenance_asset_id'])) {
-                    return (int)$aiRow['maintenance_asset_id'];
-                }
-                $stmtMa = $pdo->prepare("SELECT id FROM maintenance_assets WHERE maintenance_asset_code = ? LIMIT 1");
-                $stmtMa->execute([$aiRow['asset_code']]);
+                // Periksa apakah sudah ada maintenance_asset yang terhubung via asset_item_id atau kode
+                $stmtMa = $pdo->prepare("SELECT id FROM maintenance_assets WHERE asset_item_id = ? OR maintenance_asset_code = ? LIMIT 1");
+                $stmtMa->execute([$aiRow['id'], $aiRow['asset_code']]);
                 $maId = (int)($stmtMa->fetchColumn() ?: 0);
                 if ($maId > 0) {
+                    $pdo->prepare("UPDATE maintenance_assets SET asset_item_id = ? WHERE id = ?")->execute([$aiRow['id'], $maId]);
                     return $maId;
                 }
                 // Buat maintenance_asset baru secara otomatis untuk asset_item ini
@@ -467,8 +466,8 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
                     $mType = 'facility';
                 }
                 $insMa = $pdo->prepare("INSERT INTO maintenance_assets (
-                    maintenance_asset_code, security_code, maintenance_type, name, asset_group_id, asset_type_id, location_label, owner_name, employee_nik, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
+                    maintenance_asset_code, security_code, maintenance_type, name, asset_group_id, asset_type_id, asset_item_id, location_label, owner_name, employee_nik, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
                 $insMa->execute([
                     $aiRow['asset_code'],
                     $secCode,
@@ -476,6 +475,7 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
                     $aiRow['asset_name'] ?: $aiRow['asset_code'],
                     $aiRow['asset_group_id'] ?: null,
                     $aiRow['asset_type_id'] ?: null,
+                    $aiRow['id'],
                     $aiRow['location_label'] ?: null,
                     $aiRow['custodian_name'] ?: null,
                     $aiRow['custodian_nik'] ?: null,
@@ -520,6 +520,10 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
 // WEB INTERFACE: TICKET MANAGEMENT (DESKTOP)
 // -----------------------------------------------------------------------------
 
+/**
+ * Modul: Daftar Tiket
+ * Proses: Menampilkan seluruh tiket permintaan perbaikan (Helpdesk/Troubleshooting) beserta statusnya.
+ */
 function handle_route_tickets(PDO $pdo): void
 {
     $user = require_regulation('tickets', 'view');
@@ -579,6 +583,8 @@ function handle_route_tickets(PDO $pdo): void
                    COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
                    COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
                    c.company_name,
+                   u.name AS handled_user_name,
+                   w.workshop_name AS handled_workshop_name,
                    (SELECT COUNT(*) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS repair_count,
                    (SELECT COALESCE(SUM(cr.repair_cost), 0) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS total_repair_cost,
                    (SELECT COALESCE(SUM(crp.part_cost), 0) FROM corrective_repairs cr JOIN corrective_repair_parts crp ON crp.repair_id = cr.id WHERE cr.ticket_id = t.id) AS total_part_cost
@@ -586,6 +592,8 @@ function handle_route_tickets(PDO $pdo): void
             LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
             LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
             LEFT JOIN asset_companies c ON c.id = t.company_id
+            LEFT JOIN users u ON u.id = t.handled_by_user_id
+            LEFT JOIN corrective_workshops w ON w.id = t.handled_by_workshop_id
             $whereSql
             ORDER BY FIELD(t.status, 'open', 'assigned', 'in_progress', 'pending_part', 'resolved', 'closed'), t.created_at DESC";
 
@@ -605,34 +613,34 @@ function handle_route_tickets(PDO $pdo): void
     render_header('Corrective Maintenance & Ticketing', $user);
     ?>
     <section class="panel">
-        <div class="split">
+        <div class="split" style="align-items:flex-start; gap:16px;">
             <div>
-                <h1>Tiket & Troubleshooting (Corrective Maintenance)</h1>
-                <p class="muted">Kelola pelaporan masalah dan perbaikan unit berbasis <strong>Maintenance Asset ID</strong> (IT, Kendaraan, dan Fasilitas).</p>
+                <h1 style="margin:0; font-size:22px;">Tiket & Troubleshooting (Corrective Maintenance)</h1>
+                <p class="muted" style="margin:4px 0 0;">Kelola pelaporan masalah, penanganan perbaikan (Internal / Workshop), dan riwayat maintenance unit aset.</p>
             </div>
-            <div class="actions">
+            <div class="actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                 <?php if (has_regulation('tickets', 'create')): ?>
                     <a class="btn primary" href="<?= route_url('ticket_form') ?>">+ Buat Tiket Baru</a>
                 <?php endif; ?>
-                <a class="btn good" href="<?= route_url('mobile_service') ?>" target="_blank">📱 Buka Mobile Service (Teknisi)</a>
+                <a class="btn good" href="<?= route_url('mobile_service') ?>" target="_blank">📱 Mobile Service</a>
                 <a class="btn" href="<?= route_url('corrective_repairs') ?>">Riwayat Reparasi & Part</a>
                 <a class="btn" href="<?= route_url('walkarounds') ?>">Patroli Walkaround</a>
             </div>
         </div>
 
-        <div class="grid four" style="margin-top:16px;">
-            <div class="stat"><strong style="color:#b91c1c"><?= (int)($stats['count_open'] ?? 0) ?></strong><span>Tiket Baru / Terbuka</span></div>
-            <div class="stat"><strong style="color:#d97706"><?= (int)($stats['count_progress'] ?? 0) ?></strong><span>Sedang Dikerjakan</span></div>
-            <div class="stat"><strong style="color:#7c3aed"><?= (int)($stats['count_pending_part'] ?? 0) ?></strong><span>Menunggu Sparepart</span></div>
-            <div class="stat"><strong style="color:#15803d"><?= (int)($stats['count_resolved'] ?? 0) ?></strong><span>Selesai / Ditutup</span></div>
+        <div class="grid four" style="margin-top:20px;">
+            <div class="stat" style="background:#fff5f5; border:1px solid #fecaca; border-radius:8px; padding:14px;"><strong style="color:#b91c1c; font-size:26px;"><?= (int)($stats['count_open'] ?? 0) ?></strong><span style="color:#991b1b; font-weight:600; display:block; margin-top:2px;">Tiket Baru / Terbuka</span></div>
+            <div class="stat" style="background:#fffbe6; border:1px solid #fef08a; border-radius:8px; padding:14px;"><strong style="color:#d97706; font-size:26px;"><?= (int)($stats['count_progress'] ?? 0) ?></strong><span style="color:#92400e; font-weight:600; display:block; margin-top:2px;">Sedang Dikerjakan</span></div>
+            <div class="stat" style="background:#f3e8ff; border:1px solid #e9d5ff; border-radius:8px; padding:14px;"><strong style="color:#7c3aed; font-size:26px;"><?= (int)($stats['count_pending_part'] ?? 0) ?></strong><span style="color:#6b21a8; font-weight:600; display:block; margin-top:2px;">Menunggu Sparepart</span></div>
+            <div class="stat" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:14px;"><strong style="color:#15803d; font-size:26px;"><?= (int)($stats['count_resolved'] ?? 0) ?></strong><span style="color:#166534; font-weight:600; display:block; margin-top:2px;">Selesai / Ditutup</span></div>
         </div>
     </section>
 
     <section class="panel">
         <form method="get" class="grid four" style="margin-bottom:16px;">
             <input type="hidden" name="route" value="tickets">
-            <label>Cari Tiket / Maintenance Asset / Pelapor
-                <input name="q" value="<?= e($q) ?>" placeholder="Kode tiket, MNT-..., nama user...">
+            <label>Cari Tiket / Aset / Pelapor
+                <input name="q" value="<?= e($q) ?>" placeholder="Kode tiket, kode aset, nama pelapor...">
             </label>
             <label>Kategori Aset
                 <select name="category">
@@ -658,17 +666,18 @@ function handle_route_tickets(PDO $pdo): void
             </div>
         </form>
 
-        <table>
+        <div style="overflow-x:auto;">
+        <table class="data-table">
             <thead>
                 <tr>
                     <th>Tiket & Tanggal</th>
                     <th>Kategori & Prioritas</th>
-                    <th>Maintenance Asset ID</th>
+                    <th>Unit Aset</th>
                     <th>Kendala / Subjek</th>
                     <th>Pelapor & Lokasi</th>
-                    <th>Status & PIC</th>
-                    <th>Biaya (Jasa + Part)</th>
-                    <th>Aksi</th>
+                    <th>Status & Penanganan</th>
+                    <th>Total Biaya</th>
+                    <th style="width:90px; text-align:center;">Aksi</th>
                 </tr>
             </thead>
             <tbody>
@@ -679,16 +688,25 @@ function handle_route_tickets(PDO $pdo): void
                         <?php
                         $assetLabel = '-';
                         if (!empty($t['maintenance_asset_code'])) {
-                            $assetLabel = '<strong>' . e($t['maintenance_asset_code']) . '</strong><br><small class="muted">' . e(mb_strimwidth((string)$t['maintenance_asset_name'], 0, 40, '...')) . '</small>';
+                            $assetLabel = '<strong>' . e($t['maintenance_asset_code']) . '</strong><br><small class="muted">' . e(mb_strimwidth((string)$t['maintenance_asset_name'], 0, 35, '...')) . '</small>';
                         } elseif (!empty($t['pc_id'])) {
-                            $assetLabel = '<strong>PC: ' . e($t['pc_id']) . '</strong>';
+                            $assetLabel = 'PC: <strong>' . e($t['pc_id']) . '</strong>';
                         }
                         $totalCost = (float)$t['total_repair_cost'] + (float)$t['total_part_cost'];
+
+                        $handledDisplay = 'Belum Ditentukan';
+                        if ($t['handled_by_type'] === 'workshop' && !empty($t['handled_workshop_name'])) {
+                            $handledDisplay = '🏢 Bengkel: <strong>' . e($t['handled_workshop_name']) . '</strong>';
+                        } elseif (!empty($t['handled_user_name'])) {
+                            $handledDisplay = '👨‍🔧 Internal: <strong>' . e($t['handled_user_name']) . '</strong>';
+                        } elseif (!empty($t['assigned_technician_name'])) {
+                            $handledDisplay = '👨‍🔧 Internal: <strong>' . e($t['assigned_technician_name']) . '</strong>';
+                        }
                         ?>
                         <tr>
                             <td>
                                 <strong><?= e($t['ticket_code']) ?></strong><br>
-                                <span class="muted"><?= e(date('d M Y H:i', strtotime($t['created_at']))) ?></span>
+                                <span class="muted" style="font-size:12px;"><?= e(date('d M Y H:i', strtotime($t['created_at']))) ?></span>
                             </td>
                             <td>
                                 <?= ticket_category_badge($t['asset_category']) ?><br>
@@ -697,15 +715,15 @@ function handle_route_tickets(PDO $pdo): void
                             <td><?= $assetLabel ?></td>
                             <td>
                                 <strong><?= e($t['subject']) ?></strong><br>
-                                <span class="muted"><?= e(mb_strimwidth((string)$t['description'], 0, 70, '...')) ?></span>
+                                <span class="muted" style="font-size:12px;"><?= e(mb_strimwidth((string)$t['description'], 0, 60, '...')) ?></span>
                             </td>
                             <td>
-                                <?= e($t['reporter_name']) ?> <?= $t['reporter_nik'] ? '<span class="muted">(' . e($t['reporter_nik']) . ')</span>' : '' ?><br>
-                                <span class="muted"><?= e($t['location_label'] ?: '-') ?></span>
+                                <strong><?= e($t['reporter_name']) ?></strong> <?= $t['reporter_nik'] ? '<span class="muted">(' . e($t['reporter_nik']) . ')</span>' : '' ?><br>
+                                <span class="muted" style="font-size:12px;"><?= e($t['location_label'] ?: '-') ?></span>
                             </td>
                             <td>
                                 <?= ticket_status_badge($t['status']) ?><br>
-                                <span class="muted">PIC: <?= e($t['assigned_technician_name'] ?: '-') ?></span>
+                                <small class="muted" style="display:block; margin-top:3px;"><?= $handledDisplay ?></small>
                             </td>
                             <td>
                                 <?php if ($totalCost > 0): ?>
@@ -715,14 +733,14 @@ function handle_route_tickets(PDO $pdo): void
                                     <span class="muted">Rp 0</span>
                                 <?php endif; ?>
                             </td>
-                            <td>
-                                <a class="btn" href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>">Detail & Eksekusi</a>
+                            <td style="text-align:center;">
+                                <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Detail Tiket & Penanganan" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
                                 <?php if (has_regulation('tickets', 'delete')): ?>
-                                    <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Hapus tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
+                                    <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Batalkan tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="delete_ticket">
                                         <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
-                                        <button type="submit" class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button>
+                                        <button type="submit" title="Hapus Tiket" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:6px; cursor:pointer; vertical-align:middle;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg></button>
                                     </form>
                                 <?php endif; ?>
                             </td>
@@ -731,11 +749,17 @@ function handle_route_tickets(PDO $pdo): void
                 <?php endif; ?>
             </tbody>
         </table>
+        </div>
+    </section>
     </section>
     <?php
     render_footer();
 }
 
+/**
+ * Modul: Form Input Tiket
+ * Proses: Menangani pembuatan tiket baru oleh user atau admin terkait masalah/kerusakan aset.
+ */
 function handle_route_ticket_form(PDO $pdo): void
 {
     $user = require_regulation('tickets', 'create');
@@ -827,19 +851,60 @@ function handle_route_ticket_form(PDO $pdo): void
             }
         }
 
+        $handledByType = trim((string)($_POST['handled_by_type'] ?? 'internal'));
+        $handledByUserId = (int)($_POST['handled_by_user_id'] ?? 0) ?: null;
+        $handledByWorkshopId = (int)($_POST['handled_by_workshop_id'] ?? 0) ?: null;
+        if ($handledByType !== 'workshop') { $handledByWorkshopId = null; }
+        if ($handledByType !== 'internal') { $handledByUserId = null; }
+
         $stmt = $pdo->prepare("INSERT INTO corrective_tickets (
             ticket_code, asset_category, asset_item_id, maintenance_asset_id, pc_id, company_id, 
             location_label, vehicle_odometer_km, reporter_name, reporter_nik, reporter_contact, 
-            issue_category, priority, subject, description, photo_before, status, assigned_technician_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)");
+            issue_category, priority, subject, description, photo_before, status, assigned_technician_name,
+            handled_by_type, handled_by_user_id, handled_by_workshop_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)");
 
         $stmt->execute([
             $code, $assetCat, $assetItemId, $maintAssetId, $pcId, $companyId,
             $location, $odometer, $reporterName, $reporterNik, $reporterContact,
             $issueCat, $priority, $subject, $desc, $photoBefore,
-            ($user['role'] === 'technician' ? $user['name'] : null)
+            ($user['role'] === 'technician' ? $user['name'] : null),
+            $handledByType, $handledByUserId, $handledByWorkshopId
         ]);
         $ticketId = (int)$pdo->lastInsertId();
+
+        // Save requested actions
+        if (!empty($_POST['requested_actions']) && is_array($_POST['requested_actions'])) {
+            $actStmt = $pdo->prepare("INSERT INTO corrective_ticket_actions (ticket_id, job_action_id, action_title) VALUES (?, ?, ?)");
+            foreach ($_POST['requested_actions'] as $actId) {
+                $aRow = $pdo->query("SELECT action_name AS action_title FROM corrective_action_types WHERE id = " . (int)$actId)->fetch();
+                if ($aRow) {
+                    $actStmt->execute([$ticketId, (int)$actId, $aRow['action_title']]);
+                }
+            }
+        }
+
+        // Save repair cost, solution details, & spareparts if provided
+        $repairCost = (float)($_POST['repair_cost'] ?? 0);
+        $solutionDetails = trim((string)($_POST['solution_details'] ?? ''));
+        $partNewName = trim((string)($_POST['part_new_name'] ?? ''));
+        $partNewSerial = trim((string)($_POST['part_new_serial'] ?? ''));
+        $partCost = (float)($_POST['part_cost'] ?? 0);
+
+        if ($repairCost > 0 || $solutionDetails !== '' || $partNewName !== '') {
+            $repStmt = $pdo->prepare("INSERT INTO corrective_repairs (
+                ticket_id, technician_name, action_type, solution_details, repair_cost
+            ) VALUES (?, ?, 'corrective', ?, ?)");
+            $repStmt->execute([
+                $ticketId, $user['name'], $solutionDetails ?: 'Pekerjaan perbaikan saat tiket dibuat.', $repairCost
+            ]);
+            $repairId = (int)$pdo->lastInsertId();
+
+            if ($partNewName !== '') {
+                $pdo->prepare("INSERT INTO corrective_repair_parts (repair_id, new_part_name, new_part_serial, part_cost) VALUES (?, ?, ?, ?)")
+                    ->execute([$repairId, $partNewName, $partNewSerial ?: null, $partCost]);
+            }
+        }
 
         flash("Tiket baru {$code} berhasil dibuat.");
         redirect_to('ticket_detail', ['id' => $ticketId]);
@@ -858,48 +923,129 @@ function handle_route_ticket_form(PDO $pdo): void
     ?>
     <section class="panel">
         <h1>Buat Tiket Kendala / Reparasi Baru</h1>
-        <p class="muted">Pilih <strong>Unit Aset</strong> yang bermasalah. Untuk unit bundling, cukup pilih unit Induk Bundle atau anggota terkait.</p>
+        <p class="muted">Pilih Unit Aset yang bermasalah. Untuk unit bundling, cukup pilih unit Induk Bundle atau anggota terkait.</p>
 
         <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 
-            <h2>1. Identitas Unit Aset</h2>
-            <div class="grid two">
-                <label>Unit Aset *
-                    <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()">
-                        <option value="">-- Pilih Unit Aset --</option>
-                        <?php foreach ($maintList as $m): ?>
-                            <?php
-                            $sel = ($preMntId === (int)$m['id']) ? 'selected' : '';
-                            $cat = 'IT';
-                            $grp = strtoupper((string)($m['group_code'] ?? ''));
-                            if ($grp === 'VH') {
-                                $cat = 'Vehicle';
-                            } elseif (in_array($grp, ['FC', 'BLD', 'FCL'], true)) {
-                                $cat = 'Facility';
-                            }
-                            $mMode = (string)($m['asset_mode'] ?? 'standalone');
-                            $badge = ($mMode === 'group') ? '[📦 INDUK BUNDLE] ' : (($mMode === 'child') ? '[🔗 ANGGOTA] ' : '');
-                            $desc = $badge . $m['asset_code'] . ' - ' . $m['asset_name'] . ($m['custodian_name'] ? ' (' . $m['custodian_name'] . ')' : '');
-                            ?>
-                            <option value="<?= (int)$m['id'] ?>" data-cat="<?= e($cat) ?>" data-loc="<?= e($m['location_label'] ?? '') ?>" data-user="<?= e($m['custodian_name'] ?? '') ?>" data-nik="<?= e($m['custodian_nik'] ?? '') ?>" <?= $sel ?>>
-                                <?= e($desc) ?>
-                            </option>
+            <?php
+            // Ambil master Komoditas (Asset Groups)
+            $groupList = $pdo->query("SELECT id, group_code, group_name FROM asset_groups WHERE is_active=1 ORDER BY group_name")->fetchAll();
+            ?>
+            <h2>1. Identitas Unit Aset & Tindakan</h2>
+            <div class="grid three">
+                <label>Komoditas *
+                    <select id="dynGroupId" required onchange="onDynGroupChange()">
+                        <option value="">-- Pilih Komoditas --</option>
+                        <?php foreach ($groupList as $g): ?>
+                            <option value="<?= $g['id'] ?>"><?= e($g['group_code'] . ' - ' . $g['group_name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>Lokasi / Gedung / Ruangan
-                    <input name="location_label" id="locInput" placeholder="Contoh: Gedung A Lantai 2 / Ruang IT">
+                <label>Kategori *
+                    <select id="dynTypeId" required onchange="onDynTypeChange()">
+                        <option value="">-- Pilih Komoditas Dulu --</option>
+                    </select>
+                </label>
+                <label>Unit Aset *
+                    <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()">
+                        <option value="">-- Pilih Kategori Dulu --</option>
+                    </select>
                 </label>
             </div>
-
-            <div id="vehicleKmWrapper" style="display:none;" class="grid two">
-                <label>Kilometer / Odometer Kendaraan (KM)
+            <div id="vehicleKmWrapper" style="display:none; margin-top:12px;">
+                <label>Kilometer Kendaraan (KM)
                     <input type="number" name="vehicle_odometer_km" placeholder="Contoh: 45200">
                 </label>
             </div>
 
-            <h2>2. Informasi Pelapor</h2>
+            <?php
+            // List mekanik internal & workshop
+            $mechanics = $pdo->query("SELECT id, name FROM users WHERE role='corrective_maintenance' AND is_active=1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+            $workshops = $pdo->query("SELECT id, workshop_name FROM corrective_workshops ORDER BY workshop_name")->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <h2>2. Penanganan Oleh</h2>
+            <div style="background:#fff; border:1px solid #e2e8f0; padding:15px; border-radius:6px; margin-bottom:20px;">
+                <div style="display:flex; gap:20px; margin-bottom:15px;">
+                    <label style="font-weight:normal; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                        <input type="radio" name="handled_by_type" value="internal" checked onclick="toggleHandledBy()">
+                        <strong>Internal (Mekanik)</strong>
+                    </label>
+                    <label style="font-weight:normal; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                        <input type="radio" name="handled_by_type" value="workshop" onclick="toggleHandledBy()">
+                        <strong>Bengkel / Workshop</strong>
+                    </label>
+                </div>
+                
+                <div id="handledInternalWrap">
+                    <label>Pilih Mekanik Internal
+                        <select name="handled_by_user_id">
+                            <option value="">-- Belum Ditentukan --</option>
+                            <?php foreach ($mechanics as $mec): ?>
+                                <option value="<?= $mec['id'] ?>"><?= e($mec['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </div>
+
+                <div id="handledWorkshopWrap" style="display:none;">
+                    <label>Pilih Bengkel / Workshop
+                        <select name="handled_by_workshop_id" style="width:100%;">
+                            <option value="">-- Pilih Bengkel --</option>
+                            <?php foreach ($workshops as $wks): ?>
+                                <option value="<?= $wks['id'] ?>"><?= e($wks['workshop_name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <?php
+            $allActions = $pdo->query("SELECT id, action_name AS action_title FROM corrective_action_types ORDER BY action_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <h2>3. Daftar Tindakan & Catatan Perbaikan</h2>
+            <div id="actionListWrapper" style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
+                <h3 style="margin-top:0;font-size:15px;color:#0369a1;">Daftar Tindakan / Pekerjaan Perbaikan: <span id="jdNameSpan" style="color:#0ea5e9;">Semua Opsi (Pilih Kategori untuk Menyaring)</span></h3>
+                <div id="dynamicActionRows">
+                    <div class="action-row" style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
+                        <select name="requested_actions[]" style="flex:1;">
+                            <option value="">-- Pilih Tindakan (Ketik untuk mencari) --</option>
+                            <?php foreach ($allActions as $a): ?>
+                                <option value="<?= (int)$a['id'] ?>"><?= e($a['action_title']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button type="button" class="btn danger" onclick="if(document.querySelectorAll('#dynamicActionRows .action-row').length > 1) { this.parentElement.remove(); } else { this.previousElementSibling.value = ''; }" style="padding:8px 12px;" title="Hapus">X</button>
+                    </div>
+                </div>
+                <button type="button" class="btn secondary" onclick="addDynamicAction()" style="font-size:13px; padding:6px 12px; margin-top:5px;">+ Tambah Tindakan Lain</button>
+            </div>
+
+            <div style="background:#fff; border:1px solid #e2e8f0; padding:15px; border-radius:6px; margin-bottom:20px;">
+                <h3 style="margin-top:0;font-size:14px;color:#334155;">💰 Biaya Service, Catatan Sparepart & Catatan Kerja (Opsional)</h3>
+                <div class="grid two" style="margin-bottom:12px;">
+                    <label>Biaya Service / Jasa (Rp)
+                        <input type="number" name="repair_cost" value="0" placeholder="0">
+                    </label>
+                    <label>Biaya Sparepart (Rp)
+                        <input type="number" name="part_cost" value="0" placeholder="0">
+                    </label>
+                </div>
+
+                <div class="grid two" style="margin-bottom:12px;">
+                    <label>Nama Sparepart Baru
+                        <input name="part_new_name" placeholder="Misal: RAM 8GB DDR4 / Ban Bridgestone / Aki GS">
+                    </label>
+                    <label>Serial Number / Spesifikasi Part
+                        <input name="part_new_serial" placeholder="Misal: SN12345 / 195/65 R15">
+                    </label>
+                </div>
+
+                <label>Catatan Kerja Lainnya
+                    <textarea name="solution_details" style="min-height:70px;" placeholder="Catatan perbaikan tambahan, tindakan penanganan teknisi, atau instruksi khusus..."></textarea>
+                </label>
+            </div>
+
+            <h2>4. Informasi Pelapor</h2>
             <div class="grid three">
                 <label>Nama Pelapor *
                     <input name="reporter_name" id="reporterName" value="<?= e($user['name'] ?? '') ?>" required placeholder="Nama pemakai / PIC">
@@ -913,7 +1059,22 @@ function handle_route_ticket_form(PDO $pdo): void
             </div>
             <?= function_exists('employee_portal_name_picker_html') ? employee_portal_name_picker_html('ticketReporter', 'reporterName', 'reporterNik') : '' ?>
 
-            <h2>3. Rincian Masalah & Foto Bukti</h2>
+            <h2>5. Rincian Masalah & Foto Bukti</h2>
+            <?php
+            // Master Lokasi dari database
+            $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <div id="locationFieldWrapper" style="margin-bottom:16px;">
+                <label>Lokasi / Gedung / Ruangan (Khusus Penanganan Internal)
+                    <select name="location_label" id="locInput">
+                        <option value="">-- Pilih Lokasi dari Database --</option>
+                        <?php foreach ($locationsList as $loc): ?>
+                            <option value="<?= e($loc['location_name']) ?>"><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
+
             <div class="grid three">
                 <label>Kategori Masalah
                     <select name="issue_category" id="ticketIssueCat">
@@ -957,29 +1118,191 @@ function handle_route_ticket_form(PDO $pdo): void
     </section>
 
     <script>
+    function toggleHandledBy() {
+        var rad = document.querySelector('input[name="handled_by_type"]:checked');
+        var type = rad ? rad.value : 'internal';
+        var locWrap = document.getElementById('locationFieldWrapper');
+        if (type === 'internal') {
+            document.getElementById('handledInternalWrap').style.display = 'block';
+            document.getElementById('handledWorkshopWrap').style.display = 'none';
+            if (locWrap) locWrap.style.display = 'block';
+        } else {
+            document.getElementById('handledInternalWrap').style.display = 'none';
+            document.getElementById('handledWorkshopWrap').style.display = 'block';
+            if (locWrap) locWrap.style.display = 'none';
+        }
+    }
+
+    // Call on initial load
+    toggleHandledBy();
+
+    async function onDynGroupChange() {
+        var gid = document.getElementById('dynGroupId').value;
+        var tSel = document.getElementById('dynTypeId');
+        var aSel = document.getElementById('maintAssetSelect');
+        var jdSpan = document.getElementById('jdNameSpan');
+        
+        tSel.innerHTML = '<option value="">-- Loading Kategori... --</option>';
+        aSel.innerHTML = '<option value="">-- Pilih Kategori Dulu --</option>';
+        if (jdSpan) jdSpan.textContent = 'Semua Opsi (Pilih Kategori untuk Menyaring)';
+
+        if (!gid) {
+            tSel.innerHTML = '<option value="">-- Pilih Komoditas Dulu --</option>';
+            return;
+        }
+
+        try {
+            let res = await fetch('index.php?route=api_corrective_data&action=get_types&group_id=' + gid);
+            let types = await res.json();
+            
+            tSel.innerHTML = '<option value="">-- Pilih Kategori --</option>';
+            if (Array.isArray(types) && types.length > 0) {
+                types.forEach(function(t) {
+                    let opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = (t.type_code ? t.type_code + ' - ' : '') + t.type_name;
+                    tSel.appendChild(opt);
+                });
+            } else {
+                tSel.innerHTML = '<option value="">-- Tidak Ada Kategori --</option>';
+            }
+        } catch (e) {
+            console.error(e);
+            tSel.innerHTML = '<option value="">-- Gagal Memuat Kategori --</option>';
+        }
+    }
+
+    async function onDynTypeChange() {
+        var gid = document.getElementById('dynGroupId').value;
+        var tid = document.getElementById('dynTypeId').value;
+        var aSel = document.getElementById('maintAssetSelect');
+        var jdSpan = document.getElementById('jdNameSpan');
+        var actCheckboxes = document.getElementById('actionCheckboxes');
+
+        aSel.innerHTML = '<option value="">-- Loading Unit Aset... --</option>';
+
+        if (!gid || !tid) {
+            aSel.innerHTML = '<option value="">-- Pilih Kategori Dulu --</option>';
+            return;
+        }
+
+        try {
+            // Load Assets
+            let res = await fetch('index.php?route=api_corrective_data&action=get_assets&group_id=' + gid + '&type_id=' + tid);
+            let assets = await res.json();
+
+            aSel.innerHTML = '<option value="">-- Pilih Unit Aset --</option>';
+            if (Array.isArray(assets) && assets.length > 0) {
+                assets.forEach(function(m) {
+                    let badge = (m.asset_mode === 'group') ? '[📦 INDUK BUNDLE] ' : ((m.asset_mode === 'child') ? '[🔗 ANGGOTA] ' : '');
+                    let desc = badge + m.asset_code + ' - ' + m.asset_name + (m.custodian_name ? ' (' + m.custodian_name + ')' : '');
+                    let opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.setAttribute('data-loc', m.location_label || '');
+                    opt.setAttribute('data-user', m.custodian_name || '');
+                    opt.textContent = desc;
+                    aSel.appendChild(opt);
+                });
+            } else {
+                aSel.innerHTML = '<option value="">-- Tidak ada aset pada kategori ini --</option>';
+            }
+
+            // Load Actions
+            let resAct = await fetch('index.php?route=api_corrective_data&action=get_actions&group_id=' + gid + '&type_id=' + tid);
+            let actionsData = await resAct.json();
+            
+            if (actionsData && actionsData.actions && actionsData.actions.length > 0) {
+                if (jdSpan) jdSpan.textContent = actionsData.desk_name || 'Tindakan Kategori Ini';
+                
+                window.currentActionOptions = '<option value="">-- Pilih Tindakan (Ketik untuk mencari) --</option>';
+                actionsData.actions.forEach(function(a) {
+                    window.currentActionOptions += '<option value="'+a.id+'">'+a.action_title+'</option>';
+                });
+                
+                var selects = document.querySelectorAll('#dynamicActionRows select[name="requested_actions[]"]');
+                selects.forEach(function(sel) {
+                    var currentVal = sel.value;
+                    sel.innerHTML = window.currentActionOptions;
+                    var opt = sel.querySelector('option[value="'+currentVal+'"]');
+                    if(opt) {
+                        sel.value = currentVal;
+                    } else {
+                        sel.value = '';
+                    }
+                });
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
     function onMaintAssetChange() {
         var sel = document.getElementById('maintAssetSelect');
         var opt = sel.options[sel.selectedIndex];
-        var cat = opt ? opt.getAttribute('data-cat') : '';
         var loc = opt ? opt.getAttribute('data-loc') : '';
         var kmWrap = document.getElementById('vehicleKmWrapper');
         var locInput = document.getElementById('locInput');
 
-        if (loc && !locInput.value) {
+        if (loc && locInput && !locInput.value) {
             locInput.value = loc;
         }
-        if (cat === 'Vehicle') {
-            kmWrap.style.display = 'block';
-        } else {
-            kmWrap.style.display = 'none';
+        var dynGroupSel = document.getElementById('dynGroupId');
+        var groupText = (dynGroupSel && dynGroupSel.options[dynGroupSel.selectedIndex]) ? dynGroupSel.options[dynGroupSel.selectedIndex].text.toUpperCase() : '';
+        if (kmWrap) {
+            if (groupText.includes('VH -') || groupText.includes('VEHICLE')) {
+                kmWrap.style.display = 'block';
+            } else {
+                kmWrap.style.display = 'none';
+            }
         }
     }
-    onMaintAssetChange();
+
+    // Initialize global options from the first load
+    window.currentActionOptions = document.querySelector('#dynamicActionRows select') ? document.querySelector('#dynamicActionRows select').innerHTML : '';
+
+    function addDynamicAction() {
+        var container = document.getElementById('dynamicActionRows');
+        if (!container) return;
+        
+        var div = document.createElement('div');
+        div.className = 'action-row';
+        div.style.display = 'flex';
+        div.style.gap = '10px';
+        div.style.marginBottom = '10px';
+        div.style.alignItems = 'center';
+        
+        var sel = document.createElement('select');
+        sel.name = 'requested_actions[]';
+        sel.style.flex = '1';
+        sel.innerHTML = window.currentActionOptions;
+        
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn danger';
+        btn.style.padding = '8px 12px';
+        btn.title = 'Hapus';
+        btn.textContent = 'X';
+        btn.onclick = function() {
+            if(document.querySelectorAll('#dynamicActionRows .action-row').length > 1) {
+                div.remove();
+            } else {
+                sel.value = '';
+            }
+        };
+        
+        div.appendChild(sel);
+        div.appendChild(btn);
+        container.appendChild(div);
+    }
     </script>
     <?php
     render_footer();
 }
 
+/**
+ * Modul: Detail Tiket
+ * Proses: Menampilkan rincian lengkap suatu tiket, riwayat penanganan, dan komentar antar teknisi/user.
+ */
 function handle_route_ticket_detail(PDO $pdo): void
 {
     $user = require_regulation('tickets', 'view');
@@ -1031,7 +1354,7 @@ function handle_route_ticket_detail(PDO $pdo): void
         <div class="split">
             <div>
                 <h1>Tiket #<?= e($ticket['ticket_code']) ?></h1>
-                <p class="muted">Dibuat pada <?= e(date('d M Y H:i:s', strtotime($ticket['created_at']))) ?> oleh <strong><?= e($ticket['reporter_name']) ?></strong></p>
+                <p class="muted">Dibuat pada <?= e(date('d M Y H:i:s', strtotime($ticket['created_at']))) ?> oleh <?= e($ticket['reporter_name']) ?></p>
             </div>
             <div class="actions">
                 <a class="btn" href="<?= route_url('tickets') ?>">← Kembali ke Daftar</a>
@@ -1050,26 +1373,26 @@ function handle_route_ticket_detail(PDO $pdo): void
             <div class="mini-card" style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e2e8f0">
                 <h3 style="margin-top:0;">Informasi Tiket & Maintenance Asset</h3>
                 <table>
-                    <tr><th style="width:160px;">No. Maintenance Asset</th><td><strong style="color:#0284c7;"><?= e($ticket['maintenance_asset_code'] ?: ($ticket['pc_id'] ? 'PC ' . $ticket['pc_id'] : '-')) ?></strong></td></tr>
+                    <tr><th style="width:160px;">No. Maintenance Asset</th><td><strong style="color:#0284c7;"><?= e($ticket['maintenance_asset_code'] ?: ($ticket['pc_id'] ? 'PC ' . $ticket['pc_id'] : '-')) ?></td></tr>
                     <tr><th>Nama Unit</th><td><?= e($ticket['maintenance_asset_name'] ?: '-') ?></td></tr>
                     <tr><th>Kategori Aset</th><td><?= ticket_category_badge($ticket['asset_category']) ?></td></tr>
                     <tr><th>Prioritas</th><td><?= ticket_priority_badge($ticket['priority']) ?></td></tr>
                     <tr><th>Status</th><td><?= ticket_status_badge($ticket['status']) ?></td></tr>
                     <?php if ($ticket['vehicle_odometer_km']): ?>
-                        <tr><th>KM Kendaraan</th><td><strong><?= number_format((int)$ticket['vehicle_odometer_km'], 0, ',', '.') ?> KM</strong></td></tr>
+                        <tr><th>KM Kendaraan</th><td><?= number_format((int)$ticket['vehicle_odometer_km'], 0, ',', '.') ?> KM</td></tr>
                     <?php endif; ?>
                     <tr><th>Company / Lokasi</th><td><?= e($ticket['company_name'] ?: '-') ?> / <?= e($ticket['location_label'] ?: '-') ?></td></tr>
                     <tr><th>Pelapor</th><td><?= e($ticket['reporter_name']) ?> <?= $ticket['reporter_nik'] ? '(' . e($ticket['reporter_nik']) . ')' : '' ?> <?= $ticket['reporter_contact'] ? ' - Telp: ' . e($ticket['reporter_contact']) : '' ?></td></tr>
-                    <tr><th>Teknisi PIC</th><td><strong><?= e($ticket['assigned_technician_name'] ?: 'Belum ditentukan') ?></strong></td></tr>
+                    <tr><th>Teknisi PIC</th><td><?= e($ticket['assigned_technician_name'] ?: 'Belum ditentukan') ?></td></tr>
                 </table>
             </div>
 
             <div class="mini-card" style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e2e8f0">
                 <h3 style="margin-top:0;">Detail Keluhan & Foto</h3>
-                <p><strong>Subjek:</strong> <?= e($ticket['subject']) ?></p>
-                <p><strong>Deskripsi Masalah:</strong><br><?= nl2br(e($ticket['description'] ?: '-')) ?></p>
+                <p>Subjek: <?= e($ticket['subject']) ?></p>
+                <p>Deskripsi Masalah:<br><?= nl2br(e($ticket['description'] ?: '-')) ?></p>
                 <?php if ($ticket['photo_before']): ?>
-                    <p><strong>Foto Kondisi Awal:</strong></p>
+                    <p>Foto Kondisi Awal:</p>
                     <a href="<?= e($ticket['photo_before']) ?>" target="_blank">
                         <img src="<?= e($ticket['photo_before']) ?>" style="max-width:240px;max-height:160px;border-radius:6px;border:1px solid #cbd5e1;display:block;">
                     </a>
@@ -1166,7 +1489,7 @@ function handle_route_ticket_detail(PDO $pdo): void
                 <div style="border-left:4px solid #0f766e;padding:12px 16px;background:#f8fafc;margin-bottom:16px;border-radius:0 8px 8px 0;border-top:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
                     <div class="split">
                         <div>
-                            <strong><?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?></strong> oleh <strong><?= e($r['technician_name']) ?></strong>
+                            <?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?> oleh <?= e($r['technician_name']) ?>
                             <span class="badge ok" style="margin-left:8px;"><?= e($r['action_type']) ?></span>
                         </div>
                         <?php if ((float)$r['repair_cost'] > 0): ?>
@@ -1175,22 +1498,22 @@ function handle_route_ticket_detail(PDO $pdo): void
                     </div>
 
                     <?php if ($r['root_cause_analysis']): ?>
-                        <p style="margin:8px 0 4px;"><strong>Penyebab:</strong> <?= nl2br(e($r['root_cause_analysis'])) ?></p>
+                        <p style="margin:8px 0 4px;">Penyebab: <?= nl2br(e($r['root_cause_analysis'])) ?></p>
                     <?php endif; ?>
-                    <p style="margin:4px 0;"><strong>Solusi:</strong> <?= nl2br(e($r['solution_details'])) ?></p>
+                    <p style="margin:4px 0;">Solusi: <?= nl2br(e($r['solution_details'])) ?></p>
 
                     <?php if (!empty($partsByRepair[(int)$r['id']])): ?>
                         <div style="margin-top:10px;background:#fff;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;">
-                            <strong>Sparepart yang Diganti:</strong>
+                            Sparepart yang Diganti:
                             <ul style="margin:4px 0 0 18px;padding:0;">
                                 <?php foreach ($partsByRepair[(int)$r['id']] as $pRow): ?>
                                     <li>
-                                        <strong><?= e($pRow['new_part_name']) ?></strong> (SN: <?= e($pRow['new_part_serial'] ?: '-') ?>)
+                                        <?= e($pRow['new_part_name']) ?> (SN: <?= e($pRow['new_part_serial'] ?: '-') ?>)
                                         <?php if ($pRow['old_part_name']): ?>
                                             - Menggantikan: <em><?= e($pRow['old_part_name']) ?></em>
                                         <?php endif; ?>
                                         <?php if ((float)$pRow['part_cost'] > 0): ?>
-                                            - Biaya: <strong>Rp <?= number_format((float)$pRow['part_cost'], 0, ',', '.') ?></strong>
+                                            - Biaya: Rp <?= number_format((float)$pRow['part_cost'], 0, ',', '.') ?>
                                         <?php endif; ?>
                                     </li>
                                 <?php endforeach; ?>
@@ -1213,6 +1536,10 @@ function handle_route_ticket_detail(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Aksi / Update Tiket
+ * Proses: Memperbarui status tiket (In Progress, Resolved, Closed) dan menambahkan catatan penanganan (Action Log).
+ */
 function handle_route_ticket_action(PDO $pdo): void
 {
     $user = require_role(['admin', 'corrective_maintenance', 'technician']);
@@ -1294,6 +1621,10 @@ function handle_route_ticket_action(PDO $pdo): void
     redirect_to('ticket_detail', ['id' => $ticketId]);
 }
 
+/**
+ * Modul: Laporan Perbaikan Korektif
+ * Proses: Menampilkan riwayat atau rekap tindakan perbaikan (Corrective Repairs) yang telah dilakukan dari tiket.
+ */
 function handle_route_corrective_repairs(PDO $pdo): void
 {
     $user = require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance']);
@@ -1343,16 +1674,16 @@ function handle_route_corrective_repairs(PDO $pdo): void
                         ?>
                         <tr>
                             <td>
-                                <strong><?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?></strong><br>
+                                <?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?><br>
                                 <a href="<?= route_url('ticket_detail', ['id' => $r['ticket_id']]) ?>" style="color:#0284c7;font-weight:600;"><?= e($r['ticket_code']) ?></a>
                             </td>
                             <td>
                                 <?= ticket_category_badge($r['asset_category']) ?><br>
-                                <strong><?= e($r['maintenance_asset_code'] ?: '-') ?></strong><br>
+                                <?= e($r['maintenance_asset_code'] ?: '-') ?><br>
                                 <small class="muted"><?= e(mb_strimwidth((string)$r['maintenance_asset_name'], 0, 35, '...')) ?></small>
                             </td>
                             <td>
-                                <strong><?= e($r['technician_name']) ?></strong><br>
+                                <?= e($r['technician_name']) ?><br>
                                 <?= $r['vendor_name'] ? '<span class="muted">Vendor: ' . e($r['vendor_name']) . '</span>' : '' ?>
                             </td>
                             <td>
@@ -1364,12 +1695,12 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                     <span class="muted">-</span>
                                 <?php else: ?>
                                     <?php foreach ($parts as $p): ?>
-                                        • <strong><?= e($p['new_part_name']) ?></strong> (Rp <?= number_format((float)$p['part_cost'], 0, ',', '.') ?>)<br>
+                                        • <?= e($p['new_part_name']) ?> (Rp <?= number_format((float)$p['part_cost'], 0, ',', '.') ?>)<br>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <strong>Rp <?= number_format((float)$r['repair_cost'], 0, ',', '.') ?></strong>
+                                Rp <?= number_format((float)$r['repair_cost'], 0, ',', '.') ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1381,6 +1712,10 @@ function handle_route_corrective_repairs(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Daftar Walkaround
+ * Proses: Menampilkan log pemantauan keliling (Walkaround) yang dilakukan teknisi tanpa adanya tiket resmi.
+ */
 function handle_route_walkarounds(PDO $pdo): void
 {
     $user = require_regulation('walkarounds', 'view');
@@ -1432,24 +1767,22 @@ function handle_route_walkarounds(PDO $pdo): void
                     <th>Kondisi Fisik</th>
                     <th>Catatan Temuan</th>
                     <th>Tiket Masalah</th>
-                    <?php if (has_regulation('walkarounds', 'delete')): ?>
-                        <th>Aksi</th>
-                    <?php endif; ?>
+                    <th>Aksi</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="<?= has_regulation('walkarounds', 'delete') ? 7 : 6 ?>" class="muted" style="text-align:center;padding:24px;">Belum ada log walkaround.</td></tr>
+                    <tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Belum ada log walkaround.</td></tr>
                 <?php else: ?>
                     <?php foreach ($rows as $w): ?>
                         <tr>
                             <td>
-                                <strong><?= e($w['walkaround_code']) ?></strong><br>
+                                <?= e($w['walkaround_code']) ?><br>
                                 <span class="muted"><?= e($w['inspection_date']) ?></span>
                             </td>
                             <td><?= e($w['inspector_name']) ?></td>
                             <td>
-                                <strong><?= e($w['maintenance_asset_code'] ?: '-') ?></strong><br>
+                                <?= e($w['maintenance_asset_code'] ?: '-') ?><br>
                                 <small class="muted"><?= e(mb_strimwidth((string)$w['maintenance_asset_name'], 0, 35, '...')) ?></small>
                             </td>
                             <td>
@@ -1469,16 +1802,17 @@ function handle_route_walkarounds(PDO $pdo): void
                                     <span class="muted">-</span>
                                 <?php endif; ?>
                             </td>
-                            <?php if (has_regulation('walkarounds', 'delete')): ?>
-                                <td>
-                                    <form method="post" style="display:inline" onsubmit="return confirm('Hapus riwayat walkaround ini?')">
+                            <td>
+                                <a href="<?= route_url('walkaround_form', ['id' => $w['id']]) ?>" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
+                                <?php if (has_regulation('walkarounds', 'delete')): ?>
+                                    <form method="post" style="display:inline" onsubmit="return confirm('Batalkan riwayat walkaround ini?')">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="action" value="delete_walkaround">
                                         <input type="hidden" name="walkaround_id" value="<?= (int)$w['id'] ?>">
-                                        <button class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button>
+                                        <button type="submit" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:6px; cursor:pointer; vertical-align:middle;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg></button>
                                     </form>
-                                </td>
-                            <?php endif; ?>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -1489,6 +1823,10 @@ function handle_route_walkarounds(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Form Walkaround
+ * Proses: Menangani pencatatan hasil temuan masalah saat teknisi melakukan inspeksi keliling.
+ */
 function handle_route_walkaround_form(PDO $pdo): void
 {
     $user = require_regulation('walkarounds', 'create');
@@ -1612,11 +1950,19 @@ function handle_route_walkaround_form(PDO $pdo): void
 // MASTER DATA: JOB DESK CORRECTIVE MAINTENANCE & JENIS TINDAKAN
 // -----------------------------------------------------------------------------
 
+/**
+ * Modul: Master Tipe Tindakan
+ * Proses: Mengelola master data jenis-jenis tindakan (Action Types) perbaikan yang bisa dipilih teknisi.
+ */
 function handle_route_corrective_action_types(PDO $pdo): void
 {
     handle_route_corrective_job_desks($pdo);
 }
 
+/**
+ * Modul: Master Job Desk
+ * Proses: Mengelola master deskripsi pekerjaan dan alokasi tim teknisi penanganan masalah.
+ */
 function handle_route_corrective_job_desks(PDO $pdo): void
 {
     $user = require_regulation('corrective_job_desks', 'view');
@@ -2061,7 +2407,7 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             $trBg = $isActive ? ' style="background:#eff6ff;"' : '';
             echo '<tr' . $trBg . '>'
                 . '<td><span class="badge" style="font-weight:700;">#' . $dId . '</span></td>'
-                . '<td><strong>' . e($dName) . '</strong>' . ($isActive ? ' <span class="badge ok" style="font-size:10px;">Aktif Dikelola</span>' : '') . '</td>'
+                . '<td>' . e($dName) . '' . ($isActive ? ' <span class="badge ok" style="font-size:10px;">Aktif Dikelola</span>' : '') . '</td>'
                 . '<td><span style="font-weight:600;">' . e($grpLabel) . '</span><br><span class="muted" style="font-size:12px;">' . e($typLabel) . '</span></td>'
                 . '<td><span class="badge">' . (int)$d['action_count'] . ' tindakan</span><br><span class="muted" style="font-size:11px;">~' . (int)$d['total_minutes'] . ' mnt</span></td>'
                 . '<td>' . $usageBadge . '</td>'
@@ -2143,7 +2489,7 @@ function handle_route_corrective_job_desks(PDO $pdo): void
                 ? '<form method="post" style="margin-top:12px;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="copy_default_actions"><input type="hidden" name="manage_desk_id" value="' . $actId . '"><button class="btn primary" style="font-size:13px;">📥 Salin 6 Tindakan Standar dari IT Comp</button></form>'
                 : '';
             echo '<div style="text-align:center;padding:32px 16px;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;">'
-                . '<p class="muted" style="margin:0 0 8px 0;">Belum ada tindakan perbaikan untuk Job Desk <strong>' . e($actName) . '</strong>.</p>'
+                . '<p class="muted" style="margin:0 0 8px 0;">Belum ada tindakan perbaikan untuk Job Desk ' . e($actName) . '.</p>'
                 . '<p class="muted" style="font-size:12px;margin:0;">' . ($canCreateDesk ? ('Silakan tambahkan pada form di samping' . ($copyEmptyBtn ? ' atau klik tombol di bawah untuk menyalin tindakan standar:' : '.')) : 'Belum ada tindakan yang terdaftar.') . '</p>'
                 . $copyEmptyBtn
                 . '</div>';
@@ -2186,7 +2532,7 @@ function handle_route_corrective_job_desks(PDO $pdo): void
                 echo '<tr' . (!$isAct ? ' style="opacity:0.6;background:#f8fafc;"' : '') . '>'
                     . '<td>' . $no++ . '</td>'
                     . '<td>'
-                    . '<strong style="font-size:14px;">' . e($act['action_name']) . '</strong><br>'
+                    . '<strong style="font-size:14px;">' . e($act['action_name']) . '<br>'
                     . '<code style="font-size:11px;color:#64748b;">' . e($act['action_code']) . '</code>'
                     . (!empty($act['description']) ? ('<br><span class="muted" style="font-size:12px;">' . e($act['description']) . '</span>') : '')
                     . '</td>'
@@ -2257,3 +2603,140 @@ function handle_route_corrective_job_desks(PDO $pdo): void
     render_footer();
 }
 
+
+
+/**
+ * Modul: Bengkel / Workshop Master
+ * Proses: Menampilkan daftar bengkel/workshop.
+ */
+function handle_route_corrective_workshops(PDO $pdo): void
+{
+    $user = require_regulation('corrective_admin', 'view');
+    ensure_corrective_maintenance_schema($pdo);
+
+    $stmt = $pdo->query("SELECT * FROM corrective_workshops ORDER BY id DESC");
+    $rows = $stmt->fetchAll();
+
+    render_header('Master Bengkel / Workshop', $user);
+    echo '<section class="panel">';
+    echo '<div class="split"><h1>Master Bengkel / Workshop</h1>';
+    if (has_regulation('corrective_admin', 'create', $user)) {
+        echo '<a class="btn primary" href="' . route_url('corrective_workshop_form') . '">+ Tambah Data Bengkel</a>';
+    }
+    echo '</div>';
+    echo '<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>ID</th><th>Kode</th><th>Nama Bengkel</th><th>Alamat</th><th>Aksi</th></tr></thead><tbody>';
+    if (empty($rows)) {
+        echo '<tr><td colspan="5" class="muted" style="text-align:center;">Belum ada data bengkel / workshop.</td></tr>';
+    } else {
+        foreach ($rows as $r) {
+            echo '<tr><td>' . (int)$r['id'] . '</td><td><code>' . e($r['workshop_code']) . '</code></td><td><strong>' . e($r['workshop_name']) . '</strong></td><td>' . e($r['address'] ?: '-') . '</td><td>';
+            if (has_regulation('corrective_admin', 'update', $user)) {
+                echo '<a class="btn" href="' . route_url('corrective_workshop_form', ['id' => $r['id']]) . '">Edit</a>';
+            }
+            echo '</td></tr>';
+        }
+    }
+    echo '</tbody></table></div></section>';
+    render_footer();
+}
+
+/**
+ * Modul: Bengkel / Workshop Form
+ * Proses: Tambah / Edit bengkel.
+ */
+function handle_route_corrective_workshop_form(PDO $pdo): void
+{
+    ensure_corrective_maintenance_schema($pdo);
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id > 0) {
+        $user = require_regulation('corrective_admin', 'update');
+    } else {
+        $user = require_regulation('corrective_admin', 'create');
+    }
+
+    $row = ['workshop_name' => '', 'address' => ''];
+    if ($id > 0) {
+        $stmt = $pdo->prepare("SELECT * FROM corrective_workshops WHERE id = ?");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch() ?: $row;
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        verify_csrf();
+        $name = trim((string)($_POST['workshop_name'] ?? ''));
+        $address = trim((string)($_POST['address'] ?? ''));
+        if ($name === '') {
+            flash('Nama bengkel harus diisi.', 'err');
+        } else {
+            if ($id > 0) {
+                $pdo->prepare("UPDATE corrective_workshops SET workshop_name = ?, address = ? WHERE id = ?")->execute([$name, $address, $id]);
+                flash("Bengkel berhasil diupdate.");
+                redirect_to('corrective_workshops');
+            } else {
+                // Auto generate code WKS-001
+                $cStmt = $pdo->query("SELECT MAX(CAST(SUBSTRING(workshop_code, 5) AS UNSIGNED)) FROM corrective_workshops");
+                $max = (int)$cStmt->fetchColumn();
+                $code = 'WKS-' . str_pad((string)($max + 1), 3, '0', STR_PAD_LEFT);
+                $pdo->prepare("INSERT INTO corrective_workshops (workshop_code, workshop_name, address) VALUES (?, ?, ?)")->execute([$code, $name, $address]);
+                flash("Bengkel {$code} berhasil ditambahkan.");
+                redirect_to('corrective_workshops');
+            }
+        }
+    }
+
+    render_header($id > 0 ? 'Edit Bengkel' : 'Tambah Bengkel', $user);
+    echo '<section class="panel" style="max-width:600px;"><h1>' . ($id > 0 ? 'Edit' : 'Tambah') . ' Bengkel</h1>';
+    echo '<form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">';
+    echo '<div class="gridOne"><label>Nama Bengkel / Workshop *<input name="workshop_name" required value="' . e($row['workshop_name']) . '" placeholder="Contoh: Bengkel Utama Sejahtera / PT Astra Auto"></label></div>';
+    echo '<div class="gridOne" style="margin-top:12px;"><label>Alamat Bengkel<textarea name="address" style="min-height:80px;" placeholder="Alamat lengkap bengkel / workshop...">' . e($row['address'] ?? '') . '</textarea></label></div>';
+    echo '<div style="margin-top:20px;"><button class="btn primary">Simpan Data Bengkel</button> ';
+    echo '<a class="btn" href="' . route_url('corrective_workshops') . '">Batal</a></div>';
+    echo '</form></section>';
+    render_footer();
+}
+function handle_route_api_corrective_data(PDO $pdo): void
+{
+    require_login();
+    header('Content-Type: application/json');
+    $action = $_GET['action'] ?? '';
+
+    if ($action === 'get_types') {
+        $groupId = (int)($_GET['group_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT id, type_code, type_name FROM asset_types WHERE asset_group_id = ? AND is_active=1 ORDER BY type_name");
+        $stmt->execute([$groupId]);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+
+    if ($action === 'get_assets') {
+        $groupId = (int)($_GET['group_id'] ?? 0);
+        $typeId = (int)($_GET['type_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status <> 'inactive' ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
+        $stmt->execute([$groupId, $typeId]);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+
+    if ($action === 'get_actions') {
+        $groupId = (int)($_GET['group_id'] ?? 0);
+        $typeId = (int)($_GET['type_id'] ?? 0);
+        
+        // Find Job Desk
+        $jdStmt = $pdo->prepare("SELECT id, job_desk_name FROM corrective_job_desks WHERE asset_group_id = ? AND (asset_type_id = ? OR asset_type_id IS NULL OR asset_type_id = 0) ORDER BY CASE WHEN asset_type_id = ? THEN 0 ELSE 1 END, id ASC LIMIT 1");
+        $jdStmt->execute([$groupId, $typeId, $typeId]);
+        $jdRow = $jdStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$jdRow) {
+            echo json_encode(['desk_name' => null, 'actions' => []]);
+            exit;
+        }
+
+        $actStmt = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? ORDER BY action_name");
+        $actStmt->execute([$jdRow['job_desk_name']]);
+        echo json_encode(['desk_name' => $jdRow['job_desk_name'], 'actions' => $actStmt->fetchAll(PDO::FETCH_ASSOC)]);
+        exit;
+    }
+
+    echo json_encode([]);
+    exit;
+}

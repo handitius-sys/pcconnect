@@ -2,6 +2,19 @@
 
 declare(strict_types=1);
 
+/**
+ * Front Controller Utama (index.php)
+ * 
+ * File ini adalah gerbang masuk tunggal (single entry point) dari seluruh aplikasi PcConnect.
+ * Seluruh permintaan HTTP dari browser (termasuk API dan mobile) akan masuk ke sini terlebih dahulu.
+ * 
+ * Proses utama di file ini meliputi:
+ * 1. Pengaturan Error Handling & Waktu (Timezone)
+ * 2. Inisialisasi Sesi (Session)
+ * 3. Lazy-Loading (Memuat file modul spesifik secara dinamis sesuai parameter ?route=...)
+ * 4. Router Utama (Switch-Case) yang memanggil fungsi handle_route_... dari modul yang bersangkutan.
+ */
+
 date_default_timezone_set('Asia/Jakarta');
 
 ini_set('display_errors', '1');
@@ -67,8 +80,8 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
         'app/modules/api.php',
     ];
 } elseif (in_array($route, ['login', 'logout', 'dashboard', 'users', 'technicians'], true)) {
-    // Handled by auth.php directly
-    $modulesToLoad = [];
+    // Failsafe if global require_once missed it
+    $modulesToLoad = ['app/modules/auth.php'];
 } elseif (in_array($route, ['pcs', 'pc_detail', 'pc_form', 'pc_location', 'pc_locations', 'pc_asset_sync', 'download_agent', 'download_runner_cmd', 'upload_analysis'], true)) {
     $modulesToLoad = [
         'app/lib/qr.php',
@@ -84,17 +97,19 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
 } elseif (str_starts_with($route, 'asset_loan') || $route === 'report_asset_loans') {
     $modulesToLoad = [
         'app/lib/qr.php',
+        'app/modules/pc.php',
         'app/modules/asset.php',
         'app/modules/asset_loan.php',
     ];
-} elseif (str_starts_with($route, 'mobile_loan') || $route === 'mobile_asset_loans') {
+} elseif (str_starts_with($route, 'mobile_asset_loan') || str_starts_with($route, 'mobile_loan')) {
     $modulesToLoad = [
         'app/lib/qr.php',
+        'app/modules/pc.php',
         'app/modules/asset.php',
         'app/modules/asset_loan.php',
         'app/modules/mobile_loan.php',
     ];
-} elseif (str_starts_with($route, 'asset_')) {
+} elseif (str_starts_with($route, 'asset_') || str_starts_with($route, 'report_asset_')) {
     $modulesToLoad = [
         'app/lib/qr.php',
         'app/modules/pc.php',
@@ -109,12 +124,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
         'app/modules/maintenance_asset.php',
         'app/modules/maintenance.php',
     ];
-} elseif (in_array($route, ['maintenance_assets', 'maintenance_asset_form', 'maintenance_asset_item_action'], true)) {
-    $modulesToLoad = [
-        'app/modules/asset.php',
-        'app/modules/maintenance_asset.php',
-    ];
-} elseif (in_array($route, ['tickets', 'ticket_form', 'ticket_detail', 'ticket_action', 'walkarounds', 'walkaround_form', 'walkaround_detail', 'corrective_repairs', 'corrective_action_types', 'corrective_job_desks', 'corrective_job_desk_form'], true)) {
+} elseif (in_array($route, ['tickets', 'ticket_form', 'ticket_detail', 'ticket_action', 'corrective_repairs', 'corrective_action_types', 'corrective_job_desks', 'corrective_job_desk_form', 'corrective_workshops', 'corrective_workshop_form'], true)) {
     $modulesToLoad = [
         'app/lib/qr.php',
         'app/modules/asset.php',
@@ -155,6 +165,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
     // Default fallback
     $modulesToLoad = [
         'app/lib/qr.php',
+        'app/modules/auth.php',
         'app/modules/pc.php',
         'app/modules/asset.php',
         'app/modules/maintenance.php',
@@ -196,6 +207,7 @@ switch ($route) {
     // Auth & Users
     // ----------------------------------------------------
     case 'login':
+        require_once dirname(__DIR__) . '/app/modules/auth.php';
         handle_route_login($pdo);
         break;
     case 'logout':
@@ -277,7 +289,7 @@ switch ($route) {
         handle_route_asset_companies($pdo);
         break;
     case 'asset_categories':
-        handle_route_asset_categories($pdo);
+        redirect_to('asset_types');
         break;
     case 'asset_items':
         handle_route_asset_items($pdo);
@@ -303,7 +315,11 @@ switch ($route) {
     case 'asset_repair_form':
         handle_route_asset_repair_form($pdo);
         break;
+    case 'asset_mutations':
+        handle_route_asset_mutations($pdo);
+        break;
     case 'asset_movements':
+    case 'report_asset_mutations':
         handle_route_asset_movements($pdo);
         break;
     case 'asset_loans':
@@ -315,6 +331,9 @@ switch ($route) {
         break;
     case 'asset_loan_detail':
         handle_route_asset_loan_detail($pdo);
+        break;
+    case 'asset_loan_print':
+        handle_route_asset_loan_print($pdo);
         break;
     case 'asset_loan_return':
         handle_route_asset_loan_return($pdo);
@@ -333,6 +352,9 @@ switch ($route) {
         break;
     case 'report_asset_loans':
         handle_route_report_asset_loans($pdo);
+        break;
+    case 'report_asset_items':
+        handle_route_report_asset_items($pdo);
         break;
     case 'asset_management_cleanup':
         handle_route_asset_management_cleanup($pdo);
@@ -356,16 +378,6 @@ switch ($route) {
         break;
     case 'asset_master_items':
         handle_route_asset_master_items($pdo);
-        break;
-
-    // ----------------------------------------------------
-    // Maintenance Assets (Dialihkan langsung ke Unit Aset)
-    // ----------------------------------------------------
-    case 'maintenance_assets':
-    case 'maintenance_asset_form':
-    case 'maintenance_asset_item_action':
-        flash('Entitas Maintenance Asset telah ditiadakan dan diseragamkan langsung ke Unit Aset.', 'ok');
-        redirect_to('asset_items');
         break;
 
     // ----------------------------------------------------
@@ -420,19 +432,19 @@ switch ($route) {
     case 'ticket_action':
         handle_route_ticket_action($pdo);
         break;
-    case 'asset_repairs':
     case 'corrective_repairs':
         handle_route_corrective_repairs($pdo);
         break;
-    case 'walkarounds':
-        handle_route_walkarounds($pdo);
-        break;
-    case 'walkaround_form':
-        handle_route_walkaround_form($pdo);
-        break;
+
     case 'corrective_action_types':
     case 'corrective_job_desks':
         handle_route_corrective_job_desks($pdo);
+        break;
+    case 'corrective_workshops':
+        handle_route_corrective_workshops($pdo);
+        break;
+    case 'corrective_workshop_form':
+        handle_route_corrective_workshop_form($pdo);
         break;
 
     // ----------------------------------------------------
@@ -526,6 +538,9 @@ switch ($route) {
     case 'api_asset_types':
         handle_route_api_asset_types($pdo);
         break;
+    case 'api_assets_by_type':
+        handle_route_api_assets_by_type($pdo);
+        break;
     case 'api_asset_type_config':
         handle_route_api_asset_type_config($pdo);
         break;
@@ -555,6 +570,9 @@ switch ($route) {
         break;
     case 'api_lookup_asset_for_loan':
         handle_route_api_lookup_asset_for_loan($pdo);
+        break;
+    case 'api_corrective_data':
+        handle_route_api_corrective_data($pdo);
         break;
 
     default:

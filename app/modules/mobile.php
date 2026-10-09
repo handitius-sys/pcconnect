@@ -103,6 +103,10 @@ function smart_maintenance_card(array $schedule): string
     return $html;
 }
 
+/**
+ * Modul Mobile PWA: Dashboard
+ * Proses: Menampilkan ringkasan atau antarmuka utama pada aplikasi progresif (PWA) di HP pengguna.
+ */
 function mobile_dashboard(PDO $pdo): void
 {
     $user = require_role(['admin', 'technician']);
@@ -113,11 +117,44 @@ function mobile_dashboard(PDO $pdo): void
     $stmt->execute([$user['id']]);
     $stats = $stmt->fetch();
     $openTotal = (int)($stats['progress'] ?? 0) + (int)($stats['waiting_end_scan'] ?? 0) + (int)($stats['pending'] ?? 0);
-    echo '<section class="panel"><h1>Dashboard</h1><p class="muted">Halo, ' . e($user['name']) . '</p><div class="grid two"><div class="stat"><strong>' . e($openTotal) . '</strong><span>Job Terbuka</span></div><div class="stat"><strong>' . e($stats['done'] ?? 0) . '</strong><span>Done</span></div><div class="stat"><strong>' . e($stats['progress'] ?? 0) . '</strong><span>Progress Checklist</span></div><div class="stat"><strong>' . e($stats['pending'] ?? 0) . '</strong><span>Pending Scan Mulai</span></div></div></section>';
+    
+    $colorIdx = 0;
+    $renderCard = function($number, $label, $iconPath) use (&$colorIdx) {
+        $themes = [
+            ['#eff6ff', '#1e3a8a', '#3b82f6'], // blue
+            ['#f0fdf4', '#14532d', '#22c55e'], // green
+            ['#fffbeb', '#78350f', '#f59e0b'], // yellow
+            ['#f3e8ff', '#581c87', '#a855f7'], // purple
+            ['#fef2f2', '#7f1d1d', '#ef4444'], // red
+        ];
+        $t = $themes[$colorIdx % count($themes)];
+        $colorIdx++;
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 4px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 14px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">'
+             . '<div style="position: absolute; right: -10px; top: -10px; width: 80px; height: 80px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 26px; display: block; margin-bottom: 2px; line-height: 1;">' . e($number) . '</strong>'
+             . '<span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">' . e($label) . '</span>'
+             . '</div></div>';
+    };
+
+    echo '<section class="panel"><h1>Dashboard</h1><p class="muted">Halo, ' . e($user['name']) . '</p>';
+    echo '<div class="grid two">';
+    echo $renderCard($openTotal, 'Job Terbuka', 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'); // clipboard
+    echo $renderCard($stats['done'] ?? 0, 'Done', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'); // check-circle
+    echo $renderCard($stats['progress'] ?? 0, 'Progress', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'); // clock
+    echo $renderCard($stats['pending'] ?? 0, 'Pending', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'); // warning
+    echo '</div></section>';
     echo '<section class="panel"><div class="actions"><a class="btn primary" href="' . route_url('mobile_schedule') . '">List PC Schedule</a><a class="btn" href="' . route_url('logout') . '">Logout</a></div></section>';
     render_mobile_footer();
 }
 
+/**
+ * Modul Mobile PWA: Jadwal
+ * Proses: Menampilkan jadwal maintenance atau penugasan hari ini untuk pengguna di lapangan.
+ */
 function mobile_schedule(PDO $pdo): void
 {
     $user = require_role(['admin', 'technician']);
@@ -175,17 +212,30 @@ function mobile_schedule(PDO $pdo): void
     render_mobile_footer();
 }
 
+/**
+ * Modul Mobile PWA: Scanner
+ * Proses: Mengaktifkan fungsionalitas kamera untuk memindai QR code aset.
+ */
 function mobile_scan(PDO $pdo): void
 {
     $code = strtoupper(trim((string)($_GET['code'] ?? $_POST['code'] ?? '')));
     $eqr = trim((string)($_GET['eqr'] ?? $_POST['eqr'] ?? ''));
+
     if ($eqr !== '' && function_exists('qr_decrypt_payload')) {
         $decrypted = qr_decrypt_payload($eqr);
         if ($decrypted !== null && $decrypted !== '') {
             $code = strtoupper(trim($decrypted));
         }
     }
-    if (str_starts_with($code, 'HTTP://') || str_starts_with($code, 'HTTPS://') || str_contains($code, '?')) {
+
+    if ($code !== '' && function_exists('qr_decrypt_payload')) {
+        $decrypted = qr_decrypt_payload($code);
+        if ($decrypted !== null && $decrypted !== '') {
+            $code = strtoupper(trim($decrypted));
+        }
+    }
+
+    if (str_contains($code, 'HTTP://') || str_contains($code, 'HTTPS://') || str_contains($code, '?') || str_contains($code, '=')) {
         $parsed = parse_url($code);
         if (!empty($parsed['query'])) {
             parse_str($parsed['query'], $qp);
@@ -196,6 +246,13 @@ function mobile_scan(PDO $pdo): void
                 }
             } elseif (!empty($qp['code'])) {
                 $code = strtoupper(trim($qp['code']));
+            }
+        }
+        if (str_contains($code, 'HTTP://') || str_contains($code, 'HTTPS://')) {
+            $pathParts = explode('/', rtrim(parse_url($code, PHP_URL_PATH) ?? '', '/'));
+            $lastPart = end($pathParts);
+            if ($lastPart && $lastPart !== 'index.php') {
+                $code = strtoupper(trim(urldecode($lastPart)));
             }
         }
     }
@@ -426,10 +483,14 @@ function mobile_scan(PDO $pdo): void
     $codeReadonly = ($user['role'] ?? '') === 'technician' ? ' readonly' : '';
     $manualNote = ($user['role'] ?? '') === 'technician' ? '<p class="muted">Untuk teknisi, Kode Unit Aset hanya bisa terisi dari live scan kamera.</p>' : '<p class="muted">Admin masih dapat mengetik Kode Unit Aset untuk troubleshooting.</p>';
     echo '<section class="panel"><h1>' . e($scanTitle) . '</h1><p class="muted">QR terenkripsi otomatis divalidasi oleh sistem.</p><div id="reader" style="display:none;width:100%;max-width:420px"></div><video id="video" class="scan-video" autoplay muted playsinline></video><p id="cameraStatus" class="camera-note">Tekan Mulai Live Scan. Kamera dan GPS wajib aktif untuk teknisi.</p><p><button type="button" id="startCamera" class="btn primary">Mulai Live Scan</button></p>' . $manualNote . '<form method="post" id="scanForm"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($scheduleId) . '"><input type="hidden" name="phase" value="' . e($phase) . '"><input type="hidden" id="lat" name="lat"><input type="hidden" id="lng" name="lng"><input type="hidden" id="eqr" name="eqr" value="' . e($eqr) . '"><label>Kode Unit Aset<input id="code" name="code" value="' . e($code) . '" placeholder="Terisi otomatis dari live scan QR" required' . $codeReadonly . '></label><button class="btn primary">Validasi QR</button></form></section>';
-    echo '<script src="https://unpkg.com/html5-qrcode" onerror="window.__qrLibFailed=true"></script><script>(function(){var code=document.getElementById("code"),eqrInput=document.getElementById("eqr"),status=document.getElementById("cameraStatus"),video=document.getElementById("video"),reader=document.getElementById("reader"),detector=null,timer=null,html5=null,submitted=false,gpsReady=false;function extractData(raw){var v=String(raw||"").trim();try{var u=new URL(v,window.location.href);if(u.searchParams.get("eqr")){return {eqr:u.searchParams.get("eqr")};}if(u.searchParams.get("code")){v=u.searchParams.get("code");}}catch(e){if(v.indexOf("eqr=")>=0){return {eqr:v.split("eqr=").pop().split("&")[0]};}if(v.indexOf("code=")>=0){v=v.split("code=").pop().split("&")[0];}}v=decodeURIComponent(v).trim().toUpperCase();var m=v.match(/[A-Z0-9_-]+-[A-Z0-9]{2,12}/);return {code:m?m[0]:v};}function handleScan(raw){if(submitted){return;}var res=extractData(raw);if(res.eqr){eqrInput.value=res.eqr;code.value="[ENCRYPTED_QR]";status.textContent="QR terenkripsi terbaca. Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);return;}if(res.code){code.value=res.code;status.textContent="QR terbaca: "+res.code+". Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);}}if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){document.getElementById("lat").value=p.coords.latitude.toFixed(7);document.getElementById("lng").value=p.coords.longitude.toFixed(7);gpsReady=true;status.textContent="GPS siap. Akurasi sekitar "+Math.round(p.coords.accuracy)+" meter.";},function(){},{enableHighAccuracy:true,timeout:15000,maximumAge:0});}if("BarcodeDetector" in window){detector=new BarcodeDetector({formats:["qr_code"]});}document.getElementById("startCamera").onclick=async function(){if(window.Html5Qrcode){try{video.style.display="none";reader.style.display="block";html5=new Html5Qrcode("reader");await html5.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:240}},function(decoded){handleScan(decoded);});return;}catch(e){}}if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){try{var s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});video.srcObject=s;video.style.display="block";clearInterval(timer);timer=setInterval(async function(){try{if(detector){var r=await detector.detect(video);if(r&&r[0]){handleScan(r[0].rawValue);}}}catch(e){}},800);}catch(e){status.textContent="Kamera tidak dapat diakses.";}}};})();</script>';
+    echo '<script src="https://unpkg.com/html5-qrcode" onerror="window.__qrLibFailed=true"></script><script>(function(){var code=document.getElementById("code"),eqrInput=document.getElementById("eqr"),status=document.getElementById("cameraStatus"),video=document.getElementById("video"),reader=document.getElementById("reader"),detector=null,timer=null,html5=null,submitted=false,gpsReady=false;function extractData(raw){var v=String(raw||"").trim();try{var u=new URL(v,window.location.href);if(u.searchParams.get("eqr")){return {eqr:u.searchParams.get("eqr")};}if(u.searchParams.get("code")){return {code:u.searchParams.get("code").trim()};}v=u.pathname;}catch(e){if(v.indexOf("eqr=")>=0){return {eqr:v.split("eqr=").pop().split("&")[0]};}if(v.indexOf("code=")>=0){return {code:v.split("code=").pop().split("&")[0]};}}v=decodeURIComponent(v).trim();if(v.indexOf("/")>=0){v=v.split("/").pop();}v=v.trim().toUpperCase();var m=v.match(/[A-Z0-9_-]+-[A-Z0-9]{2,12}/);return {code:m?m[0]:v};}function handleScan(raw){if(submitted){return;}var res=extractData(raw);if(res.eqr){eqrInput.value=res.eqr;code.value="[ENCRYPTED_QR]";status.textContent="QR terenkripsi terbaca. Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);return;}if(res.code){code.value=res.code;status.textContent="QR terbaca: "+res.code+". Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);}}if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){document.getElementById("lat").value=p.coords.latitude.toFixed(7);document.getElementById("lng").value=p.coords.longitude.toFixed(7);gpsReady=true;status.textContent="GPS siap. Akurasi sekitar "+Math.round(p.coords.accuracy)+" meter.";},function(){},{enableHighAccuracy:true,timeout:15000,maximumAge:0});}if("BarcodeDetector" in window){detector=new BarcodeDetector({formats:["qr_code"]});}document.getElementById("startCamera").onclick=async function(){if(window.Html5Qrcode){try{video.style.display="none";reader.style.display="block";html5=new Html5Qrcode("reader");await html5.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:240}},function(decoded){handleScan(decoded);});return;}catch(e){}}if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){try{var s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});video.srcObject=s;video.style.display="block";clearInterval(timer);timer=setInterval(async function(){try{if(detector){var r=await detector.detect(video);if(r&&r[0]){handleScan(r[0].rawValue);}}}catch(e){}},800);}catch(e){status.textContent="Kamera tidak dapat diakses.";}}};})();</script>';
     render_mobile_footer();
 }
 
+/**
+ * Modul Mobile PWA: Detail Pekerjaan (Job)
+ * Proses: Menampilkan rincian dari satu pekerjaan maintenance beserta checklist yang harus diisi teknisi.
+ */
 function mobile_job(PDO $pdo): void
 {
     $user = require_role(['admin', 'technician']);
@@ -861,6 +922,10 @@ function mobile_job(PDO $pdo): void
     render_mobile_footer();
 }
 
+/**
+ * Modul Mobile PWA: Riwayat
+ * Proses: Menampilkan log riwayat pekerjaan yang pernah diselesaikan oleh teknisi/pengguna.
+ */
 function mobile_history(PDO $pdo): void
 {
     $user = require_technician();

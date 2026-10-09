@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+/**
+ * Modul Label: Daftar & Cetak Label Aset
+ * Proses: Menampilkan seluruh aset (PC, Printer, Maintenance Asset) untuk dicetak QR Codenya ke stiker label.
+ */
 function handle_route_labels(PDO $pdo): void
 {
     $user = require_role(['admin']);
@@ -194,6 +198,10 @@ function handle_route_labels(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Label: Generate PNG Stiker
+ * Proses: Membuat dan merender gambar utuh berformat PNG (Logo + Teks + QR Code) untuk siap diprint ke stiker thermal.
+ */
 function handle_route_qr_png(PDO $pdo): void
 {
     require_role(['admin', 'corrective_maintenance', 'technician']);

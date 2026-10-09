@@ -936,18 +936,34 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
     return $rows;
 }
 
+/**
+ * Modul: Jadwal Maintenance Utama
+ * Proses: Menampilkan seluruh jadwal maintenance rutin (Preventive) aset/PC dalam bentuk kalender atau list.
+ */
 function handle_route_maintenance(PDO $pdo): void
 {
     $user = require_regulation('maintenance', 'view');
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_schedule') {
-        require_regulation('maintenance', 'delete');
-        $delId = (int)($_POST['id'] ?? 0);
-        if ($delId > 0) {
-            delete_maintenance_schedule($pdo, $delId);
-            flash('Jadwal maintenance berhasil dihapus.');
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = (string)($_POST['action'] ?? '');
+        if ($action === 'delete_schedule') {
+            require_regulation('maintenance', 'delete');
+            $delId = (int)($_POST['id'] ?? 0);
+            if ($delId > 0) {
+                delete_maintenance_schedule($pdo, $delId);
+                flash('Jadwal maintenance berhasil dihapus.');
+            }
+            redirect_to('maintenance');
         }
-        redirect_to('maintenance');
+        if ($action === 'cancel_schedule') {
+            $id = (int)($_POST['id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled' WHERE id = ?");
+                $stmt->execute([$id]);
+                flash('Jadwal maintenance berhasil dibatalkan.');
+            }
+            redirect_to('maintenance');
+        }
     }
 
     render_header('History Preventive Maintenance', $user);
@@ -978,8 +994,7 @@ function handle_route_maintenance(PDO $pdo): void
         $rows = $pdo->query("SELECT s.*, s.pc_id asset_id, 'pc' asset_type, p.owner_name, p.computer_name, u.name technician, 'IT Asset' asset_group_name, 'IT' asset_group_code, NULL asset_mode FROM maintenance_schedules s JOIN pcs p ON p.pc_id = s.pc_id LEFT JOIN users u ON u.id=s.technician_id $where ORDER BY s.scheduled_date DESC, s.id DESC")->fetchAll();
     }
     $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">Tambah Schedule</a>' : '';
-    $cleanupBtn = has_regulation('maintenance', 'delete') ? '<a class="btn danger" href="' . route_url('maintenance_cleanup') . '">Hapus Data</a>' : '';
-    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions"><a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $cleanupBtn . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
+    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions"><a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
     $scheduleIds = array_filter(array_map('intval', array_column($rows, 'id')));
     $reportsBySchedule = [];
     if ($scheduleIds) {
@@ -998,16 +1013,19 @@ function handle_route_maintenance(PDO $pdo): void
         $beforeCount = count(json_decode((string)($photoReport['before_photos'] ?? '[]'), true) ?: []);
         $processCount = count(json_decode((string)($photoReport['process_photos'] ?? '[]'), true) ?: []);
         $afterCount = count(json_decode((string)($photoReport['after_photos'] ?? '[]'), true) ?: []);
-        $actions = '<a class="btn" href="' . route_url('maintenance_do', ['id' => $row['id']]) . '">Buka</a>';
+        $actions = '';
         if (can_manage_maintenance($user) && $row['status'] === 'completed') {
-            $actions .= ' <a class="btn" href="' . route_url('report_print', ['id' => $row['id']]) . '">Report</a>';
+            $actions .= '<a class="btn" href="' . route_url('report_print', ['id' => $row['id']]) . '">Report</a> ';
         }
-        if (has_regulation('maintenance', 'delete')) {
-            $actions .= ' <form method="post" action="' . route_url('maintenance') . '" style="display:inline;" onsubmit="return confirm(\'Hapus jadwal maintenance ini?\');">'
+        if ($row['status'] !== 'completed') {
+            $actions .= '<a title="Edit Task & Waktu" href="' . route_url('schedule_form', ['edit_id' => $row['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; margin-right:4px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>';
+        }
+        if ($row['status'] !== 'completed' && $row['status'] !== 'cancelled') {
+            $actions .= '<form method="post" action="' . route_url('maintenance') . '" style="display:inline;" onsubmit="return confirm(\'Batalkan jadwal maintenance ini?\');">'
                 . csrf_field()
-                . '<input type="hidden" name="action" value="delete_schedule">'
+                . '<input type="hidden" name="action" value="cancel_schedule">'
                 . '<input type="hidden" name="id" value="' . (int)$row['id'] . '">'
-                . '<button type="submit" class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button>'
+                . '<button type="submit" title="Batalkan Schedule" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:6px; cursor:pointer; vertical-align:middle;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg></button>'
                 . '</form>';
         }
         $groupBadge = $row['asset_group_code'] ? ($row['asset_group_code'] . ' - ' . $row['asset_group_name']) : ($row['asset_group_name'] ?: 'IT Asset');
@@ -1018,6 +1036,10 @@ function handle_route_maintenance(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Pembersihan Jadwal
+ * Proses: Menghapus jadwal-jadwal usang atau yatim piatu yang asetnya sudah dihapus.
+ */
 function handle_route_maintenance_cleanup(PDO $pdo): void
 {
     $user = require_regulation('maintenance', 'delete');
@@ -1031,6 +1053,12 @@ function handle_route_maintenance_cleanup(PDO $pdo): void
             delete_maintenance_schedule($pdo, (int)$_POST['id']);
             flash('Data maintenance berhasil dihapus.');
             redirect_to('maintenance_cleanup');
+        }
+        if ($action === 'cancel_schedule') {
+            $id = (int)$_POST['id'];
+            $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled' WHERE id = ?")->execute([$id]);
+            flash('Jadwal maintenance dibatalkan.');
+            redirect_to('maintenance');
         }
         if ($action === 'delete_filtered') {
             if (trim((string)($_POST['confirm_text'] ?? '')) !== 'HAPUS') {
@@ -1133,30 +1161,36 @@ function handle_route_maintenance_cleanup(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Form Penjadwalan
+ * Proses: Mengatur jadwal rutin (tahunan/bulanan/mingguan) untuk suatu aset yang butuh maintenance.
+ */
 function handle_route_schedule_form(PDO $pdo): void
 {
     $user = require_regulation('maintenance', 'create');
     $selectedGroupId = (int)(($_POST['asset_group_id'] ?? $_GET['asset_group_id'] ?? 0));
+    $editId = (int)($_POST['edit_id'] ?? $_GET['edit_id'] ?? 0);
+    
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $technicianId = (int)($_POST['technician_id'] ?? 0);
         if ($technicianId <= 0) {
             flash('Teknisi wajib dipilih untuk schedule maintenance.', 'err');
-            redirect_to('schedule_form', ['asset_group_id' => $selectedGroupId]);
+            redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
         $assetItemId = (int)($_POST['asset_item_id'] ?? $_POST['maintenance_asset_id'] ?? 0);
         if ($assetItemId <= 0) {
             flash('Unit aset maintenance wajib dipilih.', 'err');
-            redirect_to('schedule_form', ['asset_group_id' => $selectedGroupId]);
+            redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
         $scheduledDate = normalize_date_input((string)($_POST['scheduled_date'] ?? ''));
         if ($scheduledDate === '') {
             flash('Tanggal schedule tidak valid.', 'err');
-            redirect_to('schedule_form', ['asset_group_id' => $selectedGroupId]);
+            redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
         $jobIds = array_map('intval', $_POST['jobs'] ?? []);
         if (empty($jobIds)) {
             flash('Pilih minimal satu job desk untuk schedule maintenance.', 'err');
-            redirect_to('schedule_form', ['asset_group_id' => $selectedGroupId]);
+            redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
 
         $aiStmt = $pdo->prepare('SELECT ai.*, at.type_code, ag.group_code FROM asset_items ai 
@@ -1191,23 +1225,159 @@ function handle_route_schedule_form(PDO $pdo): void
         }
 
         try {
-            $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? '')]);
-            $scheduleId = (int)$pdo->lastInsertId();
+            if ($editId > 0) {
+                $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, notes=? WHERE id=?');
+                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? ''), $editId]);
+                $scheduleId = $editId;
+                $pdo->prepare('DELETE FROM schedule_jobs WHERE schedule_id=?')->execute([$scheduleId]);
+                flash('Schedule maintenance berhasil diupdate.');
+            } else {
+                $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? '')]);
+                $scheduleId = (int)$pdo->lastInsertId();
+                flash('Schedule maintenance berhasil dibuat.');
+            }
             foreach ($jobIds as $jobId) {
                 $pdo->prepare('INSERT INTO schedule_jobs (schedule_id, job_id) VALUES (?, ?)')->execute([$scheduleId, $jobId]);
             }
-            flash('Schedule maintenance berhasil dibuat.');
-            redirect_to('maintenance_do', ['id' => $scheduleId]);
+            if ($editId > 0) {
+                redirect_to('maintenance');
+            } else {
+                redirect_to('maintenance_do', ['id' => $scheduleId]);
+            }
         } catch (Throwable $e) {
             flash('Schedule gagal disimpan: ' . $e->getMessage(), 'err');
-            redirect_to('schedule_form', ['asset_group_id' => $selectedGroupId]);
+            redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
+    }
+
+    $editId = (int)($_GET['edit_id'] ?? 0);
+    $existingSchedule = null;
+    $existingJobIds = [];
+    if ($editId > 0) {
+        $st = $pdo->prepare('SELECT * FROM maintenance_schedules WHERE id=?');
+        $st->execute([$editId]);
+        $existingSchedule = $st->fetch(PDO::FETCH_ASSOC);
+        if ($existingSchedule) {
+            $jSt = $pdo->prepare('SELECT job_id FROM schedule_jobs WHERE schedule_id=?');
+            $jSt->execute([$editId]);
+            $existingJobIds = array_map('intval', $jSt->fetchAll(PDO::FETCH_COLUMN));
+            $selectedGroupId = (int)$existingSchedule['asset_group_id'];
+        }
+    }
+
+    $techs = $pdo->query("SELECT id, name FROM users WHERE role IN ('technician','admin','maintenance_admin') ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+
+    if ($editId > 0 && $existingSchedule) {
+        // TAMPILAN KHUSUS EDIT SCHEDULE (Tidak mengubah unit aset / komoditas)
+        $targetAssetId = (int)$existingSchedule['asset_item_id'];
+        $stAi = $pdo->prepare("SELECT ai.*, at.type_name, ag.group_name, ag.group_code FROM asset_items ai LEFT JOIN asset_types at ON at.id=ai.asset_type_id LEFT JOIN asset_groups ag ON ag.id=ai.asset_group_id WHERE ai.id=?");
+        $stAi->execute([$targetAssetId]);
+        $aiInfo = $stAi->fetch(PDO::FETCH_ASSOC);
+
+        $assetCodeDisplay = $aiInfo ? $aiInfo['asset_code'] : ($existingSchedule['pc_id'] ?: $existingSchedule['printer_id'] ?: ('#' . $targetAssetId));
+        $assetNameDisplay = $aiInfo ? $aiInfo['asset_name'] : '-';
+        $custodianDisplay = $aiInfo ? ($aiInfo['custodian_name'] ?: '-') : '-';
+        $groupDisplay = $aiInfo ? ($aiInfo['group_code'] . ' - ' . $aiInfo['group_name']) : 'IT Asset';
+
+        $groupIdForJobs = (int)($existingSchedule['asset_group_id'] ?: ($aiInfo['asset_group_id'] ?? 0));
+        $stJobs = $pdo->prepare("SELECT j.* FROM maintenance_jobs j WHERE (j.asset_group_id = ? OR j.id IN (SELECT job_id FROM schedule_jobs WHERE schedule_id = ?)) ORDER BY j.job_desk_name, j.title");
+        $stJobs->execute([$groupIdForJobs, $editId]);
+        $availableJobs = $stJobs->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($availableJobs)) {
+            $availableJobs = $pdo->query("SELECT j.* FROM maintenance_jobs j ORDER BY j.job_desk_name, j.title LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        render_header('Edit Schedule Maintenance', $user);
+
+        echo '<section class="panel">'
+            . '<div class="split" style="align-items: center; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px;">'
+            . '<div>'
+            . '<h1 style="margin: 0; font-size: 20px;">Edit Schedule Maintenance</h1>'
+            . '<p class="muted" style="margin: 4px 0 0 0;">Ubah rincian pekerjaan (task) dan jadwal pelaksanaan untuk maintenance ini.</p>'
+            . '</div>'
+            . '<div class="actions">'
+            . '<a class="btn" href="' . route_url('maintenance') . '">&#8592; Kembali ke Jadwal Maintenance</a>'
+            . '</div>'
+            . '</div>';
+
+        echo '<form method="post" id="formEditSchedule">'
+            . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+            . '<input type="hidden" name="edit_id" value="' . $editId . '">'
+            . '<input type="hidden" name="asset_item_id" value="' . $targetAssetId . '">'
+            . '<input type="hidden" name="asset_group_id" value="' . (int)$existingSchedule['asset_group_id'] . '">';
+
+        // TARGET ASET INFO (TERKUNCI)
+        echo '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
+            . '<div style="font-weight: 700; font-size: 14px; color: #1e3a8a; margin-bottom: 8px;">Target Aset Maintenance (Terkunci)</div>'
+            . '<div class="grid four" style="align-items: center;">'
+            . '<div><span class="muted" style="font-size: 11px;">Kode Aset</span><br><strong>' . e($assetCodeDisplay) . '</strong></div>'
+            . '<div><span class="muted" style="font-size: 11px;">Nama Aset</span><br><strong>' . e($assetNameDisplay) . '</strong></div>'
+            . '<div><span class="muted" style="font-size: 11px;">Pengguna</span><br><strong>' . e($custodianDisplay) . '</strong></div>'
+            . '<div><span class="muted" style="font-size: 11px;">Komoditas</span><br><span class="badge">' . e($groupDisplay) . '</span></div>'
+            . '</div>'
+            . '</div>';
+
+        // TEKNISI & WAKTU PELAKSANAAN
+        echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
+            . '<div style="font-weight: 700; font-size: 15px; color: #334155; margin-bottom: 12px;">1. Teknisi & Jadwal Waktu Pelaksanaan</div>'
+            . '<div class="grid two">'
+            . '<label>Teknisi yang Bertugas *'
+            . '<select name="technician_id" required>'
+            . '<option value="">-- Pilih Teknisi --</option>';
+        foreach ($techs as $tech) {
+            $sel = ((int)$existingSchedule['technician_id'] === (int)$tech['id']) ? ' selected' : '';
+            echo '<option value="' . e($tech['id']) . '"' . $sel . '>' . e($tech['name']) . '</option>';
+        }
+        echo '</datalist></label>'
+            . '<label>Tanggal Rencana Maintenance (Waktu) *'
+            . '<input type="date" name="scheduled_date" required value="' . e($existingSchedule['scheduled_date']) . '">'
+            . '</label>'
+            . '</div>'
+            . '<label style="margin-top: 12px;">Catatan / Instruksi Khusus (Opsional)'
+            . '<textarea name="notes" placeholder="Catatan instruksi tambahan..." rows="2">' . e($existingSchedule['notes'] ?? '') . '</textarea>'
+            . '</label>'
+            . '</div>';
+
+        // CHECKLIST PEKERJAAN (TASKS)
+        echo '<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
+            . '<div class="split" style="align-items: center; margin-bottom: 12px;">'
+            . '<div style="font-weight: 700; font-size: 15px; color: #1e40af;">2. Ubah Job Tasks / Checklist Pekerjaan</div>'
+            . '<div class="actions">'
+            . '<button type="button" class="btn" onclick="document.querySelectorAll(\'.edit-job-cb\').forEach(cb=>cb.checked=true)">Pilih Semua</button>'
+            . '<button type="button" class="btn" onclick="document.querySelectorAll(\'.edit-job-cb\').forEach(cb=>cb.checked=false)">Batal Pilih</button>'
+            . '</div>'
+            . '</div>'
+            . '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px;">';
+
+        foreach ($availableJobs as $job) {
+            $jId = (int)$job['id'];
+            $isChecked = in_array($jId, $existingJobIds, true) ? ' checked' : '';
+            echo '<label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; margin: 0;">'
+                . '<input type="checkbox" class="edit-job-cb" name="jobs[]" value="' . $jId . '"' . $isChecked . ' style="width: 18px; height: 18px; margin-top: 2px;">'
+                . '<div>'
+                . '<div style="font-weight: 600; color: #0f172a; font-size: 13px;">' . e($job['title']) . '</div>'
+                . '<div class="muted" style="font-size: 11px;">Desk: ' . e($job['job_desk_name']) . ' (~' . (int)$job['estimated_minutes'] . ' mnt)</div>'
+                . '</div>'
+                . '</label>';
+        }
+
+        echo '</div>'
+            . '</div>';
+
+        echo '<div style="margin-top: 20px;">'
+            . '<button class="btn primary" style="font-size: 15px; padding: 10px 24px;">&#128190; Update Schedule Maintenance</button>'
+            . '</div>'
+            . '</form>'
+            . '</section>';
+
+        render_footer();
+        return;
     }
 
     render_header('Tambah Schedule', $user);
 
-    $targetAssetId = (int)($_GET['asset_item_id'] ?? $_GET['maintenance_asset_id'] ?? $_GET['asset_id'] ?? 0);
+    $targetAssetId = (int)($existingSchedule['asset_item_id'] ?? $_GET['asset_item_id'] ?? $_GET['maintenance_asset_id'] ?? $_GET['asset_id'] ?? 0);
     $assetParam = trim((string)($_GET['asset'] ?? ''));
     if ($targetAssetId === 0 && $assetParam !== '') {
         $stCode = $pdo->prepare('SELECT id FROM asset_items WHERE asset_code = ? LIMIT 1');
@@ -1310,6 +1480,7 @@ function handle_route_schedule_form(PDO $pdo): void
 
     echo '<form method="post" id="formSchedule">'
         . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" name="edit_id" value="' . e($editId) . '">'
         . '<input type="hidden" name="asset_group_id" id="postAssetGroupId" value="' . e($selectedGroupId) . '">';
 
     // BAGIAN 1: PEMILIHAN KOMODITAS, KATEGORI, DAN ASET MAINTENANCE
@@ -1334,39 +1505,28 @@ function handle_route_schedule_form(PDO $pdo): void
         echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '">' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
     }
     echo '</select></label>';
-
-    echo '<label>Unit Aset (Terdaftar) *'
-        . '<select id="schedAssetSelect" name="asset_item_id" required>'
-        . '<option value="">-- Pilih Unit Aset --</option>';
-    foreach ($maintenanceAssets as $maRow) {
-        $mId = (int)$maRow['id'];
-        $mCode = $maRow['asset_code'];
-        $mName = $maRow['display_name'] ?: $maRow['asset_name'];
-        $mSub = $maRow['display_sub'] ?: '';
-        $mDesk = $maRow['job_desk_name'] ?: '';
-        $mGid = (int)$maRow['asset_group_id'];
-        $mTid = (int)$maRow['asset_type_id'];
-        $mGname = $maRow['group_name'] ?: 'IT Asset';
-        $mTname = $maRow['type_name'] ?: '';
-        $mMode = (string)($maRow['asset_mode'] ?? 'standalone');
-
-        $badgePrefix = ($mMode === 'group') ? '[📦 INDUK BUNDLE] ' : (($mMode === 'child') ? '[🔗 ANGGOTA] ' : '');
-        $optLabel = $badgePrefix . $mCode . ' - ' . $mName . ($mSub ? ' (' . $mSub . ')' : '');
-        $selected = ($targetAssetId === $mId) ? ' selected' : '';
-
-        echo '<option value="' . $mId . '"'
-            . ' data-code="' . e($mCode) . '"'
-            . ' data-group-id="' . $mGid . '"'
-            . ' data-type-id="' . $mTid . '"'
-            . ' data-group-name="' . e($mGname) . '"'
-            . ' data-type-name="' . e($mTname) . '"'
-            . ' data-job-desk="' . e($mDesk) . '"'
-            . ' data-sub="' . e($mSub) . '"'
-            . $selected . '>'
-            . e($optLabel)
-            . '</option>';
+    // Find initial label if editing
+    $targetAssetLabel = '';
+    if ($targetAssetId > 0) {
+        foreach ($maintenanceAssets as $maRow) {
+            if ((int)$maRow['id'] === $targetAssetId) {
+                $mCode = $maRow['asset_code'];
+                $mName = $maRow['display_name'] ?: $maRow['asset_name'];
+                $mSub = $maRow['display_sub'] ?: '';
+                $mMode = (string)($maRow['asset_mode'] ?? 'standalone');
+                $badgePrefix = ($mMode === 'group') ? '[📦 INDUK BUNDLE] ' : (($mMode === 'child') ? '[🔗 ANGGOTA] ' : '');
+                $targetAssetLabel = $badgePrefix . $mCode . ' - ' . $mName . ($mSub ? ' (' . $mSub . ')' : '');
+                break;
+            }
+        }
     }
-    echo '</select></label>'
+
+    echo '<div style="position:relative;margin-bottom:14px;">'
+        . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:4px;display:block;">Unit Aset (Terdaftar) *'
+        . '  <input type="text" id="schedAssetSearchInput" placeholder="🔍 Ketik kode, nama, atau lokasi unit aset untuk mencari..." autocomplete="off" required style="width:100%;box-sizing:border-box;padding:10px 14px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:14px;" value="' . e($targetAssetLabel) . '">'
+        . '  <input type="hidden" id="schedAssetIdHidden" name="asset_item_id" required value="' . e($targetAssetId ?: '') . '">'
+        . '</label>'
+        . '<div id="schedAssetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
         . '</div>'
         . '<div id="assetSelectedNotice" style="display:none; margin-top: 10px; font-size: 13px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px;"></div>'
         . '</div>';
@@ -1432,9 +1592,10 @@ function handle_route_schedule_form(PDO $pdo): void
             $tTitle = $task['title'];
             $tEst = (int)$task['estimated_minutes'];
             $tDesc = trim((string)($task['description'] ?? ''));
+            $isChecked = ($editId > 0) ? (in_array((string)$tId, $existingJobIds, true) || in_array($tId, $existingJobIds, true) ? ' checked' : '') : ' checked';
 
             echo '<label class="job-desk-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; margin: 0; user-select: none;">'
-                . '<input type="checkbox" class="job-checkbox" name="jobs[]" value="' . $tId . '" checked style="width: 18px; height: 18px; min-width: 18px; cursor: pointer; margin-top: 3px; flex-shrink: 0;">'
+                . '<input type="checkbox" class="job-checkbox" name="jobs[]" value="' . $tId . '"' . $isChecked . ' style="width: 18px; height: 18px; min-width: 18px; cursor: pointer; margin-top: 3px; flex-shrink: 0;">'
                 . '<div style="flex-grow: 1; min-width: 0;">'
                 . '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">'
                 . '<span style="font-weight: 600; color: #0f172a; line-height: 1.35;">' . e($tTitle) . '</span>'
@@ -1464,16 +1625,20 @@ function handle_route_schedule_form(PDO $pdo): void
         . '<label>Teknisi yang Bertugas *'
         . '<select name="technician_id" required>'
         . '<option value="">-- Pilih Teknisi --</option>';
+    $selTechId = $existingSchedule ? (int)$existingSchedule['technician_id'] : 0;
     foreach ($techs as $tech) {
-        echo '<option value="' . e($tech['id']) . '">' . e($tech['name']) . '</option>';
+        $sel = ($selTechId === (int)$tech['id']) ? ' selected' : '';
+        echo '<option value="' . e($tech['id']) . '"' . $sel . '>' . e($tech['name']) . '</option>';
     }
+    $selDate = $existingSchedule ? $existingSchedule['scheduled_date'] : date('Y-m-d');
+    $selNotes = $existingSchedule ? $existingSchedule['notes'] : '';
     echo '</select></label>'
         . '<label>Tanggal Rencana Maintenance *'
-        . '<input type="date" name="scheduled_date" required value="' . e(date('Y-m-d')) . '">'
+        . '<input type="date" name="scheduled_date" required value="' . e($selDate) . '">'
         . '</label>'
         . '</div>'
         . '<label style="margin-top: 12px;">Catatan / Instruksi Khusus (Opsional)'
-        . '<textarea name="notes" placeholder="Catatan instruksi tambahan untuk teknisi pelaksana..." rows="2"></textarea>'
+        . '<textarea name="notes" placeholder="Catatan instruksi tambahan untuk teknisi pelaksana..." rows="2">' . e($selNotes) . '</textarea>'
         . '</label>'
         . '</div>';
 
@@ -1487,57 +1652,153 @@ function handle_route_schedule_form(PDO $pdo): void
 (function(){
     var groupSelect = document.getElementById("schedGroupSelect");
     var typeSelect = document.getElementById("schedTypeSelect");
-    var assetSelect = document.getElementById("schedAssetSelect");
-    var deskSelect = document.getElementById("schedJobDeskSelect");
-    var statsBadge = document.getElementById("jobDeskStatsBadge");
-    var promptEmpty = document.getElementById("noJobDeskPrompt");
-    var assetNotice = document.getElementById("assetSelectedNotice");
-    var linkKelolaDesk = document.getElementById("linkKelolaDesk");
+    var assetSearchInput = document.getElementById("schedAssetSearchInput");
+    var assetIdHidden = document.getElementById("schedAssetIdHidden");
+    var assetDropdownList = document.getElementById("schedAssetDropdownList");
     var hiddenPostGroupId = document.getElementById("postAssetGroupId");
+    var assetNotice = document.getElementById("assetSelectedNotice");
+    var deskSelect = document.getElementById("schedJobDeskSelect");
+    var linkKelolaDesk = document.getElementById("linkKelolaDesk");
+    var statsBadge = document.getElementById("jobDeskStatsBadge");
     var taskGroups = document.querySelectorAll(".job-desk-task-group");
+    var promptEmpty = document.getElementById("noJobDeskPrompt");
+    var maintenanceAssetsData = ' . json_encode($maintenanceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
 
-    // Filter opsi kategori berdasarkan Komoditas (group)
-    function filterTypeOptions(keepSelected) {
+    function hideAssetDropdown() {
+        setTimeout(function() { if (assetDropdownList) assetDropdownList.style.display = "none"; }, 220);
+    }
+
+    function selectMaintenanceAsset(item) {
+        if (!item) return;
+        var mCode = item.asset_code || "";
+        var mName = item.display_name || item.asset_name || "";
+        var mSub = item.display_sub || "";
+        var mMode = item.asset_mode || "standalone";
+        var badgePrefix = (mMode === "group") ? "[📦 INDUK BUNDLE] " : ((mMode === "child") ? "[🔗 ANGGOTA] " : "");
+        var optLabel = badgePrefix + mCode + " - " + mName + (mSub ? (" (" + mSub + ")") : "");
+
+        if (assetSearchInput) assetSearchInput.value = optLabel;
+        if (assetIdHidden) assetIdHidden.value = item.id;
+
+        // Auto update Komoditas & Kategori
+        var optGid = item.asset_group_id ? String(item.asset_group_id) : "";
+        var optTid = item.asset_type_id ? String(item.asset_type_id) : "";
+        if (optGid && groupSelect && groupSelect.value !== optGid) {
+            groupSelect.value = optGid;
+            if (hiddenPostGroupId) hiddenPostGroupId.value = optGid;
+            filterTypeOptions(true);
+        }
+        if (optTid && typeSelect && typeSelect.value !== optTid) {
+            typeSelect.value = optTid;
+        }
+
+        // Update Job Desk & Notice
+        filterJobDeskOptions(item.job_desk_name || "");
+        updateAssetNoticeForObject(item);
+
+        if (assetDropdownList) assetDropdownList.style.display = "none";
+    }
+
+    function updateAssetNoticeForObject(item) {
+        if (!assetNotice) return;
+        if (!item) {
+            assetNotice.style.display = "none";
+            assetNotice.innerHTML = "";
+            return;
+        }
+        var code = item.asset_code || "";
+        var grp = item.group_name || "IT Asset";
+        var typ = item.type_name || "";
+        var desk = item.job_desk_name || "(Belum ada penugasan default)";
+        var sub = item.display_sub || "";
+        assetNotice.style.display = "block";
+        assetNotice.innerHTML = "✅ <strong>Target Terpilih:</strong> " + code + " &bull; <strong>Komoditas:</strong> " + grp + " &bull; <strong>Kategori:</strong> " + typ + (sub ? (" &bull; <em>" + sub + "</em>") : "") + " &bull; <strong>Job Desk Default Aset:</strong> " + desk;
+    }
+
+    function renderAssetDropdown(q) {
+        if (!assetDropdownList) return;
         var gid = groupSelect ? groupSelect.value : "";
-        var currentTypeId = typeSelect ? typeSelect.value : "";
+        var tid = typeSelect ? typeSelect.value : "";
+        q = (q || "").trim().toLowerCase();
+
+        var filtered = maintenanceAssetsData.filter(function(item) {
+            var matchG = (!gid || String(item.asset_group_id) === gid);
+            var matchT = (!tid || String(item.asset_type_id) === tid);
+            if (!matchG || !matchT) return false;
+
+            if (!q) return true;
+            var code = (item.asset_code || "").toLowerCase();
+            var name = (item.display_name || item.asset_name || "").toLowerCase();
+            var sub = (item.display_sub || "").toLowerCase();
+            return code.includes(q) || name.includes(q) || sub.includes(q);
+        }).slice(0, 40);
+
+        assetDropdownList.innerHTML = "";
+        if (filtered.length === 0) {
+            assetDropdownList.innerHTML = "<div style=\"padding:10px 14px;color:#94a3b8;font-size:13px;\">Tidak ada unit aset cocok dengan filter/pencarian.</div>";
+            assetDropdownList.style.display = "block";
+            return;
+        }
+
+        filtered.forEach(function(item) {
+            var mCode = item.asset_code || "";
+            var mName = item.display_name || item.asset_name || "";
+            var mSub = item.display_sub || "";
+            var mMode = item.asset_mode || "standalone";
+            var badgePrefix = (mMode === "group") ? "[📦 INDUK BUNDLE] " : ((mMode === "child") ? "[🔗 ANGGOTA] " : "");
+
+            var div = document.createElement("div");
+            div.style.padding = "10px 14px";
+            div.style.cursor = "pointer";
+            div.style.borderBottom = "1px solid #f1f5f9";
+            div.style.fontSize = "13px";
+            div.innerHTML = "<strong style=\"color:#0f172a;\">" + badgePrefix + mCode + " - " + mName + "</strong>"
+                + (mSub ? (" <span style=\"color:#64748b;\">(" + mSub + ")</span>") : "")
+                + (item.group_name ? (" &bull; <span style=\"color:#0284c7;font-weight:600;\">" + item.group_name + " / " + (item.type_name || "") + "</span>") : "");
+            
+            div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
+            div.onmouseleave = function() { div.style.background = "#fff"; };
+            div.onmousedown = function() { selectMaintenanceAsset(item); };
+            assetDropdownList.appendChild(div);
+        });
+
+        assetDropdownList.style.display = "block";
+    }
+
+    function filterTypeOptions(isSilent) {
+        if (!typeSelect) return;
+        var selectedGid = groupSelect ? groupSelect.value : "";
+        var currentTid = typeSelect.value;
+        var hasValidSelection = false;
+
         Array.from(typeSelect.options).forEach(function(opt, idx) {
             if (idx === 0) { opt.style.display = ""; return; }
             var optGid = opt.getAttribute("data-group-id");
-            var match = (!gid || optGid === gid);
-            opt.style.display = match ? "" : "none";
+            var show = (!selectedGid || optGid === selectedGid);
+            opt.style.display = show ? "" : "none";
+            if (show && opt.value === currentTid) {
+                hasValidSelection = true;
+            }
         });
-        if (!keepSelected && typeSelect.selectedIndex > 0 && typeSelect.options[typeSelect.selectedIndex].style.display === "none") {
+
+        if (!hasValidSelection && !isSilent) {
             typeSelect.value = "";
         }
     }
 
-    // Filter opsi aset berdasarkan Komoditas dan Kategori
-    function filterAssetOptions() {
-        var gid = groupSelect ? groupSelect.value : "";
-        var tid = typeSelect ? typeSelect.value : "";
-        var isCurrentStillValid = false;
-
-        Array.from(assetSelect.options).forEach(function(opt, idx) {
-            if (idx === 0) { opt.style.display = ""; return; }
-            var optGid = opt.getAttribute("data-group-id");
-            var optTid = opt.getAttribute("data-type-id");
-            var matchG = (!gid || optGid === gid);
-            var matchT = (!tid || optTid === tid);
-            var show = matchG && matchT;
-            opt.style.display = show ? "" : "none";
-            if (show && opt.value === assetSelect.value) {
-                isCurrentStillValid = true;
-            }
+    if (assetSearchInput) {
+        assetSearchInput.addEventListener("input", function() {
+            if (assetIdHidden) assetIdHidden.value = "";
+            renderAssetDropdown(this.value);
         });
-
-        if (!isCurrentStillValid && assetSelect.selectedIndex > 0) {
-            assetSelect.value = "";
-            updateAssetNotice();
-        }
+        assetSearchInput.addEventListener("focus", function() {
+            renderAssetDropdown(this.value);
+        });
+        assetSearchInput.addEventListener("blur", hideAssetDropdown);
     }
 
-    // Filter opsi Job Desk berdasarkan Komoditas dan Kategori, lalu pilih yang paling pas
     function filterJobDeskOptions(preferredDeskName) {
+        if (!deskSelect) return;
         var gid = groupSelect ? groupSelect.value : "";
         var tid = typeSelect ? typeSelect.value : "";
         var firstMatchValue = "";
@@ -1587,24 +1848,8 @@ function handle_route_schedule_form(PDO $pdo): void
         linkKelolaDesk.href = url;
     }
 
-    function updateAssetNotice() {
-        if (!assetNotice) return;
-        var opt = assetSelect.options[assetSelect.selectedIndex];
-        if (!opt || !opt.value) {
-            assetNotice.style.display = "none";
-            assetNotice.innerHTML = "";
-            return;
-        }
-        var code = opt.getAttribute("data-code") || "";
-        var grp = opt.getAttribute("data-group-name") || "";
-        var typ = opt.getAttribute("data-type-name") || "";
-        var desk = opt.getAttribute("data-job-desk") || "(Belum ada penugasan default)";
-        var sub = opt.getAttribute("data-sub") || "";
-        assetNotice.style.display = "block";
-        assetNotice.innerHTML = "✅ <strong>Target Terpilih:</strong> " + code + " &bull; <strong>Komoditas:</strong> " + grp + " &bull; <strong>Kategori:</strong> " + typ + (sub ? (" &bull; <em>" + sub + "</em>") : "") + " &bull; <strong>Job Desk Default Aset:</strong> " + desk;
-    }
-
     function applySelectedJobDeskTasks() {
+        if (!deskSelect) return;
         var selectedOpt = deskSelect.options[deskSelect.selectedIndex];
         var deskName = selectedOpt ? selectedOpt.getAttribute("data-desk-name") : "";
         var count = selectedOpt ? selectedOpt.getAttribute("data-job-count") : "0";
@@ -1657,7 +1902,6 @@ function handle_route_schedule_form(PDO $pdo): void
         groupSelect.addEventListener("change", function() {
             if (hiddenPostGroupId) hiddenPostGroupId.value = this.value;
             filterTypeOptions(false);
-            filterAssetOptions();
             filterJobDeskOptions("");
         });
     }
@@ -1673,33 +1917,7 @@ function handle_route_schedule_form(PDO $pdo): void
                     filterTypeOptions(true);
                 }
             }
-            filterAssetOptions();
             filterJobDeskOptions("");
-        });
-    }
-
-    if (assetSelect) {
-        assetSelect.addEventListener("change", function() {
-            var opt = this.options[this.selectedIndex];
-            if (opt && opt.value) {
-                var optGid = opt.getAttribute("data-group-id");
-                var optTid = opt.getAttribute("data-type-id");
-                var optDesk = opt.getAttribute("data-job-desk");
-
-                if (optGid && groupSelect && groupSelect.value !== optGid) {
-                    groupSelect.value = optGid;
-                    if (hiddenPostGroupId) hiddenPostGroupId.value = optGid;
-                    filterTypeOptions(true);
-                }
-                if (optTid && typeSelect && typeSelect.value !== optTid) {
-                    typeSelect.value = optTid;
-                }
-                updateAssetNotice();
-                filterJobDeskOptions(optDesk);
-            } else {
-                updateAssetNotice();
-                filterJobDeskOptions("");
-            }
         });
     }
 
@@ -1711,34 +1929,17 @@ function handle_route_schedule_form(PDO $pdo): void
     }
 
     // Inisialisasi awal saat halaman dimuat
-    if (assetSelect && assetSelect.value) {
-        var initialOpt = assetSelect.options[assetSelect.selectedIndex];
-        if (initialOpt && initialOpt.value) {
-            var optGid = initialOpt.getAttribute("data-group-id");
-            var optTid = initialOpt.getAttribute("data-type-id");
-            var optDesk = initialOpt.getAttribute("data-job-desk");
-            if (optGid && groupSelect) {
-                groupSelect.value = optGid;
-                if (hiddenPostGroupId) hiddenPostGroupId.value = optGid;
-                filterTypeOptions(true);
-            }
-            if (optTid && typeSelect) {
-                typeSelect.value = optTid;
-            }
-            filterAssetOptions();
-            updateAssetNotice();
-            filterJobDeskOptions(optDesk);
-        }
-    } else {
-        filterTypeOptions(true);
-        filterAssetOptions();
-        filterJobDeskOptions("");
-    }
+    filterTypeOptions(true);
+    filterJobDeskOptions("");
 })();
 </script>';
     render_footer();
 }
 
+/**
+ * Modul: Eksekusi Maintenance
+ * Proses: Melakukan pengisian checklist/form hasil kerja (Do Maintenance) pada jadwal yang sudah tiba waktunya.
+ */
 function handle_route_maintenance_do(PDO $pdo): void
 {
     $user = require_login();
@@ -1808,6 +2009,10 @@ function handle_route_maintenance_do(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Buka Kunci Maintenance
+ * Proses: Mengizinkan admin membuka kembali laporan maintenance yang sudah dikunci (locked/selesai) untuk direvisi.
+ */
 function handle_route_maintenance_unlock(PDO $pdo): void
 {
     $user = require_role(['admin', 'maintenance_admin']);
@@ -2104,6 +2309,10 @@ function get_standard_preventive_tasks_catalog(PDO $pdo, ?int $groupId, ?int $ty
     ];
 }
 
+/**
+ * Modul: Daftar Pekerjaan (Jobs)
+ * Proses: Menampilkan seluruh pekerjaan (Jobs) maintenance yang harus diselesaikan oleh teknisi/engineer.
+ */
 function handle_route_jobs(PDO $pdo): void
 {
     $user = require_regulation('jobs', 'view');
@@ -2564,7 +2773,7 @@ function handle_route_jobs(PDO $pdo): void
     }
 
     echo '<div class="panel">'
-        . '<div class="split"><h2>Daftar Job Desk Preventive Maintenance</h2><div class="actions"><a class="btn" href="' . route_url('export_excel', ['type' => 'jobs']) . '">Export Excel</a></div></div>'
+        . '<div class="split"><h2>Job Desk Per Kategori</h2><div class="actions"><a class="btn" href="' . route_url('export_excel', ['type' => 'jobs']) . '">Export Excel</a></div></div>'
         . $filterInfoHtml
         . '<p class="muted" style="margin-top:-6px;margin-bottom:12px;">Pilih Job Desk untuk mengisi atau mengelola daftar pekerjaannya (Job Tasks).</p>';
 
@@ -2578,7 +2787,7 @@ function handle_route_jobs(PDO $pdo): void
             echo '<p class="muted">Belum ada Job Desk tersimpan.' . ($canCreateJobs ? ' Silakan tambahkan pada form di samping.' : '') . '</p>';
         }
     } else {
-        echo '<div style="overflow-x:auto;"><table><tr><th>ID</th><th>Nama Job Desk</th><th>Asset Group / Type</th><th>Tasks</th><th>Dipakai</th><th>Aksi</th></tr>';
+        echo '<div style="overflow-x:auto;"><table><tr><th>ID</th><th>Nama Job Desk</th><th>Kategori</th><th>Tasks</th><th>Dipakai</th><th>Aksi</th></tr>';
         foreach ($deskRows as $d) {
             $dId = (int)$d['desk_id'];
             $dName = $d['job_desk_name'];
@@ -2822,11 +3031,19 @@ function handle_route_jobs(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Kategori Maintenance
+ * Proses: Mengelola master data kategori checklist dan parameter apa saja yang harus dicek saat maintenance.
+ */
 function handle_route_maintenance_categories(PDO $pdo): void
 {
     redirect_to('asset_groups');
 }
 
+/**
+ * Modul: Laporan Rekap
+ * Proses: Menampilkan laporan keseluruhan dan statistik kepatuhan (compliance) pelaksanaan maintenance.
+ */
 function handle_route_reports(PDO $pdo): void
 {
     $user = require_login();
@@ -2903,6 +3120,10 @@ function handle_route_reports(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Laporan Status
+ * Proses: Mencetak laporan status lengkap suatu aset dari hasil maintenance terakhir (sehat/rusak/service).
+ */
 function handle_route_maintenance_status_report(PDO $pdo): void
 {
     $user = require_login();
@@ -3038,18 +3259,26 @@ function export_excel(PDO $pdo, string $type): never
     if (!$user) {
         redirect_to('login');
     }
-    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'technicians', 'asset_movements', 'asset_loans'];
-    if (($user['role'] ?? '') === 'technician' && $type !== 'reports') {
-        http_response_code(403);
-        exit('Akses ditolak.');
-    }
-    if (in_array($type, $maintenanceTypes, true) && !can_manage_maintenance($user) && ($user['role'] ?? '') !== 'technician') {
-        http_response_code(403);
-        exit('Akses ditolak.');
-    }
-    if (!in_array($type, $maintenanceTypes, true) && !is_full_admin($user)) {
-        http_response_code(403);
-        exit('Akses ditolak.');
+    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'technicians', 'asset_movements', 'asset_mutations', 'asset_loans'];
+    
+    if ($type === 'asset_items') {
+        if (!is_full_admin($user) && !has_regulation('asset_items', 'view', $user)) {
+            http_response_code(403);
+            exit('Akses ditolak.');
+        }
+    } else {
+        if (($user['role'] ?? '') === 'technician' && $type !== 'reports') {
+            http_response_code(403);
+            exit('Akses ditolak.');
+        }
+        if (in_array($type, $maintenanceTypes, true) && !can_manage_maintenance($user) && ($user['role'] ?? '') !== 'technician') {
+            http_response_code(403);
+            exit('Akses ditolak.');
+        }
+        if (!in_array($type, $maintenanceTypes, true) && !is_full_admin($user)) {
+            http_response_code(403);
+            exit('Akses ditolak.');
+        }
     }
 
     $filename = 'pcconnect-' . preg_replace('/[^a-z0-9_-]/i', '', $type) . '-' . date('Ymd-His') . '.xls';
@@ -3168,8 +3397,119 @@ function export_excel(PDO $pdo, string $type): never
     }
 
     if ($type === 'asset_items') {
-        $rows = $pdo->query('SELECT ai.asset_code, c.company_name, ai.asset_type, ai.asset_name, ai.brand, ai.model, ai.serial_number, ai.manufacture_year, ai.warranty_until, ai.installed_at, ai.purchase_value, ai.current_value, ai.status, ai.location_label, ai.notes FROM asset_items ai LEFT JOIN asset_companies c ON c.id=ai.company_id ORDER BY ai.asset_code')->fetchAll();
-        output_tsv(['Asset Code', 'Company', 'Type', 'Nama Aset', 'Merek', 'Model', 'Serial Number', 'Tahun', 'Garansi', 'Tanggal Pasang', 'Nilai Awal', 'Nilai Current', 'Status', 'Lokasi', 'Notes'], $rows);
+        $groupId = (int)($_GET['group_id'] ?? 0);
+        $typeId = (int)($_GET['type_id'] ?? ($_GET['asset_type_id'] ?? ($_GET['category_id'] ?? 0)));
+        $categoryRaw = trim((string)($_GET['category'] ?? ''));
+        if ($typeId <= 0 && is_numeric($categoryRaw) && (int)$categoryRaw > 0) {
+            $typeId = (int)$categoryRaw;
+        }
+        $companyId = (int)($_GET['company_id'] ?? 0);
+        $locationId = (int)($_GET['location_id'] ?? 0);
+        $status = trim((string)($_GET['status'] ?? ''));
+        $q = trim((string)($_GET['q'] ?? ''));
+
+        $where = ["1=1"];
+        $params = [];
+
+        if ($groupId > 0) { $where[] = "ai.asset_group_id = ?"; $params[] = $groupId; }
+        if ($typeId > 0) {
+            $stmtT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+            $stmtT->execute([$typeId]);
+            $tRow = $stmtT->fetch(PDO::FETCH_ASSOC);
+            $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+            $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+            $typeClauses = ["ai.asset_type_id = ?"];
+            $params[] = $typeId;
+            if ($tCode !== '') {
+                $typeClauses[] = "ai.asset_type = ?";
+                $params[] = $tCode;
+            }
+            if ($tName !== '' && $tName !== $tCode) {
+                $typeClauses[] = "ai.asset_type = ?";
+                $params[] = $tName;
+            }
+            $where[] = "(" . implode(" OR ", $typeClauses) . ")";
+        } elseif ($categoryRaw !== '') {
+            $stmtT2 = $pdo->prepare("SELECT id FROM asset_types WHERE type_code = ? OR type_name = ?");
+            $stmtT2->execute([$categoryRaw, $categoryRaw]);
+            $matchingTypeIds = $stmtT2->fetchAll(PDO::FETCH_COLUMN);
+
+            $catClauses = ["ai.asset_type = ?"];
+            $params[] = $categoryRaw;
+            if (!empty($matchingTypeIds)) {
+                $inPlaceholders = implode(',', array_fill(0, count($matchingTypeIds), '?'));
+                $catClauses[] = "ai.asset_type_id IN ($inPlaceholders)";
+                foreach ($matchingTypeIds as $mtId) {
+                    $params[] = (int)$mtId;
+                }
+            }
+            $where[] = "(" . implode(" OR ", $catClauses) . ")";
+        }
+        if ($companyId > 0) { $where[] = "ai.company_id = ?"; $params[] = $companyId; }
+        if ($locationId > 0) { $where[] = "ai.location_id = ?"; $params[] = $locationId; }
+        if ($status !== '') { $where[] = "ai.status = ?"; $params[] = $status; }
+        if ($q !== '') {
+            $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR ai.brand_name LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR ai.owner_name LIKE ?)";
+            $kw = '%' . $q . '%';
+            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw]);
+        }
+        $whereSql = implode(' AND ', $where);
+
+        $sql = "SELECT ai.id, ai.asset_code, c.company_name, ag.group_name, 
+                       COALESCE(at.type_name, ai.asset_type) AS asset_type_name,
+                       ai.asset_mode, ai.asset_name, ai.brand_name, ai.model, ai.serial_number, ai.custodian_name, ai.custodian_nik, ai.warranty_until, ai.installed_at, ai.purchase_value, ai.status, l.location_name 
+                FROM asset_items ai 
+                LEFT JOIN asset_companies c ON c.id=ai.company_id 
+                LEFT JOIN asset_groups ag ON ag.id=ai.asset_group_id 
+                LEFT JOIN asset_types at ON at.id=ai.asset_type_id 
+                LEFT JOIN asset_locations l ON l.id=ai.location_id 
+                WHERE {$whereSql}
+                ORDER BY ag.group_name ASC, ai.asset_code ASC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $specsMap = [];
+        if (!empty($items)) {
+            $itemIds = array_map(function($i) { return (int)$i['id']; }, $items);
+            $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+            $specSql = "SELECT aspec.asset_item_id, ts.specification_name, aspec.specification_value
+                        FROM asset_specifications aspec
+                        JOIN asset_type_specifications ts ON ts.id = aspec.asset_type_specification_id
+                        WHERE aspec.asset_item_id IN ($placeholders)
+                        ORDER BY ts.display_order ASC";
+            $specStmt = $pdo->prepare($specSql);
+            $specStmt->execute($itemIds);
+            foreach ($specStmt->fetchAll(PDO::FETCH_ASSOC) as $s) {
+                $specsMap[(int)$s['asset_item_id']][] = $s['specification_name'] . ': ' . $s['specification_value'];
+            }
+        }
+
+        $exportRows = [];
+        foreach ($items as $ai) {
+            $spStr = isset($specsMap[(int)$ai['id']]) ? implode(' | ', $specsMap[(int)$ai['id']]) : '-';
+            $catName = ($ai['asset_type_name'] ?? '') ?: (($ai['asset_type'] ?? '') ?: '-');
+            $exportRows[] = [
+                $ai['asset_code'],
+                $ai['asset_name'] ?: $ai['model'],
+                $ai['brand_name'] ?: '-',
+                $ai['serial_number'] ?: '-',
+                $spStr,
+                $ai['group_name'] ?: '-',
+                $catName,
+                $ai['asset_mode'] ?: '-',
+                $ai['custodian_name'] ?: '-',
+                $ai['custodian_nik'] ?: '-',
+                $ai['company_name'] ?: '-',
+                $ai['location_name'] ?: '-',
+                $ai['installed_at'],
+                $ai['warranty_until'],
+                $ai['purchase_value'],
+                $ai['status']
+            ];
+        }
+        output_tsv(['Kode Unit', 'Nama Aset / Model', 'Brand', 'Serial Number', 'Spesifikasi', 'Komoditas', 'Kategori', 'Mode', 'Nama Pengguna', 'NIK Pengguna', 'Company', 'Lokasi', 'Tgl Beli', 'Tgl Garansi', 'Harga', 'Status'], $exportRows);
         exit;
     }
 
@@ -3179,15 +3519,15 @@ function export_excel(PDO $pdo, string $type): never
         exit;
     }
 
-    if ($type === 'asset_movements') {
+    if ($type === 'asset_movements' || $type === 'asset_mutations') {
         $q = trim((string)($_GET['q'] ?? ''));
         $startDate = trim((string)($_GET['start_date'] ?? ''));
         $endDate = trim((string)($_GET['end_date'] ?? ''));
         $where = ['1=1'];
         $params = [];
         if ($q !== '') {
-            $where[] = '(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR mv.reason LIKE ? OR mv.pic LIKE ? OR fp.asset_code LIKE ? OR tp.asset_code LIKE ?)';
-            for ($k = 0; $k < 6; $k++) { $params[] = "%{$q}%"; }
+            $where[] = '(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR mv.reason LIKE ? OR mv.pic LIKE ? OR mv.from_custodian_name LIKE ? OR mv.to_custodian_name LIKE ? OR mv.from_custodian_nik LIKE ? OR mv.to_custodian_nik LIKE ? OR fp.asset_code LIKE ? OR tp.asset_code LIKE ?)';
+            for ($k = 0; $k < 10; $k++) { $params[] = "%{$q}%"; }
         }
         if ($startDate !== '') {
             $where[] = 'mv.movement_date >= ?';
@@ -3197,6 +3537,7 @@ function export_excel(PDO $pdo, string $type): never
             $where[] = 'mv.movement_date <= ?';
             $params[] = $endDate;
         }
+        $where[] = '(mv.from_parent_asset_item_id IS NULL AND mv.to_parent_asset_item_id IS NULL AND mv.from_bundle_id IS NULL AND mv.to_bundle_id IS NULL)';
         $sql = 'SELECT mv.*, ai.asset_code, ai.asset_name, ai.asset_type, fp.asset_code from_parent_code, fp.asset_name from_parent_name, tp.asset_code to_parent_code, tp.asset_name to_parent_name, fc.company_name from_company, tc.company_name to_company 
                 FROM asset_movements mv 
                 JOIN asset_items ai ON ai.id=mv.asset_item_id 
@@ -3210,11 +3551,31 @@ function export_excel(PDO $pdo, string $type): never
         $stmt->execute($params);
         $exportRows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $from = $r['from_parent_code'] ? ($r['from_parent_code'] . ' - ' . $r['from_parent_name']) : '-';
-            $to = $r['to_parent_code'] ? ($r['to_parent_code'] . ' - ' . $r['to_parent_name']) : '-';
-            $company = ($r['from_company'] || $r['to_company']) ? (($r['from_company'] ?: '-') . ' -> ' . ($r['to_company'] ?: '-')) : '-';
+            $mType = (string)($r['movement_type'] ?? '');
+            if ($mType === 'user_move' || (!empty($r['to_custodian_name']) || !empty($r['from_custodian_name']))) {
+                $typeLabel = 'Ganti Pengguna';
+                $from = $r['from_custodian_name'] ? ($r['from_custodian_name'] . ($r['from_custodian_nik'] ? ' (' . $r['from_custodian_nik'] . ')' : '')) : '(Tanpa Pengguna)';
+                $to = $r['to_custodian_name'] ? ($r['to_custodian_name'] . ($r['to_custodian_nik'] ? ' (' . $r['to_custodian_nik'] . ')' : '')) : '-';
+                $company = '-';
+            } elseif ($mType === 'location_move') {
+                $typeLabel = 'Pindah Lokasi';
+                $from = '-';
+                $to = '-';
+                $company = '-';
+            } elseif ($mType === 'company_move' || (!empty($r['to_company_id']) || !empty($r['from_company_id']))) {
+                $typeLabel = 'Mutasi Company';
+                $from = $r['from_company'] ?: '-';
+                $to = $r['to_company'] ?: '-';
+                $company = ($r['from_company'] || $r['to_company']) ? (($r['from_company'] ?: '-') . ' -> ' . ($r['to_company'] ?: '-')) : '-';
+            } else {
+                $typeLabel = 'Mutasi Aset';
+                $from = $r['from_parent_code'] ? ($r['from_parent_code'] . ' - ' . $r['from_parent_name']) : '-';
+                $to = $r['to_parent_code'] ? ($r['to_parent_code'] . ' - ' . $r['to_parent_name']) : '-';
+                $company = ($r['from_company'] || $r['to_company']) ? (($r['from_company'] ?: '-') . ' -> ' . ($r['to_company'] ?: '-')) : '-';
+            }
             $exportRows[] = [
                 $r['movement_date'],
+                $typeLabel,
                 $r['asset_code'],
                 $r['asset_name'],
                 $r['asset_type'] ?? '-',
@@ -3225,7 +3586,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['pic'] ?: '-',
             ];
         }
-        output_tsv(['Tanggal Mutasi', 'Kode Aset', 'Nama Aset', 'Kategori/Tipe', 'Bundle Asal', 'Bundle Tujuan', 'Company', 'Alasan / Keterangan', 'PIC / Petugas'], $exportRows);
+        output_tsv(['Tanggal Mutasi', 'Jenis Mutasi', 'Kode Aset', 'Nama Aset', 'Kategori/Tipe', 'Dari (Pengguna / Asal)', 'Ke (Pengguna / Tujuan)', 'Company', 'Alasan / Keterangan', 'PIC / Petugas'], $exportRows);
         exit;
     }
 

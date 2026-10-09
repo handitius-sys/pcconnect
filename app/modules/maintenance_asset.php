@@ -33,7 +33,6 @@ if (!function_exists('unique_maintenance_asset_code')) {
     }
 }
 
-
 function maintenance_asset_defaults(): array
 {
     return [
@@ -694,6 +693,10 @@ function detach_asset_item_from_maintenance_assets(PDO $pdo, int $assetItemId, ?
     return $count;
 }
 
+/**
+ * Modul Maintenance Asset: Daftar Aset Maintenance
+ * Proses: Menampilkan seluruh objek aset kompleks (misal Mesin, Genset, Kendaraan) yang wajib dipelihara secara rutin.
+ */
 function handle_route_maintenance_assets(PDO $pdo): void
 {
     $user = require_role(['admin']);
@@ -706,6 +709,10 @@ function handle_route_maintenance_assets(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Maintenance Asset: Form Asset Maintenance
+ * Proses: Menangani pembuatan atau pengubahan spesifikasi, lokasi, dan jadwal default dari suatu Aset Maintenance.
+ */
 function handle_route_maintenance_asset_form(PDO $pdo): void
 {
     $user = require_role(['admin']);

@@ -61,16 +61,43 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
         return null;
     }
 
+    $originalCode = $code;
+
+    // Ekstrak ID asli dari kode yang mungkin mengandung security token (contoh: AC-001-A1B2)
+    if (function_exists('parse_asset_code')) {
+        [$baseAssetId, $security] = parse_asset_code($code);
+        if ($baseAssetId !== '') {
+            $code = $baseAssetId;
+        }
+    }
+
     // 1. Cari exact match asset_code
     $stmt = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
                            FROM asset_items ai
                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
                            LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                           WHERE UPPER(TRIM(ai.asset_code)) = UPPER(?)
+                           WHERE (UPPER(TRIM(ai.asset_code)) = UPPER(?) OR UPPER(TRIM(ai.asset_code)) = UPPER(?))
                            LIMIT 1");
-    $stmt->execute([$code]);
+    $stmt->execute([$originalCode, $code]);
     $item = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // 1.5. Cari alias_code
+    if (!$item) {
+        try {
+            $stmt_alias = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
+                                   FROM asset_items ai
+                                   LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
+                                   LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                   LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                   WHERE (UPPER(TRIM(ai.alias_code)) = UPPER(?) OR UPPER(TRIM(ai.alias_code)) = UPPER(?))
+                                   LIMIT 1");
+            $stmt_alias->execute([$originalCode, $code]);
+            $item = $stmt_alias->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            // Abaikan jika kolom alias_code belum ada di database
+        }
+    }
 
     // 2. Cari serial_number
     if (!$item) {
@@ -79,9 +106,9 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
                                 LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                                 LEFT JOIN asset_types t ON t.id = ai.asset_type_id
                                 LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                                WHERE UPPER(TRIM(ai.serial_number)) = UPPER(?)
+                                WHERE (UPPER(TRIM(ai.serial_number)) = UPPER(?) OR UPPER(TRIM(ai.serial_number)) = UPPER(?))
                                 LIMIT 1");
-        $stmt2->execute([$code]);
+        $stmt2->execute([$originalCode, $code]);
         $item = $stmt2->fetch(PDO::FETCH_ASSOC);
     }
 
@@ -101,8 +128,14 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
     return $item ?: null;
 }
 
+/**
+ * Modul: Daftar Peminjaman Aset
+ * Proses: Menampilkan tabel seluruh transaksi peminjaman aset (Aktif, Terlambat, Dikembalikan, Semua).
+ * Menangani filter pencarian dan navigasi tab.
+ */
 function handle_route_asset_loans(PDO $pdo): void
 {
+    try { $pdo->exec("ALTER TABLE asset_loans ADD COLUMN company_id INT NULL AFTER id"); } catch (Exception $e) {}
     $user = require_regulation('asset_loans', 'view');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_loan') {
@@ -347,9 +380,7 @@ function handle_route_asset_loans(PDO $pdo): void
                 . '  </td>'
                 . '  <td style="padding:10px 12px;vertical-align:top;text-align:center;">' . $badge . '</td>'
                 . '  <td style="padding:10px 12px;vertical-align:top;text-align:center;white-space:nowrap;">'
-                . '    <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center;">'
-                . '      <a class="btn" href="' . route_url('asset_loan_detail', ['id' => $l['id']]) . '" style="padding:4px 8px;font-size:12px;" title="Lihat Detail & Bukti Pinjam">📄 Detail</a>'
-                . ($l['status'] === 'active' && has_regulation('asset_loans', 'edit') ? '      <a class="btn" href="' . route_url('asset_loan_form', ['id' => $l['id']]) . '" style="padding:4px 8px;font-size:12px;background:#f59e0b;border-color:#f59e0b;color:#fff;" title="Edit Data Peminjaman">✏️ Edit</a>' : '')
+                . '    <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center;">'                . '<a href="' . route_url('asset_loan_form', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>'
                 . ($l['status'] === 'active' ? '      <a class="btn primary" href="' . route_url('asset_loan_return', ['id' => $l['id']]) . '" style="padding:4px 8px;font-size:12px;background:#16a34a;border-color:#16a34a;" title="Proses Pengembalian">📥 Kembalikan</a>' : '')
                 . (has_regulation('asset_loans', 'delete') ? '      <form method="post" action="' . route_url('asset_loans') . '" style="display:inline;" onsubmit="return confirm(\'Hapus transaksi peminjaman ' . e($l['loan_code']) . '? Status unit aset terkait akan dikembalikan ke Aktif.\');">' . csrf_field() . '<input type="hidden" name="action" value="delete_loan"><input type="hidden" name="loan_id" value="' . $l['id'] . '"><button type="submit" class="btn danger" style="padding:4px 8px;font-size:12px;">🗑️ Hapus</button></form>' : '')
                 . '    </div>'
@@ -370,8 +401,14 @@ function handle_route_asset_loans(PDO $pdo): void
 /**
  * Form Peminjaman Aset (Tambah Baru & Edit)
  */
+/**
+ * Modul: Tambah / Edit Peminjaman Aset
+ * Proses: Menangani form input transaksi peminjaman baru atau update data peminjaman.
+ * Menyimpan data peminjam, item aset, dan detail waktu pinjam ke tabel asset_loans dan asset_loan_items.
+ */
 function handle_route_asset_loan_form(PDO $pdo): void
 {
+    try { $pdo->exec("ALTER TABLE asset_loans ADD COLUMN company_id INT NULL AFTER id"); } catch (Exception $e) {}
     $id = (int)($_GET['id'] ?? $_POST['loan_id'] ?? 0);
     $user = $id > 0 ? require_regulation('asset_loans', 'edit') : require_regulation('asset_loans', 'create');
     $loan = null;
@@ -504,7 +541,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
                 $pdo->commit();
                 flash("Perubahan peminjaman aset <strong>{$loan['loan_code']}</strong> berhasil disimpan.", 'ok');
-                redirect_to('asset_loans');
+                redirect_to('asset_loan_detail', ['id' => $id, 'autoprint' => 1]);
             } else {
                 // INSERT Transaksi Baru
                 $prefix = 'LN-' . date('Ym') . '-';
@@ -522,11 +559,12 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 }
 
                 $insHeader = $pdo->prepare("INSERT INTO asset_loans 
-                    (loan_code, borrower_nik, borrower_name, borrower_department, borrower_phone, loan_date, expected_return_date, purpose, location_note, status, officer_user_id, officer_notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)");
+                    (loan_code, company_id, borrower_nik, borrower_name, borrower_department, borrower_phone, loan_date, expected_return_date, purpose, location_note, status, officer_user_id, officer_notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)");
                 $insHeader->execute([
                     $loanCode,
-                    $borrowerNik ?: null,
+                    empty($_POST['company_id']) ? null : (int)$_POST['company_id'],
+                      $borrowerNik ?: null,
                     $borrowerName,
                     $borrowerDept ?: null,
                     $borrowerPhone ?: null,
@@ -552,7 +590,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
                 $pdo->commit();
                 flash("Peminjaman aset berhasil disimpan dengan nomor: <strong>{$loanCode}</strong>.", 'ok');
-                redirect_to('asset_loans');
+                redirect_to('asset_loan_detail', ['id' => $loanId, 'autoprint' => 1]);
             }
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -574,6 +612,29 @@ function handle_route_asset_loan_form(PDO $pdo): void
     $purposeVal = $loan['purpose'] ?? '';
     $locationNoteVal = $loan['location_note'] ?? '';
     $officerNotesVal = $loan['officer_notes'] ?? '';
+
+    $employees = [];
+    try {
+        if (function_exists('employee_search_rows')) {
+            $employees = employee_search_rows($pdo, '', 500);
+        }
+        if (empty($employees) && db_table_exists($pdo, 'employee_directory')) {
+            $hasName = db_column_exists($pdo, 'employee_directory', 'name');
+            $nameExpr = $hasName ? "COALESCE(NULLIF(name, ''), employee_name, '')" : "employee_name";
+            $employees = $pdo->query("SELECT nik, $nameExpr AS name, department FROM employee_directory WHERE is_active = 1 ORDER BY name ASC LIMIT 500")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $ignored) {}
+
+    $availableLoanAssets = [];
+    try {
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name 
+                                           FROM asset_items ai 
+                                           LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
+                                           LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
+                                           LEFT JOIN asset_locations loc ON loc.id = ai.location_id 
+                                           WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone') 
+                                           ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
 
     // Data awal unit terverifikasi jika edit
     $initialItemsJs = [];
@@ -614,15 +675,14 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '    <span id="borrowerSourceBadge" style="font-size:12px;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-weight:600;' . ($borrowerNameVal !== '' ? '' : 'display:none;') . '">✓ Terpilih dari Database</span>'
         . '  </div>'
 
-        // Search Autocomplete Master Pengguna
-        . '  <div style="position:relative;margin-bottom:12px;">'
+        // Single-Box Autocomplete Master Pengguna (Satu Kotak Pencarian & Pemilihan)
+        . '  <div style="position:relative;margin-bottom:14px;">'
         . '    <label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:4px;display:block;">🔍 Cari & Pilih Karyawan dari Database Master Pengguna:'
-        . '      <input type="text" id="employeeSearchInput" placeholder="Ketik nama atau NIK karyawan (contoh: Budi, Agus, 00123)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px 14px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:14px;">'
+        . '      <input type="text" id="employeeSearchInput" placeholder="Ketik NIK, Nama, atau Departemen karyawan (contoh: Budi, Agus, 00123)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px 14px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:14px;">'
         . '    </label>'
         . '    <div id="employeeDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
         . '  </div>'
-
-        . '  <div class="grid three">'
+        . '  <div class="grid three">' 
         . '    <label>NIK Peminjam'
         . '      <input id="borrowerNikInput" name="borrower_nik" value="' . e($borrowerNikVal) . '" placeholder="NIK Karyawan">'
         . '    </label>'
@@ -634,7 +694,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '    </label>'
         . '  </div>'
         . '  <div class="grid two" style="margin-top:8px;">'
-        . '    <label>No. HP / WhatsApp (Peminjam)'
+        . '    <label>Company (Perusahaan)<select name="company_id">' . company_options($pdo, (int)($loan['company_id'] ?? 0)) . '</select></label><label>No. HP / WhatsApp (Peminjam)'
         . '      <input name="borrower_phone" value="' . e($borrowerPhoneVal) . '" placeholder="Contoh: 08123456789">'
         . '    </label>'
         . '    <label>Lokasi / Ruang Penggunaan'
@@ -683,12 +743,15 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '      <button type="button" class="btn" onclick="toggleCameraScanner()" style="margin-top:8px;background:#334155;color:#fff;padding:6px 14px;font-size:12px;">✕ Tutup Kamera</button>'
         . '    </div>'
 
-        // Input Barcode / Manual
-        . '    <div style="display:flex;gap:8px;margin-top:12px;">'
-        . '      <input type="text" id="barcodeAssetInput" placeholder="Ketik Kode Unit Aset / scan barcode fisik (contoh: IT-CMP-000001) lalu tekan Enter..." style="flex:1;font-size:14px;padding:10px 14px;font-family:monospace;font-weight:600;background:#fff;border:1px solid #cbd5e1;border-radius:6px;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();lookupAndAddAsset(this.value);}">'
-        . '      <button type="button" class="btn primary" onclick="lookupAndAddAsset(document.getElementById(\'barcodeAssetInput\').value)" style="padding:10px 20px;font-weight:700;white-space:nowrap;">'
-        . '        + Tambah Unit'
-        . '      </button>'
+        // Input Single-Box Combobox Unit Aset (Terdaftar) & Barcode Input
+        . '    <div style="position:relative;margin-top:12px;">'
+        . '      <div style="display:flex;gap:8px;">'
+        . '        <input type="text" id="barcodeAssetInput" placeholder="🔍 Ketik kode, nama, komoditas, atau lokasi unit aset untuk mencari, atau scan barcode..." autocomplete="off" style="flex:1;font-size:14px;padding:10px 14px;font-family:monospace;font-weight:600;background:#fff;border:2px solid #0284c7;border-radius:6px;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(this.value);}">'
+        . '        <button type="button" class="btn primary" onclick="var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(document.getElementById(\'barcodeAssetInput\').value)" style="padding:10px 20px;font-weight:700;white-space:nowrap;">'
+        . '          + Tambah Unit'
+        . '        </button>'
+        . '      </div>'
+        . '      <div id="assetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
         . '    </div>'
         . '    <div id="scanFeedbackAlert" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:13px;font-weight:600;"></div>'
         . '  </div>'
@@ -722,7 +785,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
         // Tombol Aksi
         . '<div class="actions" style="margin-top:20px;">'
-        . '  <button type="submit" class="btn primary" style="padding:10px 26px;font-size:14px;font-weight:bold;">💾 Simpan Peminjaman Aset</button>'
+        . '  <button type="submit" class="btn primary" style="padding:10px 26px;font-size:14px;font-weight:bold;">💾 Simpan Peminjaman Aset</button>' . ($id > 0 ? '  <button type="button" class="btn" onclick="window.open(\'' . route_url('asset_loan_detail', ['id' => $id, 'autoprint' => 1]) . '\', \'_self\')" style="padding:10px 18px;display:inline-flex;align-items:center;gap:6px;background:#e2e8f0;border-color:#cbd5e1;color:#0f172a;font-weight:600;">Cetak Bukti Pinjam</button>' : '')
         . '  <a class="btn" href="' . route_url('asset_loans') . '" style="padding:10px 18px;">Batal</a>'
         . '</div>'
         . '</form>'
@@ -731,8 +794,72 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '<script src="https://unpkg.com/html5-qrcode"></script>'
         . '<script>
         var scannedItems = ' . json_encode($initialItemsJs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
+        var availableLoanAssets = ' . json_encode($availableLoanAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
         var html5QrCode = null;
         var isCameraOpen = false;
+
+        function escapeHtml(str) {
+            if (!str) return "";
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\'/g, "&#039;");
+        }
+
+        function renderAssetDropdown(q) {
+            var dd = document.getElementById("assetDropdownList");
+            if (!dd) return;
+            q = (q || "").trim().toLowerCase();
+            
+            var matches = availableLoanAssets.filter(function(item) {
+                if (!q) return true;
+                var code = (item.asset_code || "").toLowerCase();
+                var name = (item.asset_name || "").toLowerCase();
+                var brand = (item.brand || "").toLowerCase();
+                var model = (item.model || "").toLowerCase();
+                var group = (item.group_name || "").toLowerCase();
+                var type = (item.type_name || "").toLowerCase();
+                var loc = (item.location_name || "").toLowerCase();
+                return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q);
+            });
+
+            if (matches.length === 0) {
+                dd.innerHTML = "<div style=\'padding:10px 14px;font-size:12px;color:#64748b;text-align:center;\'>Tidak ada unit aset tersedia yang cocok dengan \" " + escapeHtml(q) + " \"</div>";
+                dd.style.display = "block";
+                return;
+            }
+
+            dd.innerHTML = "";
+            matches.slice(0, 25).forEach(function(item) {
+                var subParts = [];
+                if (item.brand || item.model) subParts.push((item.brand ? item.brand + " " : "") + (item.model || ""));
+                if (item.group_name || item.type_name) subParts.push((item.group_name || "") + " › " + (item.type_name || ""));
+                if (item.location_name) subParts.push("📍 " + item.location_name);
+
+                var div = document.createElement("div");
+                div.style.padding = "9px 12px";
+                div.style.borderBottom = "1px solid #f1f5f9";
+                div.style.cursor = "pointer";
+                div.style.background = "#fff";
+                div.innerHTML = "<div style=\'font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;\'>" + escapeHtml(item.asset_code) + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
+                    + "<div style=\'font-size:11px;color:#64748b;margin-top:2px;\'>" + escapeHtml(subParts.join(" &bull; ")) + "</div>";
+                div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
+                div.onmouseleave = function() { div.style.background = "#fff"; };
+                div.onmousedown = function() {
+                    dd.style.display = "none";
+                    var input = document.getElementById("barcodeAssetInput");
+                    if (input) input.value = "";
+                    lookupAndAddAsset(item.asset_code);
+                };
+                dd.appendChild(div);
+            });
+            dd.style.display = "block";
+        }
+
+        document.addEventListener("click", function(e) {
+            var dd = document.getElementById("assetDropdownList");
+            var input = document.getElementById("barcodeAssetInput");
+            if (dd && input && !dd.contains(e.target) && e.target !== input) {
+                dd.style.display = "none";
+            }
+        });
 
         function renderScannedTable() {
             var tbody = document.getElementById("loanItemsBody");
@@ -910,7 +1037,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
             });
         }
 
-        // Autocomplete Master Pengguna
+        // Single-Box Search & Selection Master Pengguna
         (function() {
             var searchInput = document.getElementById("employeeSearchInput");
             var dropdown = document.getElementById("employeeDropdownList");
@@ -918,66 +1045,64 @@ function handle_route_asset_loan_form(PDO $pdo): void
             var nameInput = document.getElementById("borrowerNameInput");
             var deptInput = document.getElementById("borrowerDeptInput");
             var badge = document.getElementById("borrowerSourceBadge");
-            var timer = null;
+            var employees = ' . json_encode($employees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
 
             function hideDropdown() {
-                setTimeout(function() { dropdown.style.display = "none"; }, 200);
+                setTimeout(function() { if (dropdown) dropdown.style.display = "none"; }, 220);
             }
 
             function selectEmployee(item) {
-                nameInput.value = item.name || "";
-                nikInput.value = item.nik || "";
-                deptInput.value = item.department || "";
-                searchInput.value = (item.name || "") + " (" + (item.nik || "-") + ")";
-                badge.style.display = "inline-block";
-                badge.textContent = "✓ Terpilih: " + (item.name || "");
-                dropdown.style.display = "none";
+                if (nameInput) nameInput.value = item.name || "";
+                if (nikInput) nikInput.value = item.nik || "";
+                if (deptInput) deptInput.value = item.department || "";
+                if (searchInput) searchInput.value = (item.name || "") + (item.nik ? (" (" + item.nik + ")") : "");
+                if (badge) {
+                    badge.style.display = "inline-block";
+                    badge.textContent = "✓ Terpilih: " + (item.name || item.nik);
+                }
+                if (dropdown) dropdown.style.display = "none";
             }
 
-            function searchEmployees(q) {
-                fetch("index.php?route=employee_search&limit=30&q=" + encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(res) {
-                        var data = (res && res.data) ? res.data : [];
-                        dropdown.innerHTML = "";
-                        if (data.length === 0) {
-                            dropdown.innerHTML = "<div style=\'padding:10px 14px;color:#94a3b8;font-size:13px;\'>Tidak ada karyawan cocok di Master Pengguna.</div>";
-                            dropdown.style.display = "block";
-                            return;
-                        }
-                        data.forEach(function(row) {
-                            var div = document.createElement("div");
-                            div.style.padding = "10px 14px";
-                            div.style.cursor = "pointer";
-                            div.style.borderBottom = "1px solid #f1f5f9";
-                            div.style.fontSize = "13px";
-                            div.innerHTML = "<strong style=\'color:#0f172a;\'>" + (row.name || "-") + "</strong>"
-                                + " <span style=\'color:#64748b;\'>(" + (row.nik || "-") + ")</span>"
-                                + (row.department ? (" &bull; <span style=\'color:#0284c7;\'>" + row.department + "</span>") : "");
-                            div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
-                            div.onmouseleave = function() { div.style.background = "#fff"; };
-                            div.onmousedown = function() { selectEmployee(row); };
-                            dropdown.appendChild(div);
-                        });
-                        dropdown.style.display = "block";
-                    })
-                    .catch(function() {});
+            function renderEmployees(q) {
+                if (!dropdown) return;
+                q = (q || "").trim().toLowerCase();
+                var filtered = employees.filter(function(emp) {
+                    if (!q) return true;
+                    var name = (emp.name || "").toLowerCase();
+                    var nik = (emp.nik || "").toLowerCase();
+                    var dept = (emp.department || "").toLowerCase();
+                    return name.includes(q) || nik.includes(q) || dept.includes(q);
+                }).slice(0, 30);
+
+                dropdown.innerHTML = "";
+                if (filtered.length === 0) {
+                    dropdown.innerHTML = "<div style=\'padding:10px 14px;color:#94a3b8;font-size:13px;\'>Tidak ada karyawan cocok di Master Pengguna.</div>";
+                    dropdown.style.display = "block";
+                    return;
+                }
+                filtered.forEach(function(row) {
+                    var div = document.createElement("div");
+                    div.style.padding = "10px 14px";
+                    div.style.cursor = "pointer";
+                    div.style.borderBottom = "1px solid #f1f5f9";
+                    div.style.fontSize = "13px";
+                    div.innerHTML = "<strong style=\'color:#0f172a;\'>" + escapeHtml(row.name || "-") + "</strong>"
+                        + " <span style=\'color:#64748b;\'>(" + escapeHtml(row.nik || "-") + ")</span>"
+                        + (row.department ? (" &bull; <span style=\'color:#0284c7;font-weight:600;\'>" + escapeHtml(row.department) + "</span>") : "");
+                    div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
+                    div.onmouseleave = function() { div.style.background = "#fff"; };
+                    div.onmousedown = function() { selectEmployee(row); };
+                    dropdown.appendChild(div);
+                });
+                dropdown.style.display = "block";
             }
 
             if (searchInput) {
                 searchInput.addEventListener("input", function() {
-                    clearTimeout(timer);
-                    var q = searchInput.value.trim();
-                    if (q.length === 0) {
-                        dropdown.style.display = "none";
-                        return;
-                    }
-                    timer = setTimeout(function() { searchEmployees(q); }, 250);
+                    renderEmployees(this.value);
                 });
                 searchInput.addEventListener("focus", function() {
-                    if (searchInput.value.trim()) {
-                        searchEmployees(searchInput.value.trim());
-                    }
+                    renderEmployees(this.value);
                 });
                 searchInput.addEventListener("blur", hideDropdown);
             }
@@ -1009,14 +1134,18 @@ function handle_route_asset_loan_form(PDO $pdo): void
 /**
  * Detail Peminjaman & Tanda Terima Siap Cetak
  */
+/**
+ * Modul: Detail Peminjaman Aset & Cetak Struk
+ * Proses: Menampilkan rincian lengkap satu transaksi peminjaman.
+ * Menangani tampilan cetak (Print Receipt) untuk serah terima peminjaman.
+ */
 function handle_route_asset_loan_detail(PDO $pdo): void
 {
+    try { $pdo->exec("ALTER TABLE asset_loans ADD COLUMN company_id INT NULL AFTER id"); } catch (Exception $e) {}
     $user = require_regulation('asset_loans', 'view');
     $id = (int)($_GET['id'] ?? 0);
 
-    $stmt = $pdo->prepare("SELECT al.*, u1.name AS officer_name, u2.name AS return_officer_name
-        FROM asset_loans al
-        LEFT JOIN users u1 ON u1.id = al.officer_user_id
+    $stmt = $pdo->prepare("SELECT al.*, u1.name AS officer_name, u2.name AS return_officer_name, loan_comp.company_name AS loan_company_name FROM asset_loans al LEFT JOIN asset_companies loan_comp ON loan_comp.id = al.company_id LEFT JOIN users u1 ON u1.id = al.officer_user_id
         LEFT JOIN users u2 ON u2.id = al.return_officer_user_id
         WHERE al.id = ?");
     $stmt->execute([$id]);
@@ -1028,9 +1157,10 @@ function handle_route_asset_loan_detail(PDO $pdo): void
     }
 
     $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
-        g.group_name, t.type_name, loc.location_name
+        g.group_name, t.type_name, loc.location_name, comp.company_name AS asset_company_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
+        LEFT JOIN asset_companies comp ON comp.id = ai.company_id
         LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
         LEFT JOIN asset_types t ON t.id = ai.asset_type_id
         LEFT JOIN asset_locations loc ON loc.id = ai.location_id
@@ -1041,7 +1171,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
 
     render_header('Detail Peminjaman ' . $loan['loan_code'], $user);
 
-    $companyName = config_value('company_name') ?: 'PT. SOA Group';
+    $companyName = (!empty($loan['loan_company_name'])) ? $loan['loan_company_name'] : ((!empty($items) && !empty($items[0]['asset_company_name'])) ? $items[0]['asset_company_name'] : (config_value('company_name') ?: 'PT. SOA Group'));
     $isOverdue = ($loan['status'] === 'active' && !empty($loan['expected_return_date']) && $loan['expected_return_date'] < date('Y-m-d'));
 
     echo '<style>
@@ -1066,125 +1196,69 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         . '  </div>'
         . '</div>'
 
-        // Lembar Tanda Terima
-        . '<div class="print-receipt" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:24px;max-width:850px;margin:0 auto;box-shadow:0 4px 12px rgba(0,0,0,0.05);">'
+                        // Lembar Tanda Terima
+        . '<div class="print-receipt" style="background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:50px;max-width:850px;margin:20px auto;box-shadow:0 10px 25px rgba(0,0,0,0.1);font-family: Arial, sans-serif;">'
+        . '  <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:15px;margin-bottom:30px;">'
+        . '    <h2 style="margin:0;font-size:24px;color:#0f172a;letter-spacing:1px;">TANDA TERIMA PEMINJAMAN</h2>'
+        . '    <p style="margin:5px 0 0 0;color:#475569;font-size:14px;">No: ' . e($loan['loan_code']) . '</p>'
+        . '  </div>'
         
-        // Header Surat
-        . '  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:16px;">'
-        . '    <div>'
-        . '      <div style="font-size:18px;font-weight:800;color:#0f172a;text-transform:uppercase;">' . e($companyName) . '</div>'
-        . '      <div style="font-size:13px;color:#475569;">Sistem Manajemen Aset & Operasional PcConnect</div>'
-        . '    </div>'
-        . '    <div style="text-align:right;">'
-        . '      <div style="font-size:16px;font-weight:700;color:#0284c7;font-family:monospace;">' . e($loan['loan_code']) . '</div>'
-        . '      <div style="font-size:12px;color:#64748b;margin-top:2px;">Tgl Pinjam: ' . date('d F Y H:i', strtotime($loan['loan_date'])) . '</div>'
-        . '    </div>'
-        . '  </div>'
+        . '  <table style="width:100%;margin-bottom:30px;font-size:15px;line-height:1.6;">'
+        . '    <tr><td style="width:200px;font-weight:bold;color:#334155;">Company</td><td>: <strong>' . e($companyName) . '</strong></td></tr>'
+        . '    <tr><td style="font-weight:bold;color:#334155;">Peminjam</td><td>: ' . e($loan['borrower_name'] . ($loan['borrower_nik'] ? ' (' . $loan['borrower_nik'] . ')' : '')) . '</td></tr>'
+        . '    <tr><td style="font-weight:bold;color:#334155;">Tanggal Peminjam</td><td>: ' . e(date('d F Y', strtotime($loan['loan_date']))) . '</td></tr>'
+        . '    <tr><td style="font-weight:bold;color:#334155;">Estimasi Pengembalian</td><td>: ' . (!empty($loan['expected_return_date']) ? e(date('d F Y', strtotime($loan['expected_return_date']))) : '-') . '</td></tr>'
+        . '  </table>'
 
-        . '  <h2 style="text-align:center;margin:0 0 16px 0;font-size:17px;letter-spacing:1px;text-transform:uppercase;color:#1e293b;">SURAT BUKTI SERAH-TERIMA PEMINJAMAN ASET</h2>'
+        . '  <table style="width:100%;border-collapse:collapse;margin-bottom:50px;font-size:14px;">'
+        . '    <thead>'
+        . '      <tr style="background:#f1f5f9;color:#0f172a;">'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 8px;text-align:center;width:50px;">No</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 15px;text-align:left;">Kode Aset yang di Pinjam</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 15px;text-align:left;">Nama Barang</th>'
+        . '      </tr>'
+        . '    </thead>'
+        . '    <tbody>';
 
-        // Status Banner
-        . '  <div style="margin-bottom:16px;padding:10px 14px;border-radius:6px;background:' . ($loan['status'] === 'returned' ? '#f0fdf4;border:1px solid #bbf7d0;color:#166534' : ($isOverdue ? '#fef2f2;border:1px solid #fecaca;color:#991b1b' : '#f0f9ff;border:1px solid #bae6fd;color:#0369a1')) . ';font-size:13px;display:flex;justify-content:space-between;align-items:center;">'
-        . '    <div><strong>Status:</strong> ' . ($loan['status'] === 'returned' ? 'SUDAH DIKEMBALIKAN' : ($isOverdue ? 'JATUH TEMPO / OVERDUE' : 'AKTIF SEDANG DIPINJAM')) . '</div>'
-        . '    <div><strong>Target Kembali:</strong> ' . (!empty($loan['expected_return_date']) ? date('d/m/Y', strtotime($loan['expected_return_date'])) : '-') . '</div>'
-        . '  </div>'
-
-        // Detail Peminjam & Keperluan
-        . '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;font-size:13px;">'
-        . '    <div style="background:#f8fafc;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">'
-        . '      <div style="font-weight:700;color:#334155;margin-bottom:6px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;">IDENTITAS PEMINJAM:</div>'
-        . '      <div><strong>Nama:</strong> ' . e($loan['borrower_name']) . '</div>'
-        . '      <div><strong>NIK:</strong> ' . e($loan['borrower_nik'] ?: '-') . '</div>'
-        . '      <div><strong>Departemen:</strong> ' . e($loan['borrower_department'] ?: '-') . '</div>'
-        . '      <div><strong>Kontak:</strong> ' . e($loan['borrower_phone'] ?: '-') . '</div>'
-        . '    </div>'
-        . '    <div style="background:#f8fafc;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">'
-        . '      <div style="font-weight:700;color:#334155;margin-bottom:6px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;">KEPERLUAN & LOKASI:</div>'
-        . '      <div><strong>Keperluan:</strong> ' . e($loan['purpose'] ?: '-') . '</div>'
-        . '      <div><strong>Lokasi Pakai:</strong> ' . e($loan['location_note'] ?: '-') . '</div>'
-        . '      <div><strong>Petugas Penyerah:</strong> ' . e($loan['officer_name'] ?: 'Admin') . '</div>'
-        . ($loan['status'] === 'returned' ? '      <div><strong>Petugas Penerima:</strong> ' . e($loan['return_officer_name'] ?: 'Admin') . ' (' . date('d/m/Y H:i', strtotime($loan['actual_return_date'])) . ')</div>' : '')
-        . '    </div>'
-        . '  </div>'
-
-        // Tabel Rincian Unit Aset
-        . '  <div style="margin-bottom:24px;">'
-        . '    <div style="font-weight:700;color:#0f172a;margin-bottom:8px;font-size:14px;">DAFTAR UNIT ASET FISIK:</div>'
-        . '    <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #cbd5e1;">'
-        . '      <thead><tr style="background:#f1f5f9;border-bottom:1px solid #cbd5e1;text-align:left;">'
-        . '        <th style="padding:8px 10px;border-right:1px solid #cbd5e1;width:30px;text-align:center;">No</th>'
-        . '        <th style="padding:8px 10px;border-right:1px solid #cbd5e1;">Kode Aset</th>'
-        . '        <th style="padding:8px 10px;border-right:1px solid #cbd5e1;">Kategori / Nama Alat</th>'
-        . '        <th style="padding:8px 10px;border-right:1px solid #cbd5e1;">Kondisi Saat Keluar</th>'
-        . '        <th style="padding:8px 10px;">Status / Kondisi Kembali</th>'
-        . '      </tr></thead>'
-        . '      <tbody>';
-
-    $no = 1;
-    foreach ($items as $it) {
-        $nameInfo = e($it['asset_name'] ?: ($it['brand'] . ' ' . $it['model']));
-        $catInfo = e(($it['group_name'] ?? '') . ' - ' . ($it['type_name'] ?? ''));
-        $photoOutHtml = !empty($it['photo_out'])
-            ? '<div style="margin-top:5px;"><a href="' . e($it['photo_out']) . '" target="_blank"><img src="' . e($it['photo_out']) . '" style="max-height:55px;max-width:85px;border-radius:4px;border:1px solid #cbd5e1;display:block;" alt="Foto Pinjam"></a></div>'
-            : '';
-        $photoInHtml = !empty($it['photo_in'])
-            ? '<div style="margin-top:5px;"><a href="' . e($it['photo_in']) . '" target="_blank"><img src="' . e($it['photo_in']) . '" style="max-height:55px;max-width:85px;border-radius:4px;border:1px solid #cbd5e1;display:block;" alt="Foto Kembali"></a></div>'
-            : '';
-
-        echo '<tr style="border-bottom:1px solid #e2e8f0;">'
-            . '  <td style="padding:8px 10px;text-align:center;border-right:1px solid #cbd5e1;">' . $no++ . '</td>'
-            . '  <td style="padding:8px 10px;font-family:monospace;font-weight:bold;color:#0369a1;border-right:1px solid #cbd5e1;">' . e($it['asset_code']) . '</td>'
-            . '  <td style="padding:8px 10px;border-right:1px solid #cbd5e1;">'
-            . '    <div style="font-weight:600;">' . $nameInfo . '</div>'
-            . '    <div style="font-size:11px;color:#64748b;">' . $catInfo . (!empty($it['serial_number']) ? ' &bull; SN: ' . e($it['serial_number']) : '') . '</div>'
-            . '  </td>'
-            . '  <td style="padding:8px 10px;border-right:1px solid #cbd5e1;">'
-            . '    <div>' . e($it['condition_out']) . '</div>'
-            . (!empty($it['notes_out']) ? '<div style="font-size:11px;color:#64748b;">' . e($it['notes_out']) . '</div>' : '')
-            . $photoOutHtml
-            . '  </td>'
-            . '  <td style="padding:8px 10px;">'
-            . ($it['status'] === 'returned'
-                ? '<div style="color:#166534;font-weight:600;">✓ Kembali: ' . e($it['condition_in'] ?: 'Normal') . '</div>' . (!empty($it['notes_in']) ? '<div style="font-size:11px;color:#64748b;">' . e($it['notes_in']) . '</div>' : '')
-                : ($it['status'] === 'damaged'
-                    ? '<div style="color:#991b1b;font-weight:600;">⚠️ Rusak: ' . e($it['condition_in']) . '</div>'
-                    : '<span style="color:#b45309;">Sedang Dipinjam</span>'))
-            . $photoInHtml
-            . '  </td>'
-            . '</tr>';
+    foreach ($items as $idx => $it) {
+        echo '      <tr>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 8px;text-align:center;">' . ($idx + 1) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 15px;font-family:monospace;font-size:15px;">' . e($it['asset_code']) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 15px;">' . e($it['asset_name'] ?: $it['model']) . '</td>'
+            . '      </tr>';
     }
 
-    echo '      </tbody>'
-        . '    </table>'
-        . '  </div>'
+    echo '    </tbody>'
+        . '  </table>'
 
-        // Kolom Tanda Tangan
-        . '  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;text-align:center;font-size:12px;margin-top:30px;padding-top:10px;">'
-        . '    <div>'
-        . '      <div style="margin-bottom:60px;">Peminjam / Pemakai,</div>'
-        . '      <div style="font-weight:700;text-decoration:underline;">' . e($loan['borrower_name']) . '</div>'
-        . '      <div style="color:#64748b;">NIK: ' . e($loan['borrower_nik'] ?: '.....................') . '</div>'
-        . '    </div>'
-        . '    <div>'
-        . '      <div style="margin-bottom:60px;">Petugas Penyerah,</div>'
-        . '      <div style="font-weight:700;text-decoration:underline;">' . e($loan['officer_name'] ?: 'Petugas IT / GA') . '</div>'
-        . '      <div style="color:#64748b;">Tgl: ' . date('d/m/Y', strtotime($loan['loan_date'])) . '</div>'
-        . '    </div>'
-        . '    <div>'
-        . '      <div style="margin-bottom:60px;">Petugas Penerima Kembali,</div>'
-        . '      <div style="font-weight:700;text-decoration:underline;">' . e($loan['return_officer_name'] ?: '....................................') . '</div>'
-        . '      <div style="color:#64748b;">Tgl: ' . (!empty($loan['actual_return_date']) ? date('d/m/Y', strtotime($loan['actual_return_date'])) : '..... / ..... / 20.....') . '</div>'
-        . '    </div>'
-        . '  </div>'
-
+        . '  <table style="width:100%;text-align:center;margin-top:20px;font-size:15px;">'
+        . '    <tr>'
+        . '      <td style="width:50%;vertical-align:top;">'
+        . '        <p style="margin-bottom:90px;color:#334155;">Peminjam,</p>'
+        . '        <div style="font-weight:bold;color:#0f172a;">( .................................... )</div>'
+        . '      </td>'
+        . '      <td style="width:50%;vertical-align:top;">'
+        . '        <p style="margin-bottom:90px;color:#334155;">Pemberi,</p>'
+        . '        <div style="font-weight:bold;color:#0f172a;">( .................................... )</div>'
+        . '      </td>'
+        . '    </tr>'
+        . '  </table>'
         . '</div>'
         . '</section>';
 
+        if (!empty($_GET['autoprint'])) {
+        echo '<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }</script>';
+    }
     render_footer();
 }
 
 /**
  * Form / Aksi Pengembalian Aset (Check-In)
+ */
+/**
+ * Modul: Pengembalian Aset (Return)
+ * Proses: Memproses pengembalian unit aset fisik dari peminjam.
+ * Mengupdate status unit aset kembali ke 'Aktif' dan mencatat tanggal pengembalian di transaksi.
  */
 function handle_route_asset_loan_return(PDO $pdo): void
 {
@@ -1382,6 +1456,11 @@ function handle_route_asset_loan_return(PDO $pdo): void
 /**
  * Report Peminjaman Aset (di menu Reports)
  */
+/**
+ * Modul: Laporan Peminjaman Aset
+ * Proses: Menghasilkan laporan transaksi peminjaman berdasarkan filter tanggal.
+ * Menyediakan opsi untuk mengekspor data laporan ke dalam format Excel.
+ */
 function handle_route_report_asset_loans(PDO $pdo): void
 {
     $user = require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer']);
@@ -1512,4 +1591,6 @@ function handle_route_report_asset_loans(PDO $pdo): void
     echo '</section>';
     render_footer();
 }
+
+
 

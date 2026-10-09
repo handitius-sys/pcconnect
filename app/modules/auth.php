@@ -111,6 +111,10 @@ function delete_user_account(PDO $pdo, int $userId): void
     }
 }
 
+/**
+ * Modul Auth: Login
+ * Proses: Menangani form autentikasi dan pembuatan sesi untuk user/admin.
+ */
 function handle_route_login(PDO $pdo): void
 {
     $appName = app_name();
@@ -390,14 +394,25 @@ function handle_route_login(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Auth: Logout
+ * Proses: Menghancurkan sesi pengguna saat ini dan mengembalikannya ke halaman login.
+ */
 function handle_route_logout(): never
 {
     session_destroy();
     redirect_to('login');
 }
 
+/**
+ * Modul Auth: Manajemen Pengguna
+ * Proses: Menangani daftar pengguna sistem (Admin/Staff), pembuatan akun, dan pengaturan hak akses (Role).
+ */
 function handle_route_users(PDO $pdo): void
 {
+    if (!function_exists('employee_portal_name_picker_html')) {
+        require_once __DIR__ . '/pc.php';
+    }
     $user = require_role(['admin']);
     $maintenanceRoleReady = ensure_maintenance_admin_role($pdo);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -533,7 +548,7 @@ function handle_route_users(PDO $pdo): void
         echo '<section class="panel"><div class="split"><h2>Edit User</h2><a class="btn" href="' . route_url('users') . '">Batal Edit</a></div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="' . e($editUser['id']) . '"><div class="grid three"><label>Nama<input name="name" value="' . e($editUser['name']) . '" required></label><label>Username<input name="username" value="' . e($editUser['username']) . '" required></label><label>Role<select name="role" required>' . $roleOptions . '</select></label></div><button class="btn primary">Simpan Perubahan</button></form></section>';
     }
     if (has_regulation('users', 'create', $user)) {
-        echo '<section class="grid two"><div class="panel"><h2>Tambah User</h2><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">' . employee_portal_name_picker_html('user', 'userNameInput', 'userUsernameInput') . '<label>Nama<input id="userNameInput" name="name" required></label><label>Username<input id="userUsernameInput" name="username" required></label><label>Role<select name="role"><option value="admin">Admin Full</option><option value="maintenance_admin">Admin Maintenance (Preventive)</option><option value="technician">Teknisi - Preventive Maintenance</option><option value="corrective_maintenance">Corrective Maintenance - Field Service & Reparasi</option><option value="loan_officer" selected>Petugas Peminjaman Aset (Mobile & Web)</option></select></label><label>Password<input type="password" name="password" required minlength="8"></label><button class="btn primary">Tambah User</button></form></div>';
+        echo '<div class="panel"><h2>Tambah User</h2><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add"><label>Nama<input id="userNameInput" name="name" required></label><label>Username<input id="userUsernameInput" name="username" required></label><label>Role<select name="role"><option value="admin">Admin Full</option><option value="maintenance_admin">Admin Maintenance (Preventive)</option><option value="technician">Teknisi - Preventive Maintenance</option><option value="corrective_maintenance">Corrective Maintenance - Field Service & Reparasi</option><option value="loan_officer" selected>Petugas Peminjaman Aset (Mobile & Web)</option></select></label><label>Password<input type="password" name="password" required minlength="8"></label><button class="btn primary">Tambah User</button></form></div>';
         echo '<div class="panel"><h2>Catatan Hak Akses Role</h2><ul><li><strong>Admin Full:</strong> Akses penuh ke seluruh menu & sistem.</li><li><strong>Admin Maintenance:</strong> Manajemen jadwal & checklist preventive maintenance.</li><li><strong>Teknisi:</strong> Akses aplikasi mobile scan Preventive Maintenance.</li><li><strong>Corrective Maintenance:</strong> Akses aplikasi mobile "AsetConnect Field Service" (Troubleshoot, Service QR, Part Replacement).</li><li><strong>Petugas Peminjaman Aset:</strong> Akses serah-terima alat kerja & unit aset, pencatatan peminjaman (scan QR/kode), dan konfirmasi pengembalian melalui Mobile Peminjaman & Web Desktop.</li></ul></div></section>';
     }
     echo '<section class="panel"><h2>Daftar User</h2><table><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Reset Password</th><th>Aksi</th></tr>';
@@ -556,8 +571,15 @@ function handle_route_users(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Auth: Manajemen Teknisi
+ * Proses: Menangani daftar teknisi (Technicians) khusus untuk penugasan maintenance dan perbaikan tiket.
+ */
 function handle_route_technicians(PDO $pdo): void
 {
+    if (!function_exists('employee_portal_name_picker_html')) {
+        require_once __DIR__ . '/pc.php';
+    }
     $user = require_role(['admin']);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($_POST['action'] === 'add') {
@@ -632,6 +654,10 @@ function handle_route_technicians(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul Dashboard: Halaman Utama
+ * Proses: Menampilkan statistik ringkasan dan indikator utama setelah login.
+ */
 function handle_route_dashboard(PDO $pdo): void
 {
     $user = require_login();
@@ -642,22 +668,134 @@ function handle_route_dashboard(PDO $pdo): void
         redirect_to('mobile_dashboard');
     }
     render_header('Dashboard', $user);
-    if (db_table_exists($pdo, 'asset_groups')) {
-        $groupStats = $pdo->query('SELECT g.group_name, COUNT(i.id) AS total_items FROM asset_groups g LEFT JOIN asset_items i ON i.asset_group_id = g.id AND i.status = \'active\' GROUP BY g.id, g.group_name ORDER BY g.group_name')->fetchAll();
-        if ($groupStats) {
-            echo '<section class="grid four" style="margin-bottom: 20px;">';
-            foreach ($groupStats as $st) {
-                echo '<div class="stat" style="border-left: 4px solid #1457d9;"><strong>' . e($st['total_items']) . '</strong><span>' . e($st['group_name']) . '</span></div>';
-            }
-            echo '</section>';
-        }
+    $colorIdx = 0;
+    $renderCard = function($number, $label, $iconPath) use (&$colorIdx) {
+        $themes = [
+            ['#eff6ff', '#1e3a8a', '#3b82f6'], // blue
+            ['#f0fdf4', '#14532d', '#22c55e'], // green
+            ['#fffbeb', '#78350f', '#f59e0b'], // yellow
+            ['#f3e8ff', '#581c87', '#a855f7'], // purple
+            ['#fef2f2', '#7f1d1d', '#ef4444'], // red
+            ['#ecfeff', '#164e63', '#06b6d4'], // cyan
+            ['#fdf4ff', '#701a75', '#d946ef'], // fuchsia
+            ['#fff1f2', '#881337', '#f43f5e'], // rose
+        ];
+        $t = $themes[$colorIdx % count($themes)];
+        $colorIdx++;
+        
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">'
+             . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 32px; display: block; margin-bottom: 2px; line-height: 1;">' . e($number) . '</strong>'
+             . '<span style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">' . e($label) . '</span>'
+             . '</div></div>';
+    };
+
+    if (db_table_exists($pdo, 'asset_items')) {
+        $totalAssets = (int)$pdo->query("SELECT COUNT(*) FROM asset_items")->fetchColumn();
+
+        $activeAssets = (int)$pdo->query("
+            SELECT COUNT(*) FROM asset_items ai 
+            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id 
+            WHERE LOWER(ai.status) IN ('active', 'available') 
+               OR UPPER(COALESCE(st.status_code, '')) IN ('ACTIVE', 'AVAILABLE')
+        ")->fetchColumn();
+
+        $borrowedAssets = (int)$pdo->query("
+            SELECT COUNT(*) FROM asset_items ai 
+            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id 
+            WHERE LOWER(ai.status) IN ('borrowed', 'loaned', 'dipinjam') 
+               OR UPPER(COALESCE(st.status_code, '')) IN ('BORROWED', 'LOANED')
+        ")->fetchColumn();
+
+        $maintAssets = (int)$pdo->query("
+            SELECT COUNT(*) FROM asset_items ai 
+            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id 
+            WHERE LOWER(ai.status) IN ('maintenance', 'repair', 'maint', 'under_maintenance', 'in_repair') 
+               OR UPPER(COALESCE(st.status_code, '')) IN ('MAINT', 'REPAIR')
+        ")->fetchColumn();
+
+        $inactiveAssets = (int)$pdo->query("
+            SELECT COUNT(*) FROM asset_items ai 
+            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id 
+            WHERE LOWER(ai.status) IN ('inactive', 'retired', 'retirement', 'disposed', 'idle', 'lost', 'sold') 
+               OR UPPER(COALESCE(st.status_code, '')) IN ('IDLE', 'DISPOSED', 'LOST', 'SOLD', 'RETIRED')
+        ")->fetchColumn();
+
+        echo '<div style="margin-bottom: 24px;">';
+        echo '<h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1e3a8a; font-weight: 700; display: flex; align-items: center; gap: 8px;">📦 Aset Overview</h2>';
+        echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">';
+        echo $renderCard($totalAssets, 'Total Unit Aset', 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4');
+        echo $renderCard($activeAssets, 'Active Aset', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z');
+        echo $renderCard($borrowedAssets, 'Borrowed', 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4');
+        echo $renderCard($maintAssets, 'Under Maintenance', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z');
+        echo $renderCard($inactiveAssets, 'Inactive / Retirement', 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636');
+        echo '</section>';
+        echo '</div>';
     }
 
-    $pcCount = (int)$pdo->query('SELECT COUNT(*) FROM pcs')->fetchColumn();
-    $dueCount = (int)$pdo->query("SELECT COUNT(*) FROM maintenance_schedules WHERE scheduled_date = CURDATE() AND status != 'completed'")->fetchColumn();
-    $activeTech = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'technician' AND is_active = 1")->fetchColumn();
-    $problemCount = (int)$pdo->query("SELECT COUNT(*) FROM pcs WHERE physical_condition IN ('rusak', 'perlu_perbaikan')")->fetchColumn();
-    echo '<section class="grid four"><div class="stat"><strong>' . e($pcCount) . '</strong><span>Total PC</span></div><div class="stat"><strong>' . e($dueCount) . '</strong><span>Maintenance Hari Ini</span></div><div class="stat"><strong>' . e($activeTech) . '</strong><span>Teknisi Aktif</span></div><div class="stat"><strong>' . e($problemCount) . '</strong><span>PC Masalah Fisik</span></div></section>';
+    // Section 2: Maintenance (4 Blocks)
+    $pmTodayCount = db_table_exists($pdo, 'maintenance_schedules')
+        ? (int)$pdo->query("SELECT COUNT(*) FROM maintenance_schedules WHERE scheduled_date = CURDATE()")->fetchColumn()
+        : 0;
+
+    $pmOverdueCount = db_table_exists($pdo, 'maintenance_schedules')
+        ? (int)$pdo->query("SELECT COUNT(*) FROM maintenance_schedules WHERE scheduled_date < CURDATE() AND status != 'completed'")->fetchColumn()
+        : 0;
+
+    $cmOpenCount = db_table_exists($pdo, 'corrective_tickets')
+        ? (int)$pdo->query("SELECT COUNT(*) FROM corrective_tickets WHERE status NOT IN ('resolved', 'closed', 'cancelled')")->fetchColumn()
+        : 0;
+
+    $activeTechCount = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role = 'technician' AND is_active = 1")->fetchColumn();
+
+    echo '<div style="margin-bottom: 24px;">';
+    echo '<h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1e3a8a; font-weight: 700; display: flex; align-items: center; gap: 8px;">🛠️ Maintenance</h2>';
+    echo '<section class="grid four">';
+    echo $renderCard($pmTodayCount, 'Preventive Maintenance Hari Ini', 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z');
+    echo $renderCard($pmOverdueCount, 'Preventive Maintenance OverDue', 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z');
+    echo $renderCard($cmOpenCount, 'Corrective Maintenance Open', 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z');
+    echo $renderCard($activeTechCount, 'Teknisi Aktif', 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z');
+    echo '</section>';
+    echo '</div>';
+
+    // Section 3: Aset Distribution (4 Blocks: IT-ASET, Facility, Vehicle, Other)
+    if (db_table_exists($pdo, 'asset_items')) {
+        $distStats = [];
+        if (db_table_exists($pdo, 'asset_groups')) {
+            $gRows = $pdo->query("
+                SELECT COALESCE(NULLIF(g.group_name,''), g.group_code) AS gname, COUNT(i.id) AS cnt 
+                FROM asset_groups g 
+                LEFT JOIN asset_items i ON i.asset_group_id = g.id AND LOWER(i.status) IN ('active', 'available') 
+                GROUP BY g.id, g.group_code, g.group_name 
+                ORDER BY g.id ASC
+            ")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($gRows as $r) {
+                $distStats[$r['gname']] = (int)$r['cnt'];
+            }
+        }
+
+        $otherCount = (int)$pdo->query("
+            SELECT COUNT(*) FROM asset_items 
+            WHERE (asset_group_id IS NULL OR asset_group_id = 0 OR asset_group_id NOT IN (SELECT id FROM asset_groups))
+              AND LOWER(status) IN ('active', 'available')
+        ")->fetchColumn();
+
+        echo '<div style="margin-bottom: 24px;">';
+        echo '<h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1e3a8a; font-weight: 700; display: flex; align-items: center; gap: 8px;">📊 Aset Distribution</h2>';
+        echo '<section class="grid four">';
+        if (!empty($distStats)) {
+            foreach ($distStats as $name => $cnt) {
+                echo $renderCard($cnt, $name, 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4');
+            }
+        }
+        echo $renderCard($otherCount, 'Other', 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10');
+        echo '</section>';
+        echo '</div>';
+    }
     $todayRows = $pdo->query("SELECT s.id, s.scheduled_date, s.status, s.notes, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name, COALESCE(p.computer_name, pr.location) computer_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id = s.pc_id LEFT JOIN printers pr ON pr.prn_id = s.printer_id LEFT JOIN users u ON u.id = s.technician_id WHERE s.scheduled_date = CURDATE() ORDER BY s.id DESC LIMIT 10")->fetchAll();
     echo '<section class="panel"><h2>Jadwal Hari Ini</h2><table><tr><th>ID</th><th>Aset</th><th>Pengguna / Lokasi</th><th>Teknisi</th><th>Status</th><th>Catatan</th></tr>';
     foreach ($todayRows as $row) {

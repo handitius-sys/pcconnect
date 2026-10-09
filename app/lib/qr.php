@@ -61,6 +61,10 @@ function mobile_encrypted_asset_url(string $assetCode): string
 /**
  * URL pembuatan QR Code via HTTP (api.qrserver.com) dengan enkripsi payload.
  */
+/**
+ * Modul QR: Pembuatan Gambar QR
+ * Proses: Men-generate URL gambar QR Code dari Google Chart API berdasarkan teks payload.
+ */
 function qr_image_url(string $value, int $size = 900): string
 {
     $size = max(120, min(1200, $size));
@@ -80,6 +84,10 @@ function qr_image_url(string $value, int $size = 900): string
     return 'https://api.qrserver.com/v1/create-qr-code/?size=' . $size . 'x' . $size . '&format=png&data=' . rawurlencode($value);
 }
 
+/**
+ * Modul QR: Pseudo-QR Generator
+ * Proses: Fungsi cadangan (hotfix) jika API eksternal gagal memuat gambar QR.
+ */
 function pseudo_qr_hotfix(string $value): string
 {
     $src = qr_image_url($value, 180);

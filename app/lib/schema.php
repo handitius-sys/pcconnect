@@ -162,7 +162,7 @@ function ensure_maintenance_work_schema(PDO $pdo): void
             printer_id VARCHAR(60) NULL,
             technician_id INT NULL,
             scheduled_date DATE NOT NULL,
-            status ENUM('scheduled','validated','in_progress','completed','reopened') NOT NULL DEFAULT 'scheduled',
+            status ENUM('scheduled','validated','in_progress','completed','reopened','cancelled') NOT NULL DEFAULT 'scheduled',
             notes TEXT NULL,
             arrival_at DATETIME NULL,
             arrival_ip VARCHAR(80) NULL,
@@ -189,6 +189,9 @@ function ensure_maintenance_work_schema(PDO $pdo): void
         }
         try {
             $pdo->exec("ALTER TABLE maintenance_schedules MODIFY asset_type VARCHAR(60) NOT NULL DEFAULT 'pc'");
+        } catch (Throwable $ignored) {}
+        try {
+            $pdo->exec("ALTER TABLE maintenance_schedules MODIFY COLUMN status ENUM('scheduled','validated','in_progress','completed','reopened','cancelled') NOT NULL DEFAULT 'scheduled'");
         } catch (Throwable $ignored) {}
 
         // Migrasi one-time: Pasangkan job yang belum memiliki group ke grup IT
@@ -603,6 +606,27 @@ function ensure_asset_management_schema(PDO $pdo): void
         }
         if (!db_column_exists($pdo, 'asset_movements', 'to_parent_asset_item_id')) {
             $pdo->exec('ALTER TABLE asset_movements ADD COLUMN to_parent_asset_item_id BIGINT NULL AFTER from_parent_asset_item_id');
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'movement_type')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN movement_type VARCHAR(50) NULL AFTER asset_item_id");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'from_custodian_name')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN from_custodian_name VARCHAR(160) NULL AFTER to_company_id");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'from_custodian_nik')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN from_custodian_nik VARCHAR(80) NULL AFTER from_custodian_name");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'to_custodian_name')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN to_custodian_name VARCHAR(160) NULL AFTER from_custodian_nik");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'to_custodian_nik')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN to_custodian_nik VARCHAR(80) NULL AFTER to_custodian_name");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'from_location_id')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN from_location_id INT NULL AFTER to_custodian_nik");
+        }
+        if (!db_column_exists($pdo, 'asset_movements', 'to_location_id')) {
+            $pdo->exec("ALTER TABLE asset_movements ADD COLUMN to_location_id INT NULL AFTER from_location_id");
         }
         if (!db_column_exists($pdo, 'pcs', 'asset_item_id')) {
             $pdo->exec('ALTER TABLE pcs ADD COLUMN asset_item_id BIGINT NULL AFTER computer_name');
@@ -1228,6 +1252,23 @@ function cleanup_and_repair_pc_asset_conflicts(PDO $pdo): void
 function ensure_corrective_maintenance_schema(PDO $pdo): void
 {
     try {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_workshops (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            workshop_code VARCHAR(40) NOT NULL UNIQUE,
+            workshop_name VARCHAR(150) NOT NULL,
+            address TEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { if (!db_column_exists($pdo, 'corrective_workshops', 'address')) { $pdo->exec("ALTER TABLE corrective_workshops ADD COLUMN address TEXT NULL AFTER workshop_name"); } } catch (Throwable $e) {}
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_ticket_actions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id BIGINT NOT NULL,
+            job_action_id BIGINT NULL,
+            action_title VARCHAR(200) NOT NULL,
+            INDEX idx_cta_ticket(ticket_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
         $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_tickets (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
             ticket_code VARCHAR(40) NOT NULL UNIQUE,
@@ -1257,6 +1298,10 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
             INDEX idx_ct_pc(pc_id),
             INDEX idx_ct_created(created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_type VARCHAR(20) NOT NULL DEFAULT 'internal'"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_user_id BIGINT NULL"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_workshop_id BIGINT NULL"); } catch (Throwable $e) {}
 
         $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_repairs (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -1867,6 +1912,13 @@ function ensure_default_identifiers_per_group_and_type(PDO $pdo): void
                 $pdo->exec("ALTER TABLE asset_type_identifiers ADD INDEX idx_ati_group (asset_group_id)");
             } catch (Throwable $ignored) {}
         }
+        
+        // Tambahan kolom is_permanent
+        if (!db_column_exists($pdo, 'asset_type_identifiers', 'is_permanent')) {
+            try {
+                $pdo->exec("ALTER TABLE asset_type_identifiers ADD COLUMN is_permanent TINYINT(1) NOT NULL DEFAULT 0 AFTER is_searchable");
+            } catch (Throwable $ignored) {}
+        }
 
         // 2. Backfill asset_group_id dari tabel asset_types
         try {
@@ -2300,6 +2352,11 @@ function ensure_unified_asset_schema(PDO $pdo): void
     if (!db_column_exists($pdo, 'asset_items', 'location_radius_m')) {
         try {
             $pdo->exec("ALTER TABLE asset_items ADD COLUMN location_radius_m INT NOT NULL DEFAULT 5");
+        } catch (Throwable $ignored) {}
+    }
+    if (!db_column_exists($pdo, 'asset_items', 'alias_code')) {
+        try {
+            $pdo->exec("ALTER TABLE asset_items ADD COLUMN alias_code VARCHAR(150) NULL AFTER asset_code");
         } catch (Throwable $ignored) {}
     }
 

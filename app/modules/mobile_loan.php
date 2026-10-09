@@ -44,104 +44,12 @@ function save_mobile_loan_photo(array $fileEntry, string $prefix = 'loan'): ?str
     return null;
 }
 
-function render_mobile_loan_header(string $title, ?array $user): void
-{
-    $flash = flash();
-    ?>
-    <!doctype html>
-    <html lang="id">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
-        <title><?= e($title) ?> - Peminjaman Aset Mobile</title>
-        <style>
-            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-            body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; padding-bottom: 78px; }
-            a { text-decoration: none; color: inherit; }
-            header { background: #1e293b; border-bottom: 1px solid #334155; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
-            .brand { font-weight: 700; font-size: 15px; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
-            .user-tag { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
-            .container { padding: 12px 14px; max-width: 600px; margin: 0 auto; }
-            .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-            .card h2 { margin: 0 0 10px; font-size: 15px; color: #f1f5f9; }
-            .btn { display: inline-flex; align-items: center; justify-content: center; width: 100%; border: none; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.2); margin-top: 6px; gap: 6px; }
-            .btn-primary { background: #0284c7; color: #fff; }
-            .btn-primary:active { background: #0369a1; }
-            .btn-success { background: #059669; color: #fff; }
-            .btn-success:active { background: #047857; }
-            .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
-            .btn-danger { background: #e11d48; color: #fff; }
-            .badge { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 600; }
-            .badge-active { background: #0284c7; color: #fff; }
-            .badge-overdue { background: #ef4444; color: #fff; }
-            .badge-returned { background: #16a34a; color: #fff; }
-            .flash { padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
-            .flash-ok { background: #065f46; color: #d1fae5; border: 1px solid #047857; }
-            .flash-err { background: #881337; color: #ffe4e6; border: 1px solid #be123c; }
-            .flash-info { background: #1e3a8a; color: #dbeafe; border: 1px solid #3b82f6; }
-            label { display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin: 10px 0 4px; }
-            input, select, textarea { width: 100%; background: #0f172a; border: 1px solid #475569; color: #f8fafc; border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; }
-            input:focus, select:focus, textarea:focus { border-color: #38bdf8; }
-            .nav-bottom { position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; border-top: 1px solid #334155; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 0; z-index: 50; }
-            .nav-item { text-align: center; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; }
-            .nav-item.active { color: #38bdf8; font-weight: 700; }
-            .nav-icon { font-size: 18px; }
-            .scan-box { width: 100%; max-width: 320px; margin: 10px auto; border-radius: 12px; overflow: hidden; background: #000; border: 2px dashed #38bdf8; position: relative; }
-        </style>
-    </head>
-    <body>
-        <header>
-            <div class="brand">
-                <span>📦</span>
-                <span>PcConnect <strong>Loan</strong></span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <div class="user-tag">
-                    <span>👤 <?= e($user['name'] ?? 'User') ?></span>
-                </div>
-                <a href="<?= route_url('asset_loans') ?>" style="background:#334155;color:#f8fafc;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:600;" title="Buka Mode Desktop">
-                    🖥️ Desktop
-                </a>
-            </div>
-        </header>
-        <div class="container">
-            <?php if ($flash): ?>
-                <div class="flash <?= $flash['type'] === 'err' ? 'flash-err' : ($flash['type'] === 'info' ? 'flash-info' : 'flash-ok') ?>">
-                    <?= $flash['message'] ?>
-                </div>
-            <?php endif; ?>
-    <?php
-}
-
-function render_mobile_loan_footer(string $activeTab = 'dashboard'): void
-{
-    ?>
-        </div>
-        <nav class="nav-bottom">
-            <a href="<?= route_url('mobile_asset_loans') ?>" class="nav-item <?= $activeTab === 'dashboard' ? 'active' : '' ?>">
-                <span class="nav-icon">🏠</span>
-                <span>Pinjaman</span>
-            </a>
-            <a href="<?= route_url('mobile_asset_loan_create') ?>" class="nav-item <?= $activeTab === 'create' ? 'active' : '' ?>">
-                <span class="nav-icon">➕</span>
-                <span>Pinjam Baru</span>
-            </a>
-            <a href="<?= route_url('mobile_asset_loan_return') ?>" class="nav-item <?= $activeTab === 'return' ? 'active' : '' ?>">
-                <span class="nav-icon">🔄</span>
-                <span>Pengembalian</span>
-            </a>
-            <a href="<?= route_url('asset_loans') ?>" class="nav-item">
-                <span class="nav-icon">🖥️</span>
-                <span>Web Full</span>
-            </a>
-        </nav>
-    </body>
-    </html>
-    <?php
-}
-
 /**
  * 1. Dashboard Peminjaman Mobile
+ */
+/**
+ * Modul Mobile Loan: Daftar Peminjaman
+ * Proses: Menampilkan daftar transaksi peminjaman di antarmuka mobile / smartphone.
  */
 function handle_route_mobile_asset_loans(PDO $pdo): void
 {
@@ -205,7 +113,7 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
         }
     }
 
-    render_mobile_loan_header('Peminjaman Aset', $user);
+    render_mobile_header('Peminjaman Aset', $user);
     ?>
     <!-- Aksi Cepat Mobile -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
@@ -218,19 +126,34 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
     </div>
 
     <!-- Ringkasan Status -->
+    <?php
+    $renderLoanCard = function($number, $label, $iconPath, $tabId, $isActive, $isDanger = false) use ($tab) {
+        if ($isDanger) {
+            $t = $isActive ? ['#fef2f2', '#7f1d1d', '#ef4444'] : ['#fef2f2', '#7f1d1d', '#ef4444'];
+        } else if ($tabId === 'active') {
+            $t = $isActive ? ['#eff6ff', '#1e3a8a', '#3b82f6'] : ['#eff6ff', '#1e3a8a', '#3b82f6'];
+        } else {
+            $t = $isActive ? ['#f0fdf4', '#14532d', '#22c55e'] : ['#f0fdf4', '#14532d', '#22c55e'];
+        }
+        
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        $border = $isActive ? "5px solid {$t[2]}" : "4px solid {$t[2]}";
+        $opacity = $isActive ? "1" : "0.7";
+        
+        return '<a href="' . route_url('mobile_asset_loans', ['tab' => $tabId]) . '" style="text-decoration:none; display:block; opacity:'.$opacity.'; background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: ' . $border . '; position: relative; overflow: hidden; padding: 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">'
+             . '<div style="position: absolute; right: -8px; top: -8px; width: 60px; height: 60px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 24px; display: block; margin-bottom: 2px; line-height: 1;">' . e($number) . '</strong>'
+             . '<span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">' . e($label) . '</span>'
+             . '</div></a>';
+    };
+    ?>
     <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin-bottom:12px;">
-        <a href="<?= route_url('mobile_asset_loans', ['tab' => 'active']) ?>" style="background:<?= $tab === 'active' ? '#0369a1' : '#1e293b' ?>;border:1px solid #334155;border-radius:8px;padding:10px 6px;text-align:center;">
-            <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Dipinjam</div>
-            <div style="font-size:18px;font-weight:800;color:#38bdf8;margin-top:2px;"><?= $stats['active'] ?></div>
-        </a>
-        <a href="<?= route_url('mobile_asset_loans', ['tab' => 'overdue']) ?>" style="background:<?= $tab === 'overdue' ? '#991b1b' : ($stats['overdue'] > 0 ? '#450a0a' : '#1e293b') ?>;border:1px solid <?= $stats['overdue'] > 0 ? '#ef4444' : '#334155' ?>;border-radius:8px;padding:10px 6px;text-align:center;">
-            <div style="font-size:10px;color:<?= $stats['overdue'] > 0 ? '#fca5a5' : '#94a3b8' ?>;font-weight:700;text-transform:uppercase;">Terlambat</div>
-            <div style="font-size:18px;font-weight:800;color:<?= $stats['overdue'] > 0 ? '#f87171' : '#cbd5e1' ?>;margin-top:2px;"><?= $stats['overdue'] ?></div>
-        </a>
-        <a href="<?= route_url('mobile_asset_loans', ['tab' => 'returned']) ?>" style="background:<?= $tab === 'returned' ? '#15803d' : '#1e293b' ?>;border:1px solid #334155;border-radius:8px;padding:10px 6px;text-align:center;">
-            <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Kembali</div>
-            <div style="font-size:18px;font-weight:800;color:#4ade80;margin-top:2px;"><?= $stats['returned'] ?></div>
-        </a>
+        <?= $renderLoanCard($stats['active'], 'Dipinjam', 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', 'active', $tab === 'active') ?>
+        <?= $renderLoanCard($stats['overdue'], 'Terlambat', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z', 'overdue', $tab === 'overdue', $stats['overdue'] > 0) ?>
+        <?= $renderLoanCard($stats['returned'], 'Kembali', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'returned', $tab === 'returned') ?>
     </div>
 
     <!-- Pencarian -->
@@ -246,7 +169,7 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
 
     <!-- Daftar Peminjaman -->
     <?php if (empty($loans)): ?>
-        <div class="card" style="text-align:center;padding:30px 16px;color:#94a3b8;">
+        <div class="panel" style="text-align:center;padding:30px 16px;color:#64748b;">
             <div style="font-size:32px;margin-bottom:8px;">📭</div>
             <div style="font-size:14px;font-weight:600;">Tidak ada data peminjaman aset.</div>
             <div style="font-size:12px;margin-top:4px;">Gunakan tombol "Pinjam Baru" untuk mencatat serah-terima unit aset.</div>
@@ -257,16 +180,16 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
             $isOverdue = ($loan['status'] === 'active' && !empty($loan['expected_return_date']) && $loan['expected_return_date'] < date('Y-m-d'));
             $items = $itemsMap[$loan['id']] ?? [];
             ?>
-            <div class="card" style="<?= $isOverdue ? 'border-color:#ef4444;' : '' ?>">
+            <div class="panel" style="<?= $isOverdue ? 'border-color:#ef4444;' : '' ?>">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                     <div>
-                        <div style="font-family:monospace;font-size:14px;font-weight:700;color:#38bdf8;">
+                        <div style="font-family:monospace;font-size:14px;font-weight:700;color:#0284c7;">
                             <?= e($loan['loan_code']) ?>
                         </div>
-                        <div style="font-size:15px;font-weight:700;color:#f8fafc;margin-top:2px;">
+                        <div style="font-size:15px;font-weight:700;;margin-top:2px;">
                             <?= e($loan['borrower_name']) ?>
                         </div>
-                        <div style="font-size:12px;color:#94a3b8;">
+                        <div style="font-size:12px;color:#64748b;">
                             <?= e($loan['borrower_department'] ?: '-') ?> &bull; NIK: <?= e($loan['borrower_nik'] ?: '-') ?>
                         </div>
                     </div>
@@ -282,13 +205,13 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
                 </div>
 
                 <!-- Info Tanggal -->
-                <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:10px;padding:8px;background:#0f172a;border-radius:6px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:10px;padding:8px;background:#f1f5f9;border-radius:6px;">
                     <div>
-                        <span style="color:#94a3b8;">Dipinjam:</span>
-                        <strong style="color:#cbd5e1;"><?= date('d/m/Y', strtotime($loan['loan_date'])) ?></strong>
+                        <span style="color:#64748b;">Dipinjam:</span>
+                        <strong style="color:#64748b;"><?= date('d/m/Y', strtotime($loan['loan_date'])) ?></strong>
                     </div>
                     <div>
-                        <span style="color:#94a3b8;">Jatuh Tempo:</span>
+                        <span style="color:#64748b;">Jatuh Tempo:</span>
                         <strong style="color:<?= $isOverdue ? '#f87171' : '#cbd5e1' ?>;">
                             <?= !empty($loan['expected_return_date']) ? date('d/m/Y', strtotime($loan['expected_return_date'])) : '-' ?>
                         </strong>
@@ -297,13 +220,13 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
 
                 <!-- List Items Ringkas -->
                 <div style="margin-top:10px;">
-                    <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:4px;">
+                    <div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px;">
                         Unit Aset (<?= count($items) ?>):
                     </div>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;">
                         <?php foreach ($items as $it): ?>
                             <span style="font-size:11px;padding:3px 6px;border-radius:4px;background:#334155;color:#e2e8f0;display:inline-flex;align-items:center;gap:4px;">
-                                <strong style="color:#38bdf8;font-family:monospace;"><?= e($it['asset_code']) ?></strong>
+                                <strong style="color:#0284c7;font-family:monospace;"><?= e($it['asset_code']) ?></strong>
                                 <span><?= e($it['asset_name']) ?></span>
                             </span>
                         <?php endforeach; ?>
@@ -325,11 +248,15 @@ function handle_route_mobile_asset_loans(PDO $pdo): void
         <?php endforeach; ?>
     <?php endif; ?>
     <?php
-    render_mobile_loan_footer('dashboard');
+    render_mobile_footer('dashboard');
 }
 
 /**
  * 2. Form Peminjaman Baru Mobile (Scan QR Camera + Autocomplete Pengguna)
+ */
+/**
+ * Modul Mobile Loan: Buat Peminjaman
+ * Proses: Form khusus mobile untuk mencatat transaksi peminjaman baru di lapangan.
  */
 function handle_route_mobile_asset_loan_create(PDO $pdo): void
 {
@@ -442,23 +369,46 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
         }
     }
 
-    render_mobile_loan_header('Pinjam Aset Baru', $user);
+    $employees = [];
+    try {
+        if (function_exists('employee_search_rows')) {
+            $employees = employee_search_rows($pdo, '', 500);
+        }
+        if (empty($employees) && db_table_exists($pdo, 'employee_directory')) {
+            $hasName = db_column_exists($pdo, 'employee_directory', 'name');
+            $nameExpr = $hasName ? "COALESCE(NULLIF(name, ''), employee_name, '')" : "employee_name";
+            $employees = $pdo->query("SELECT nik, $nameExpr AS name, department FROM employee_directory WHERE is_active = 1 ORDER BY name ASC LIMIT 500")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $ignored) {}
+
+    $availableLoanAssets = [];
+    try {
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name 
+                                           FROM asset_items ai 
+                                           LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
+                                           LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
+                                           LEFT JOIN asset_locations loc ON loc.id = ai.location_id 
+                                           WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone') 
+                                           ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+
+    render_mobile_header('Pinjam Aset Baru', $user);
     ?>
-    <div class="card">
+    <div class="panel">
         <h2 style="display:flex;align-items:center;gap:6px;">
             <span>➕</span> Catat Peminjaman Aset
         </h2>
         <form method="post" action="<?= route_url('mobile_asset_loan_create') ?>" enctype="multipart/form-data" onsubmit="return validateMobileLoanForm()">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 
-            <!-- 1. Peminjam (Autocomplete Master Pengguna) -->
-            <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:12px;">
-                <div style="font-size:12px;font-weight:700;color:#38bdf8;text-transform:uppercase;margin-bottom:6px;">
+            <!-- 1. Peminjam (Single-Box Autocomplete Master Pengguna) -->
+            <div style="background:#f1f5f9;border-radius:8px;padding:12px;margin-bottom:12px;">
+                <div style="font-size:12px;font-weight:700;color:#0284c7;text-transform:uppercase;margin-bottom:6px;">
                     👤 1. Identitas Peminjam (Master Pengguna)
                 </div>
-                <div style="position:relative;">
-                    <input type="text" id="employeeSearchInput" placeholder="Ketik nama karyawan atau NIK..." autocomplete="off" style="padding-right:32px;">
-                    <div id="employeeDropdownList" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:#1e293b;border:1px solid #475569;border-radius:8px;z-index:99;box-shadow:0 10px 25px rgba(0,0,0,0.5);margin-top:4px;"></div>
+                <div style="position:relative;margin-bottom:8px;">
+                    <input type="text" id="employeeSearchInput" placeholder="Ketik nama karyawan, NIK, atau Dept..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px 12px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;font-size:13px;">
+                    <div id="employeeDropdownList" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;z-index:99999;box-shadow:0 10px 25px rgba(0,0,0,0.18);"></div>
                 </div>
                 <div id="borrowerSourceBadge" style="display:none;margin-top:6px;font-size:11px;background:#065f46;color:#d1fae5;padding:4px 8px;border-radius:4px;font-weight:600;"></div>
 
@@ -495,9 +445,9 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             </div>
 
             <!-- 3. Scanner Kamera QR Live & Barcode Input -->
-            <div style="background:#0f172a;border:1px solid #0284c7;border-radius:8px;padding:12px;margin-bottom:12px;">
+            <div style="background:#f1f5f9;border:1px solid #0284c7;border-radius:8px;padding:12px;margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                    <div style="font-size:12px;font-weight:700;color:#38bdf8;text-transform:uppercase;">
+                    <div style="font-size:12px;font-weight:700;color:#0284c7;text-transform:uppercase;">
                         📷 2. Scan QR / Masukkan Kode Unit <span style="color:#ef4444;">*</span>
                     </div>
                     <button type="button" id="btnToggleCamera" onclick="toggleCameraScanner()" style="background:#0284c7;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">
@@ -508,15 +458,18 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
                 <!-- Box Scanner Kamera Live -->
                 <div id="cameraScannerBox" style="display:none;margin-bottom:10px;text-align:center;">
                     <div id="reader" style="width:100%;max-width:280px;margin:0 auto;border-radius:8px;overflow:hidden;background:#000;"></div>
-                    <p id="camStatus" style="color:#38bdf8;font-size:11px;margin:6px 0;">Menyiapkan kamera live QR...</p>
+                    <p id="camStatus" style="color:#0284c7;font-size:11px;margin:6px 0;">Menyiapkan kamera live QR...</p>
                 </div>
 
-                <!-- Manual / Barcode input -->
-                <div style="display:flex;gap:6px;">
-                    <input type="text" id="barcodeAssetInput" placeholder="Ketik/scan kode unit (contoh: IT-CMP-000001)..." style="font-family:monospace;font-weight:700;font-size:13px;" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupAndAddAsset(this.value);}">
-                    <button type="button" class="btn btn-primary" onclick="lookupAndAddAsset(document.getElementById('barcodeAssetInput').value)" style="width:auto;margin:0;padding:8px 14px;white-space:nowrap;font-size:13px;">
-                        + Tambah
-                    </button>
+                <!-- Manual / Barcode input Single-Box Combobox -->
+                <div style="position:relative;">
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="barcodeAssetInput" placeholder="🔍 Ketik kode, nama, komoditas, atau lokasi unit aset..." autocomplete="off" style="font-family:monospace;font-weight:700;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;padding:9px 12px;width:100%;box-sizing:border-box;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(this.value);}">
+                        <button type="button" class="btn btn-primary" onclick="var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(document.getElementById('barcodeAssetInput').value)" style="width:auto;margin:0;padding:8px 14px;white-space:nowrap;font-size:13px;">
+                            + Tambah
+                        </button>
+                    </div>
+                    <div id="assetDropdownList" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;z-index:99999;box-shadow:0 10px 25px rgba(0,0,0,0.18);"></div>
                 </div>
                 <div id="scanFeedbackAlert" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600;"></div>
             </div>
@@ -524,14 +477,14 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             <!-- 4. Keranjang Unit Terpilih -->
             <div style="margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div style="font-size:12px;font-weight:700;color:#cbd5e1;text-transform:uppercase;">
+                    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;">
                         Unit Aset Terpilih
                     </div>
                     <span id="selectedCountBadge" class="badge badge-active">0 unit</span>
                 </div>
 
                 <div id="loanItemsContainer"></div>
-                <div id="emptyLoanItemsMsg" style="padding:20px;text-align:center;background:#0f172a;border-radius:8px;border:1px dashed #334155;color:#94a3b8;font-size:12px;">
+                <div id="emptyLoanItemsMsg" style="padding:20px;text-align:center;background:#f1f5f9;border-radius:8px;border:1px dashed #334155;color:#64748b;font-size:12px;">
                     Belum ada unit aset yang ditambahkan. Silakan scan QR code pada unit fisik atau ketik kode unit di atas.
                 </div>
             </div>
@@ -555,8 +508,72 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
     var scannedItems = [];
+    var availableLoanAssets = <?= json_encode($availableLoanAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     var html5QrCode = null;
     var isCameraOpen = false;
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function renderAssetDropdown(q) {
+        var dd = document.getElementById("assetDropdownList");
+        if (!dd) return;
+        q = (q || "").trim().toLowerCase();
+        
+        var matches = availableLoanAssets.filter(function(item) {
+            if (!q) return true;
+            var code = (item.asset_code || "").toLowerCase();
+            var name = (item.asset_name || "").toLowerCase();
+            var brand = (item.brand || "").toLowerCase();
+            var model = (item.model || "").toLowerCase();
+            var group = (item.group_name || "").toLowerCase();
+            var type = (item.type_name || "").toLowerCase();
+            var loc = (item.location_name || "").toLowerCase();
+            return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q);
+        });
+
+        if (matches.length === 0) {
+            dd.innerHTML = "<div style='padding:10px 14px;font-size:12px;color:#64748b;text-align:center;'>Tidak ada unit aset tersedia yang cocok dengan \"" + escapeHtml(q) + "\"</div>";
+            dd.style.display = "block";
+            return;
+        }
+
+        dd.innerHTML = "";
+        matches.slice(0, 20).forEach(function(item) {
+            var subParts = [];
+            if (item.brand || item.model) subParts.push((item.brand ? item.brand + " " : "") + (item.model || ""));
+            if (item.group_name || item.type_name) subParts.push((item.group_name || "") + " › " + (item.type_name || ""));
+            if (item.location_name) subParts.push("📍 " + item.location_name);
+
+            var div = document.createElement("div");
+            div.style.padding = "9px 12px";
+            div.style.borderBottom = "1px solid #f1f5f9";
+            div.style.cursor = "pointer";
+            div.style.background = "#fff";
+            div.innerHTML = "<div style='font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;'>" + escapeHtml(item.asset_code) + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
+                + "<div style='font-size:11px;color:#64748b;margin-top:2px;'>" + escapeHtml(subParts.join(" &bull; ")) + "</div>";
+            div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
+            div.onmouseleave = function() { div.style.background = "#fff"; };
+            div.onmousedown = function() {
+                dd.style.display = "none";
+                var input = document.getElementById("barcodeAssetInput");
+                if (input) input.value = "";
+                lookupAndAddAsset(item.asset_code);
+            };
+            dd.appendChild(div);
+        });
+        dd.style.display = "block";
+    }
+
+    document.addEventListener("click", function(e) {
+        var dd = document.getElementById("assetDropdownList");
+        var input = document.getElementById("barcodeAssetInput");
+        if (dd && input && !dd.contains(e.target) && e.target !== input) {
+            dd.style.display = "none";
+        }
+    });
 
     function previewItemPhoto(input, targetId) {
         var target = document.getElementById(targetId);
@@ -571,7 +588,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
                     + "  <img src='" + e.target.result + "' style='width:48px;height:48px;object-fit:cover;border-radius:6px;border:2px solid #38bdf8;display:block;'>"
                     + "  <button type='button' onclick='clearItemPhoto(\"" + input.id + "\", \"" + targetId + "\")' style='position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;font-weight:bold;line-height:18px;padding:0;cursor:pointer;'>✕</button>"
                     + "</div>"
-                    + "<span style='font-size:10px;color:#38bdf8;font-weight:600;'>Foto Siap</span>";
+                    + "<span style='font-size:10px;color:#0284c7;font-weight:600;'>Foto Siap</span>";
             };
             reader.readAsDataURL(file);
         }
@@ -630,27 +647,27 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             card.innerHTML = 
                 "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:6px;'>"
                 + "<div>"
-                + "  <div style='font-family:monospace;font-weight:800;color:#38bdf8;font-size:13px;'>"
+                + "  <div style='font-family:monospace;font-weight:800;color:#0284c7;font-size:13px;'>"
                 + "    <input type='hidden' name='asset_item_ids[]' value='" + item.id + "'>"
                 + "    " + item.asset_code
                 + "  </div>"
-                + "  <div style='font-size:13px;font-weight:700;color:#f8fafc;margin-top:2px;'>" + (item.asset_name || "-") + "</div>"
-                + "  <div style='font-size:11px;color:#94a3b8;'>" + (item.brand ? (item.brand + " ") : "") + (item.model || "") + "</div>"
+                + "  <div style='font-size:13px;font-weight:700;;margin-top:2px;'>" + (item.asset_name || "-") + "</div>"
+                + "  <div style='font-size:11px;color:#64748b;'>" + (item.brand ? (item.brand + " ") : "") + (item.model || "") + "</div>"
                 + "</div>"
                 + "<button type='button' onclick='removeScannedItem(" + item.id + ")' style='background:#dc2626;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;'>✕ Hapus</button>"
                 + "</div>"
                 + "<div style='margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;'>"
                 + "  <div>"
-                + "    <div style='font-size:10px;color:#94a3b8;margin-bottom:2px;'>Kondisi Awal</div>"
+                + "    <div style='font-size:10px;color:#64748b;margin-bottom:2px;'>Kondisi Awal</div>"
                 + "    <input name='condition_out[" + item.id + "]' value='Normal / Baik' placeholder='Kondisi' style='padding:6px;font-size:12px;'>"
                 + "  </div>"
                 + "  <div>"
-                + "    <div style='font-size:10px;color:#94a3b8;margin-bottom:2px;'>Catatan Fisik</div>"
+                + "    <div style='font-size:10px;color:#64748b;margin-bottom:2px;'>Catatan Fisik</div>"
                 + "    <input name='item_notes_out[" + item.id + "]' value='' placeholder='Kelengkapan...' style='padding:6px;font-size:12px;'>"
                 + "  </div>"
                 + "</div>"
                 + "<div style='margin-top:8px;padding-top:8px;border-top:1px dashed #334155;'>"
-                + "  <div style='font-size:10px;color:#94a3b8;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;'>"
+                + "  <div style='font-size:10px;color:#64748b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;'>"
                 + "    <span>📷 Foto Unit Saat Dipinjam</span>"
                 + "    <span style='font-size:10px;color:#64748b;'>(Kamera HP)</span>"
                 + "  </div>"
@@ -795,7 +812,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
         });
     }
 
-    // Autocomplete Master Pengguna
+    // Single-Box Autocomplete Master Pengguna (Mobile)
     (function() {
         var searchInput = document.getElementById("employeeSearchInput");
         var dropdown = document.getElementById("employeeDropdownList");
@@ -803,64 +820,62 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
         var nameInput = document.getElementById("borrowerNameInput");
         var deptInput = document.getElementById("borrowerDeptInput");
         var badge = document.getElementById("borrowerSourceBadge");
-        var timer = null;
+        var employees = <?php echo json_encode($employees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
         function hideDropdown() {
-            setTimeout(function() { dropdown.style.display = "none"; }, 250);
+            setTimeout(function() { if (dropdown) dropdown.style.display = "none"; }, 220);
         }
 
         function selectEmployee(item) {
-            nameInput.value = item.name || "";
-            nikInput.value = item.nik || "";
-            deptInput.value = item.department || "";
-            searchInput.value = (item.name || "") + " (" + (item.nik || "-") + ")";
-            badge.style.display = "block";
-            badge.textContent = "✓ Master Pengguna: " + (item.name || "") + " (" + (item.department || "-") + ")";
-            dropdown.style.display = "none";
+            if (nameInput) nameInput.value = item.name || "";
+            if (nikInput) nikInput.value = item.nik || "";
+            if (deptInput) deptInput.value = item.department || "";
+            if (searchInput) searchInput.value = (item.name || "") + (item.nik ? (" (" + item.nik + ")") : "");
+            if (badge) {
+                badge.style.display = "block";
+                badge.textContent = "✓ Terpilih: " + (item.name || item.nik) + (item.department ? (" (" + item.department + ")") : "");
+            }
+            if (dropdown) dropdown.style.display = "none";
         }
 
-        function searchEmployees(q) {
-            fetch("index.php?route=employee_search&limit=25&q=" + encodeURIComponent(q))
-                .then(function(r) { return r.json(); })
-                .then(function(res) {
-                    var data = (res && res.data) ? res.data : [];
-                    dropdown.innerHTML = "";
-                    if (data.length === 0) {
-                        dropdown.innerHTML = "<div style='padding:10px;color:#94a3b8;font-size:12px;'>Tidak ada karyawan cocok di Master Pengguna.</div>";
-                        dropdown.style.display = "block";
-                        return;
-                    }
-                    data.forEach(function(row) {
-                        var div = document.createElement("div");
-                        div.style.padding = "8px 12px";
-                        div.style.cursor = "pointer";
-                        div.style.borderBottom = "1px solid #334155";
-                        div.style.fontSize = "13px";
-                        div.innerHTML = "<strong style='color:#f8fafc;'>" + (row.name || "-") + "</strong>"
-                            + " <span style='color:#94a3b8;font-size:11px;'>(" + (row.nik || "-") + ")</span>"
-                            + (row.department ? (" <span style='color:#38bdf8;font-size:11px;'>&bull; " + row.department + "</span>") : "");
-                        div.onclick = function() { selectEmployee(row); };
-                        dropdown.appendChild(div);
-                    });
-                    dropdown.style.display = "block";
-                })
-                .catch(function() {});
+        function renderEmployees(q) {
+            if (!dropdown) return;
+            q = (q || "").trim().toLowerCase();
+            var filtered = employees.filter(function(emp) {
+                if (!q) return true;
+                var name = (emp.name || "").toLowerCase();
+                var nik = (emp.nik || "").toLowerCase();
+                var dept = (emp.department || "").toLowerCase();
+                return name.includes(q) || nik.includes(q) || dept.includes(q);
+            }).slice(0, 30);
+
+            dropdown.innerHTML = "";
+            if (filtered.length === 0) {
+                dropdown.innerHTML = "<div style='padding:10px;color:#94a3b8;font-size:12px;'>Tidak ada karyawan cocok di Master Pengguna.</div>";
+                dropdown.style.display = "block";
+                return;
+            }
+            filtered.forEach(function(row) {
+                var div = document.createElement("div");
+                div.style.padding = "8px 12px";
+                div.style.cursor = "pointer";
+                div.style.borderBottom = "1px solid #f1f5f9";
+                div.style.fontSize = "13px";
+                div.innerHTML = "<strong style='color:#0f172a;'>" + (row.name || "-") + "</strong>"
+                    + " <span style='color:#64748b;font-size:11px;'>(" + (row.nik || "-") + ")</span>"
+                    + (row.department ? (" &bull; <span style='color:#0284c7;font-size:11px;font-weight:600;'>" + row.department + "</span>") : "");
+                div.onmousedown = function() { selectEmployee(row); };
+                dropdown.appendChild(div);
+            });
+            dropdown.style.display = "block";
         }
 
         if (searchInput) {
             searchInput.addEventListener("input", function() {
-                clearTimeout(timer);
-                var q = searchInput.value.trim();
-                if (q.length === 0) {
-                    dropdown.style.display = "none";
-                    return;
-                }
-                timer = setTimeout(function() { searchEmployees(q); }, 200);
+                renderEmployees(this.value);
             });
             searchInput.addEventListener("focus", function() {
-                if (searchInput.value.trim()) {
-                    searchEmployees(searchInput.value.trim());
-                }
+                renderEmployees(this.value);
             });
             searchInput.addEventListener("blur", hideDropdown);
         }
@@ -884,11 +899,15 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
     renderScannedContainer();
     </script>
     <?php
-    render_mobile_loan_footer('create');
+    render_mobile_footer('create');
 }
 
 /**
  * 3. Pengembalian Aset Mobile (Cari Cepat lewat QR Scan / Pilih Transaksi)
+ */
+/**
+ * Modul Mobile Loan: Pengembalian Aset
+ * Proses: Form khusus mobile untuk memproses pengembalian unit fisik aset.
  */
 function handle_route_mobile_asset_loan_return(PDO $pdo): void
 {
@@ -1000,25 +1019,25 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
         $itemsStmt->execute([$id]);
         $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        render_mobile_loan_header('Pengembalian Aset', $user);
+        render_mobile_header('Pengembalian Aset', $user);
         ?>
-        <div class="card">
+        <div class="panel">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div>
-                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Konfirmasi Pengembalian</div>
-                    <div style="font-family:monospace;font-size:16px;font-weight:800;color:#38bdf8;margin-top:2px;">
+                    <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;">Konfirmasi Pengembalian</div>
+                    <div style="font-family:monospace;font-size:16px;font-weight:800;color:#0284c7;margin-top:2px;">
                         <?= e($loan['loan_code']) ?>
                     </div>
                 </div>
                 <span class="badge badge-active">Sedang Dipinjam</span>
             </div>
 
-            <div style="margin-top:10px;padding:10px;background:#0f172a;border-radius:8px;font-size:13px;">
-                <div style="font-weight:700;color:#f8fafc;"><?= e($loan['borrower_name']) ?></div>
-                <div style="color:#94a3b8;font-size:12px;">
+            <div style="margin-top:10px;padding:10px;background:#f1f5f9;border-radius:8px;font-size:13px;">
+                <div style="font-weight:700;;"><?= e($loan['borrower_name']) ?></div>
+                <div style="color:#64748b;font-size:12px;">
                     <?= e($loan['borrower_department'] ?: '-') ?> &bull; NIK: <?= e($loan['borrower_nik'] ?: '-') ?>
                 </div>
-                <div style="margin-top:6px;font-size:12px;color:#cbd5e1;">
+                <div style="margin-top:6px;font-size:12px;color:#64748b;">
                     Dipinjam: <strong><?= date('d/m/Y', strtotime($loan['loan_date'])) ?></strong> | Batas: <strong><?= !empty($loan['expected_return_date']) ? date('d/m/Y', strtotime($loan['expected_return_date'])) : '-' ?></strong>
                 </div>
             </div>
@@ -1031,37 +1050,37 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
                 <input type="datetime-local" name="actual_return_date" value="<?= date('Y-m-d\TH:i') ?>" required>
 
                 <div style="margin-top:14px;">
-                    <div style="font-size:12px;font-weight:700;color:#38bdf8;text-transform:uppercase;margin-bottom:8px;">
+                    <div style="font-size:12px;font-weight:700;color:#0284c7;text-transform:uppercase;margin-bottom:8px;">
                         Checklist Fisik Unit Dikembalikan (<?= count($items) ?>):
                     </div>
 
                     <?php foreach ($items as $idx => $it): ?>
-                        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:10px;">
+                        <div style="background:#f1f5f9;;border-radius:8px;padding:12px;margin-bottom:10px;">
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
                                 <div>
-                                    <div style="font-family:monospace;font-weight:800;color:#38bdf8;font-size:13px;">
+                                    <div style="font-family:monospace;font-weight:800;color:#0284c7;font-size:13px;">
                                         <?= e($it['asset_code']) ?>
                                     </div>
-                                    <div style="font-size:13px;font-weight:700;color:#f8fafc;">
+                                    <div style="font-size:13px;font-weight:700;;">
                                         <?= e($it['asset_name']) ?>
                                     </div>
-                                    <div style="font-size:11px;color:#94a3b8;">
+                                    <div style="font-size:11px;color:#64748b;">
                                         <?= e($it['brand']) ?> <?= e($it['model']) ?>
                                     </div>
                                 </div>
-                                <div style="font-size:11px;color:#94a3b8;text-align:right;">
+                                <div style="font-size:11px;color:#64748b;text-align:right;">
                                     Awal: <em><?= e($it['condition_out'] ?: 'Normal') ?></em>
                                 </div>
                             </div>
 
                             <?php if (!empty($it['photo_out'])): ?>
-                                <div style="margin-top:8px;padding:6px 8px;background:#1e293b;border-radius:6px;display:flex;align-items:center;gap:8px;">
+                                <div style="margin-top:8px;padding:6px 8px;background:#fff;border-radius:6px;display:flex;align-items:center;gap:8px;">
                                     <a href="<?= e($it['photo_out']) ?>" target="_blank" style="flex-shrink:0;">
                                         <img src="<?= e($it['photo_out']) ?>" style="width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid #475569;" alt="Foto Pinjam">
                                     </a>
                                     <div style="font-size:11px;">
-                                        <div style="color:#cbd5e1;font-weight:600;">Foto Saat Dipinjam</div>
-                                        <a href="<?= e($it['photo_out']) ?>" target="_blank" style="color:#38bdf8;">Lihat ukuran penuh ↗</a>
+                                        <div style="color:#64748b;font-weight:600;">Foto Saat Dipinjam</div>
+                                        <a href="<?= e($it['photo_out']) ?>" target="_blank" style="color:#0284c7;">Lihat ukuran penuh ↗</a>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -1087,7 +1106,7 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
                             </div>
 
                             <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #334155;">
-                                <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
+                                <div style="font-size:10px;color:#64748b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
                                     <span>📷 Foto Unit Saat Dikembalikan</span>
                                     <span style="font-size:10px;color:#64748b;">(Kamera HP)</span>
                                 </div>
@@ -1131,7 +1150,7 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
                         + "  <img src='" + e.target.result + "' style='width:48px;height:48px;object-fit:cover;border-radius:6px;border:2px solid #38bdf8;display:block;'>"
                         + "  <button type='button' onclick='clearItemPhoto(\"" + input.id + "\", \"" + targetId + "\")' style='position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;font-weight:bold;line-height:18px;padding:0;cursor:pointer;'>✕</button>"
                         + "</div>"
-                        + "<span style='font-size:10px;color:#38bdf8;font-weight:600;'>Foto Siap</span>";
+                        + "<span style='font-size:10px;color:#0284c7;font-weight:600;'>Foto Siap</span>";
                 };
                 reader.readAsDataURL(file);
             }
@@ -1145,7 +1164,7 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
         }
         </script>
         <?php
-        render_mobile_loan_footer('return');
+        render_mobile_footer('return');
         return;
     }
 
@@ -1156,20 +1175,20 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
         WHERE al.status = 'active'
         ORDER BY al.id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
 
-    render_mobile_loan_header('Scan Pengembalian Aset', $user);
+    render_mobile_header('Scan Pengembalian Aset', $user);
     ?>
-    <div class="card">
+    <div class="panel">
         <h2 style="display:flex;align-items:center;gap:6px;">
             <span>🔄</span> Pengembalian Cepat Unit Aset
         </h2>
-        <p style="font-size:12px;color:#94a3b8;margin:0 0 10px 0;">
+        <p style="font-size:12px;color:#64748b;margin:0 0 10px 0;">
             Scan stiker QR code pada unit alat fisik yang dikembalikan untuk langsung memproses verifikasinya.
         </p>
 
         <!-- Live Camera Scanner Box -->
-        <div style="background:#0f172a;border:1px solid #0284c7;border-radius:8px;padding:12px;text-align:center;">
+        <div style="background:#f1f5f9;border:1px solid #0284c7;border-radius:8px;padding:12px;text-align:center;">
             <div id="reader" style="width:100%;max-width:280px;margin:0 auto;border-radius:8px;overflow:hidden;background:#000;"></div>
-            <p id="camStatus" style="color:#38bdf8;font-size:12px;margin:8px 0 4px 0;">Kamera scanner live QR aktif</p>
+            <p id="camStatus" style="color:#0284c7;font-size:12px;margin:8px 0 4px 0;">Kamera scanner live QR aktif</p>
             <div id="scanReturnFeedback" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;font-weight:600;text-align:left;"></div>
         </div>
 
@@ -1184,26 +1203,26 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
 
     <!-- Atau Pilih dari Transaksi Aktif -->
     <div style="margin-top:14px;">
-        <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">
+        <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">
             Atau Pilih Transaksi Dipinjam (<?= count($activeLoans) ?>):
         </div>
 
         <?php if (empty($activeLoans)): ?>
-            <div class="card" style="text-align:center;padding:24px 14px;color:#94a3b8;font-size:13px;">
+            <div class="panel" style="text-align:center;padding:24px 14px;color:#64748b;font-size:13px;">
                 Tidak ada peminjaman aktif saat ini. Semua alat telah dikembalikan.
             </div>
         <?php else: ?>
             <?php foreach ($activeLoans as $al): ?>
-                <div class="card" style="padding:12px;margin-bottom:8px;">
+                <div class="panel" style="padding:12px;margin-bottom:8px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
-                            <div style="font-family:monospace;font-weight:800;color:#38bdf8;font-size:13px;">
+                            <div style="font-family:monospace;font-weight:800;color:#0284c7;font-size:13px;">
                                 <?= e($al['loan_code']) ?>
                             </div>
-                            <div style="font-size:14px;font-weight:700;color:#f8fafc;margin-top:2px;">
+                            <div style="font-size:14px;font-weight:700;;margin-top:2px;">
                                 <?= e($al['borrower_name']) ?>
                             </div>
-                            <div style="font-size:11px;color:#94a3b8;">
+                            <div style="font-size:11px;color:#64748b;">
                                 <?= e($al['borrower_department'] ?: '-') ?> &bull; <?= (int)$al['borrowed_items'] ?> unit
                             </div>
                         </div>
@@ -1299,11 +1318,15 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
     startLiveReturnScanner();
     </script>
     <?php
-    render_mobile_loan_footer('return');
+    render_mobile_footer('return');
 }
 
 /**
  * 4. Detail Peminjaman Mobile
+ */
+/**
+ * Modul Mobile Loan: Detail Peminjaman
+ * Proses: Menampilkan rincian lengkap sebuah transaksi peminjaman pada layar mobile.
  */
 function handle_route_mobile_asset_loan_detail(PDO $pdo): void
 {
@@ -1335,18 +1358,18 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
 
     $isOverdue = ($loan['status'] === 'active' && !empty($loan['expected_return_date']) && $loan['expected_return_date'] < date('Y-m-d'));
 
-    render_mobile_loan_header('Detail Pinjaman', $user);
+    render_mobile_header('Detail Pinjaman', $user);
     ?>
-    <div class="card">
+    <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div>
-                <div style="font-family:monospace;font-size:17px;font-weight:800;color:#38bdf8;">
+                <div style="font-family:monospace;font-size:17px;font-weight:800;color:#0284c7;">
                     <?= e($loan['loan_code']) ?>
                 </div>
-                <div style="font-size:16px;font-weight:700;color:#f8fafc;margin-top:2px;">
+                <div style="font-size:16px;font-weight:700;;margin-top:2px;">
                     <?= e($loan['borrower_name']) ?>
                 </div>
-                <div style="font-size:12px;color:#94a3b8;">
+                <div style="font-size:12px;color:#64748b;">
                     <?= e($loan['borrower_department'] ?: '-') ?> &bull; NIK: <?= e($loan['borrower_nik'] ?: '-') ?>
                 </div>
             </div>
@@ -1361,43 +1384,43 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
             </div>
         </div>
 
-        <div style="margin-top:12px;padding:10px;background:#0f172a;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="margin-top:12px;padding:10px;background:#f1f5f9;border-radius:8px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div>
-                <span style="color:#94a3b8;">Tanggal Pinjam:</span><br>
-                <strong style="color:#cbd5e1;"><?= date('d/m/Y', strtotime($loan['loan_date'])) ?></strong>
+                <span style="color:#64748b;">Tanggal Pinjam:</span><br>
+                <strong style="color:#64748b;"><?= date('d/m/Y', strtotime($loan['loan_date'])) ?></strong>
             </div>
             <div>
-                <span style="color:#94a3b8;">Batas Kembali:</span><br>
+                <span style="color:#64748b;">Batas Kembali:</span><br>
                 <strong style="color:<?= $isOverdue ? '#f87171' : '#cbd5e1' ?>;"><?= !empty($loan['expected_return_date']) ? date('d/m/Y', strtotime($loan['expected_return_date'])) : '-' ?></strong>
             </div>
             <div>
-                <span style="color:#94a3b8;">Petugas Serah:</span><br>
-                <strong style="color:#cbd5e1;"><?= e($loan['officer_name'] ?: '-') ?></strong>
+                <span style="color:#64748b;">Petugas Serah:</span><br>
+                <strong style="color:#64748b;"><?= e($loan['officer_name'] ?: '-') ?></strong>
             </div>
             <div>
-                <span style="color:#94a3b8;">Petugas Terima:</span><br>
-                <strong style="color:#cbd5e1;"><?= e($loan['return_officer_name'] ?: '-') ?></strong>
+                <span style="color:#64748b;">Petugas Terima:</span><br>
+                <strong style="color:#64748b;"><?= e($loan['return_officer_name'] ?: '-') ?></strong>
             </div>
         </div>
 
         <?php if (!empty($loan['purpose'])): ?>
-            <div style="margin-top:10px;font-size:12px;color:#cbd5e1;background:#0f172a;padding:8px 10px;border-radius:6px;">
-                <span style="color:#94a3b8;font-weight:700;">Keperluan:</span> <?= nl2br(e($loan['purpose'])) ?>
+            <div style="margin-top:10px;font-size:12px;color:#64748b;background:#f1f5f9;padding:8px 10px;border-radius:6px;">
+                <span style="color:#64748b;font-weight:700;">Keperluan:</span> <?= nl2br(e($loan['purpose'])) ?>
             </div>
         <?php endif; ?>
 
         <!-- List Items -->
         <div style="margin-top:14px;">
-            <div style="font-size:12px;font-weight:700;color:#38bdf8;text-transform:uppercase;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:#0284c7;text-transform:uppercase;margin-bottom:8px;">
                 Daftar Unit Aset Fisik (<?= count($items) ?>):
             </div>
             <?php foreach ($items as $it): ?>
-                <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;">
+                <div style="background:#f1f5f9;;border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
-                            <div style="font-family:monospace;font-weight:800;color:#38bdf8;"><?= e($it['asset_code']) ?></div>
-                            <div style="font-weight:700;color:#f8fafc;font-size:13px;"><?= e($it['asset_name']) ?></div>
-                            <div style="color:#94a3b8;font-size:11px;"><?= e($it['brand']) ?> <?= e($it['model']) ?></div>
+                            <div style="font-family:monospace;font-weight:800;color:#0284c7;"><?= e($it['asset_code']) ?></div>
+                            <div style="font-weight:700;;font-size:13px;"><?= e($it['asset_name']) ?></div>
+                            <div style="color:#64748b;font-size:11px;"><?= e($it['brand']) ?> <?= e($it['model']) ?></div>
                         </div>
                         <div>
                             <?php if ($it['status'] === 'returned'): ?>
@@ -1411,10 +1434,10 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
                             <?php endif; ?>
                         </div>
                     </div>
-                    <div style="margin-top:6px;font-size:11px;color:#94a3b8;">
+                    <div style="margin-top:6px;font-size:11px;color:#64748b;">
                         Awal: <em><?= e($it['condition_out'] ?: 'Normal') ?></em>
                         <?php if (!empty($it['condition_in'])): ?>
-                            &bull; Kembali: <em style="color:#f8fafc;"><?= e($it['condition_in']) ?></em>
+                            &bull; Kembali: <em style=";"><?= e($it['condition_in']) ?></em>
                         <?php endif; ?>
                     </div>
                     <?php if (!empty($it['photo_out']) || !empty($it['photo_in'])): ?>
@@ -1425,8 +1448,8 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
                                         <img src="<?= e($it['photo_out']) ?>" alt="Foto Pinjam" style="width:50px;height:50px;object-fit:cover;border-radius:6px;border:1px solid #475569;">
                                     </a>
                                     <div style="font-size:10px;line-height:1.3;">
-                                        <span style="color:#38bdf8;font-weight:600;">Foto Pinjam</span><br>
-                                        <a href="<?= e($it['photo_out']) ?>" target="_blank" style="color:#94a3b8;">Lihat ↗</a>
+                                        <span style="color:#0284c7;font-weight:600;">Foto Pinjam</span><br>
+                                        <a href="<?= e($it['photo_out']) ?>" target="_blank" style="color:#64748b;">Lihat ↗</a>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -1437,7 +1460,7 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
                                     </a>
                                     <div style="font-size:10px;line-height:1.3;">
                                         <span style="color:#4ade80;font-weight:600;">Foto Kembali</span><br>
-                                        <a href="<?= e($it['photo_in']) ?>" target="_blank" style="color:#94a3b8;">Lihat ↗</a>
+                                        <a href="<?= e($it['photo_in']) ?>" target="_blank" style="color:#64748b;">Lihat ↗</a>
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -1462,6 +1485,6 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
         </a>
     </div>
     <?php
-    render_mobile_loan_footer('dashboard');
+    render_mobile_footer('dashboard');
 }
 

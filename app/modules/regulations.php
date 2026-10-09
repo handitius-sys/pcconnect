@@ -7,6 +7,10 @@ declare(strict_types=1);
  * Mengontrol izin Lihat (View), Tambah (Create), Edit, dan Hapus (Remove)
  * untuk seluruh menu Master dan Transaksi.
  */
+/**
+ * Modul Regulas: Hak Akses
+ * Proses: Menangani sistem matrik perizinan (Hak Akses) secara detail untuk masing-masing grup/role (View, Add, Edit, Delete).
+ */
 function handle_route_setup_regulations(PDO $pdo): void
 {
     $user = require_role(['admin']);
@@ -102,10 +106,11 @@ function handle_route_setup_regulations(PDO $pdo): void
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg>
                     Regulasi Hak Akses Berdasarkan Role
                 </h1>
-                <p class="muted">Atur izin <strong>Lihat</strong>, <strong>Tambah</strong>, <strong>Edit</strong>, dan <strong>Remove (Hapus)</strong> untuk setiap menu Master dan Transaksi per role user.</p>
+                <p class="muted">Atur izin <strong>Lihat</strong>, <strong>Tambah</strong>, <strong>Edit</strong>, dan <strong>Hapus / Batal (Delete/Cancel)</strong> untuk setiap menu Master dan Transaksi per role user.</p>
             </div>
-            <div class="actions">
+            <div class="actions" style="display:flex;gap:8px;">
                 <a class="btn" href="<?= route_url('users') ?>">Kelola Pengguna</a>
+                <a class="btn" href="<?= route_url('dashboard') ?>">← Batal / Kembali</a>
             </div>
         </div>
 
@@ -135,16 +140,17 @@ function handle_route_setup_regulations(PDO $pdo): void
                     <?php if ($selectedRole === 'admin'): ?>
                         <p class="muted" style="margin:4px 0 0 0;">Role Administrator memiliki hak akses penuh otomatis ke seluruh menu dan fungsi.</p>
                     <?php else: ?>
-                        <p class="muted" style="margin:4px 0 0 0;">Centang fitur yang diizinkan untuk diakses, ditambah, diubah, atau dihapus oleh role ini.</p>
+                        <p class="muted" style="margin:4px 0 0 0;">Centang fitur yang diizinkan untuk diakses, ditambah, diubah, atau dihapus/dibatalkan oleh role ini.</p>
                     <?php endif; ?>
                 </div>
                 <?php if ($selectedRole !== 'admin'): ?>
-                    <div class="actions">
+                    <div class="actions" style="display:flex;gap:6px;flex-wrap:wrap;">
                         <button type="button" class="btn" onclick="checkAll(true)">Pilih Semua</button>
                         <button type="button" class="btn" onclick="checkAll(false)">Batalkan Semua</button>
                         <button type="button" class="btn" onclick="checkColumn('create', true)">+ Centang Semua Tambah</button>
                         <button type="button" class="btn" onclick="checkColumn('edit', true)">✏️ Centang Semua Edit</button>
-                        <button type="button" class="btn" onclick="checkColumn('delete', true)">🗑️ Centang Semua Hapus</button>
+                        <button type="button" class="btn" onclick="checkColumn('delete', true)">🗑️ Centang Semua Hapus / Batal</button>
+                        <a href="<?= route_url('setup_regulations', ['role' => $selectedRole]) ?>" class="btn">❌ Batal Edit</a>
                     </div>
                 <?php endif; ?>
             </div>
@@ -165,7 +171,7 @@ function handle_route_setup_regulations(PDO $pdo): void
                                 <th style="width:15%;text-align:center;">Lihat (View)</th>
                                 <th style="width:15%;text-align:center;">Tambah (Create)</th>
                                 <th style="width:15%;text-align:center;">Ubah (Edit)</th>
-                                <th style="width:15%;text-align:center;">Hapus (Remove)</th>
+                                <th style="width:15%;text-align:center;">Hapus / Batal (Delete / Cancel)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -202,10 +208,11 @@ function handle_route_setup_regulations(PDO $pdo): void
                 </div>
             <?php endforeach; ?>
 
-            <div class="split" style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;">
-                <div>
+            <div class="split" style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;align-items:center;">
+                <div style="display:flex;gap:12px;align-items:center;">
                     <?php if ($selectedRole !== 'admin'): ?>
                         <button type="submit" class="btn primary" style="padding:10px 24px;font-size:14px;">💾 Simpan Regulasi Hak Akses</button>
+                        <a href="<?= route_url('setup_regulations', ['role' => $selectedRole]) ?>" class="btn" style="padding:10px 20px;font-size:14px;">❌ Batal</a>
                     <?php endif; ?>
                 </div>
                 <div>

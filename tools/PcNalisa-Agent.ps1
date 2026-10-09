@@ -13,7 +13,8 @@ $EmbeddedPcID = "__PCCONNECT_PC_ID__"
 $EmbeddedOwner = "__PCCONNECT_OWNER__"
 $EmbeddedServerUrl = "__PCCONNECT_SERVER_URL__"
 $EmbeddedToken = "__PCCONNECT_TOKEN__"
-$LogPath = Join-Path $PSScriptRoot ("PcNalisa-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
+$scriptDir = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PWD.Path } else { $PSScriptRoot }
+$LogPath = Join-Path $scriptDir ("PcNalisa-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
 
 function Write-Status {
     param([string]$Message)
@@ -41,7 +42,7 @@ function Use-ValueIfEmpty {
     return $Current
 }
 
-$configPath = Join-Path $PSScriptRoot "PcNalisa.config.json"
+$configPath = Join-Path $scriptDir "PcNalisa.config.json"
 if (Test-Path $configPath) {
     $config = Get-Content $configPath -Raw | ConvertFrom-Json
     $PcID = Use-ValueIfEmpty $PcID $config.pc_id
@@ -571,6 +572,37 @@ function Get-BackgroundProcessAnalysis {
     }
 }
 
+function Get-HardwareSerialNumber {
+    param($biosObj)
+    $sn = ""
+    if ($biosObj -and -not [string]::IsNullOrWhiteSpace($biosObj.SerialNumber)) {
+        $sn = [string]$biosObj.SerialNumber.Trim()
+    }
+    $isInvalid = [string]::IsNullOrWhiteSpace($sn) -or $sn -match '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$'
+    if ($isInvalid) {
+        try {
+            $csp = Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+            if ($csp -and -not [string]::IsNullOrWhiteSpace($csp.IdentifyingNumber)) {
+                $candidate = [string]$csp.IdentifyingNumber.Trim()
+                if ($candidate -notmatch '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$') {
+                    return $candidate
+                }
+            }
+        } catch {}
+        try {
+            $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
+            if ($bb -and -not [string]::IsNullOrWhiteSpace($bb.SerialNumber)) {
+                $candidate = [string]$bb.SerialNumber.Trim()
+                if ($candidate -notmatch '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$') {
+                    return $candidate
+                }
+            }
+        } catch {}
+        return ""
+    }
+    return $sn
+}
+
 Write-Status "Mulai analisa untuk $PcID pada komputer $env:COMPUTERNAME."
 Show-Notice "PcNalisa mulai menganalisa $PcID." "PcNalisa Mulai" "Information"
 
@@ -580,6 +612,12 @@ $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
 $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
 $bios = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
 $memory = Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue
+$serialNumber = Get-HardwareSerialNumber $bios
+if ($serialNumber) {
+    Write-Status "    -> Serial Number hardware: $serialNumber"
+} else {
+    Write-Status "    -> Serial Number hardware: tidak terdeteksi (OEM)"
+}
 
 Write-Status "[2/7] Membaca penyimpanan, kartu grafis (GPU), dan jaringan..."
 $storage = Get-Storage
@@ -620,6 +658,7 @@ $payload = [ordered]@{
     pc_id = $PcID
     owner = $Owner
     computer_name = $env:COMPUTERNAME
+    serial_number = $serialNumber
     collected_at = (Get-Date).ToString("s")
     hardware = [ordered]@{
         processor = $cpu.Name
@@ -630,6 +669,7 @@ $payload = [ordered]@{
         gpu = $gpu
         manufacturer = $cs.Manufacturer
         model = $cs.Model
+        serial_number = $serialNumber
         bios_version = $bios.SMBIOSBIOSVersion
     }
     software = [ordered]@{
@@ -693,6 +733,11 @@ function Send-PcConnectPayload {
     }
 }
 
+$exportJsonPath = Join-Path $scriptDir ("PcNalisa_" + $PcID + "_" + (Get-Date -Format "yyyyMMddHHmmss") + ".json")
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($exportJsonPath, $json, $utf8NoBom)
+Write-Status "Export JSON disimpan: $exportJsonPath"
+
 try {
     Write-Status "Mengirim hasil analisa ke PcConnect: $ServerUrl"
     Write-Status "Ukuran payload JSON: $($bodyBytes.Length) bytes."
@@ -722,10 +767,6 @@ try {
         } catch {}
     }
     Write-Status "ERROR: Upload gagal. $detail"
-    $fallback = Join-Path $PSScriptRoot ("PcNalisa_" + $PcID + "_" + (Get-Date -Format "yyyyMMddHHmmss") + ".json")
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($fallback, $json, $utf8NoBom)
-    Write-Status "Fallback JSON disimpan: $fallback"
-    Show-Notice "Analisa selesai, tetapi upload ke PcConnect gagal.`n`nPenyebab:`n$detail`n`nFile fallback:`n$fallback`n`nLog:`n$LogPath" "PcNalisa Gagal Upload" "Warning"
+    Show-Notice "Analisa selesai, tetapi upload ke PcConnect gagal.`n`nPenyebab:`n$detail`n`nFile JSON:`n$exportJsonPath`n`nLog:`n$LogPath" "PcNalisa Gagal Upload" "Warning"
     exit 1
 }

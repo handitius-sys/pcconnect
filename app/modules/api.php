@@ -290,6 +290,10 @@ function api_technician_logout(PDO $pdo): never
     api_json(['ok' => true]);
 }
 
+/**
+ * Modul API: Ingest Agent
+ * Proses: Menerima pengiriman data spesifikasi (Hardware/OS) otomatis dari aplikasi agent di client PC.
+ */
 function handle_route_api_ingest(PDO $pdo): void
 {
     $token = $_SERVER['HTTP_X_PCCONNECT_TOKEN'] ?? '';
@@ -310,6 +314,10 @@ function handle_route_api_ingest(PDO $pdo): void
     echo json_encode(['ok' => true, 'pc_id' => $result['pc_id'], 'summary' => $result['summary']]);
 }
 
+/**
+ * Modul API: Pencarian Karyawan
+ * Proses: Endpoint untuk fitur Auto-Complete (pencarian nama/NIK karyawan) di berbagai form.
+ */
 function handle_route_employee_search(PDO $pdo): void
 {
     require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer']);
@@ -321,24 +329,42 @@ function handle_route_employee_search(PDO $pdo): void
     exit;
 }
 
+/**
+ * Modul API: Pencarian Aset Peminjaman
+ * Proses: Endpoint untuk mencari aset yang berstatus 'Tersedia' (Active) saat form Peminjaman Aset diisi.
+ */
 function handle_route_api_lookup_asset_for_loan(PDO $pdo): void
 {
     require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer']);
-    $raw = trim((string)($_GET['code'] ?? $_POST['code'] ?? $_GET['eqr'] ?? $_POST['eqr'] ?? ''));
     
-    if (!function_exists('find_asset_item_for_loan')) {
-        require_once dirname(__DIR__) . '/modules/asset_loan.php';
+    if (!function_exists('qr_decrypt_payload')) {
+        require_once dirname(__DIR__) . '/lib/qr.php';
     }
 
-    $item = find_asset_item_for_loan($pdo, $raw);
-    header('Content-Type: application/json; charset=utf-8');
+    $raw = trim((string)($_GET['code'] ?? $_POST['code'] ?? $_GET['eqr'] ?? $_POST['eqr'] ?? ''));
+    
+    try {
+        if (!function_exists('find_asset_item_for_loan')) {
+            require_once dirname(__DIR__) . '/modules/asset_loan.php';
+        }
 
-    if (!$item) {
+        $item = find_asset_item_for_loan($pdo, $raw);
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!$item) {
+            echo json_encode([
+                'ok' => true,
+                'found' => false,
+                'message' => 'Unit aset dengan kode atau QR tersebut tidak ditemukan di database.'
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+    } catch (Throwable $e) {
+        header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
-            'ok' => true,
-            'found' => false,
-            'message' => 'Unit aset dengan kode atau QR tersebut tidak ditemukan di database.'
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            'ok' => false,
+            'message' => 'API Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine()
+        ]);
         exit;
     }
 
@@ -386,6 +412,10 @@ function handle_route_api_lookup_asset_for_loan(PDO $pdo): void
     exit;
 }
 
+/**
+ * Modul API: Daftar Tipe Aset
+ * Proses: Endpoint untuk memuat daftar tipe aset (dropdown) berdasarkan kategori yang dipilih.
+ */
 function handle_route_api_asset_types(PDO $pdo): void
 {
     require_login();
@@ -427,6 +457,10 @@ function handle_route_api_asset_types(PDO $pdo): void
     echo json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Konfigurasi Tipe Aset
+ * Proses: Mengambil aturan konfigurasi (format serial, masa pakai) untuk suatu tipe aset spesifik.
+ */
 function handle_route_api_asset_type_config(PDO $pdo): void
 {
     require_login();
@@ -436,6 +470,10 @@ function handle_route_api_asset_type_config(PDO $pdo): void
     echo json_encode(asset_type_form_config($pdo, $typeId, $groupId), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Job Desk Teknisi
+ * Proses: Endpoint untuk mendapatkan daftar alokasi job desk per teknisi saat assign tiket perbaikan.
+ */
 function handle_route_api_job_desks(PDO $pdo): void
 {
     require_login();
@@ -464,6 +502,10 @@ function handle_route_api_job_desks(PDO $pdo): void
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Aset Eligible Maintenance
+ * Proses: Mencari aset-aset yang sudah waktunya untuk dikerjakan (preventive maintenance) dan butuh dijadwalkan.
+ */
 function handle_route_api_eligible_maintenance_asset_items(PDO $pdo): void
 {
     require_login();
@@ -551,6 +593,10 @@ function handle_route_api_eligible_maintenance_asset_items(PDO $pdo): void
     echo json_encode($items, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Master Item Lookup
+ * Proses: Endpoint untuk auto-complete data Master Item Aset saat penambahan unit fisik baru.
+ */
 function handle_route_api_master_items(PDO $pdo): void
 {
     require_login();
@@ -592,6 +638,10 @@ function handle_route_api_master_items(PDO $pdo): void
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Lookup Merk Aset
+ * Proses: Endpoint untuk auto-complete daftar merk (Brand) saat pembuatan Master Item.
+ */
 function handle_route_api_asset_brands(PDO $pdo): void
 {
     require_login();
@@ -647,6 +697,10 @@ function handle_route_api_asset_brands(PDO $pdo): void
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Lacak Identitas
+ * Proses: Menerjemahkan scan QR Code/Serial Number menjadi ID aset untuk verifikasi di berbagai modul.
+ */
 function handle_route_api_trace_identifier(PDO $pdo): void
 {
     require_login();
@@ -689,6 +743,10 @@ function handle_route_api_trace_identifier(PDO $pdo): void
     echo json_encode(['ok' => true, 'query' => $q, 'count' => count($results), 'data' => $results], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Aset Pengguna
+ * Proses: Mengambil daftar aset yang sedang dipegang (custodian) oleh seorang pengguna spesifik.
+ */
 function handle_route_api_pengguna_assets(PDO $pdo): void
 {
     require_login();
@@ -703,6 +761,10 @@ function handle_route_api_pengguna_assets(PDO $pdo): void
     echo json_encode(['ok' => true, 'data' => $assets], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
+/**
+ * Modul API: Import PC
+ * Proses: Membantu import data massal PC dari sistem lama ke sistem PcConnect baru.
+ */
 function handle_route_api_pc_import(PDO $pdo): void
 {
     require_login();
@@ -916,6 +978,10 @@ function handle_route_api_pc_import(PDO $pdo): void
     exit;
 }
 
+/**
+ * Modul API: Resolusi Model AI
+ * Proses: Endpoint eksperimental yang menggunakan fungsi cerdas (AI) untuk mencocokkan model hardware dari deskripsi teks.
+ */
 function handle_route_api_ai_resolve_model(PDO $pdo): void
 {
     require_login();
@@ -1098,6 +1164,16 @@ function handle_route_api_ai_resolve_model(PDO $pdo): void
     ]);
 }
 
-
-
-
+/**
+ * Modul API: Aset berdasar Tipe
+ * Proses: Mengambil seluruh unit fisik yang termasuk ke dalam Tipe Aset tertentu untuk ditampilkan di Peta/Laporan.
+ */
+function handle_route_api_assets_by_type(PDO $pdo): void
+{
+    require_login();
+    $typeId = (int)($_GET['type_id'] ?? 0);
+    $stmt = $pdo->prepare('SELECT id, asset_code, asset_name FROM asset_items WHERE asset_type_id = ? ORDER BY asset_code');
+    $stmt->execute([$typeId]);
+    $assets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    api_json($assets);
+}

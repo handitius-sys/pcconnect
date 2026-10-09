@@ -235,22 +235,27 @@ function get_regulated_menus(): array
     return [
         'Transaksi Aset' => [
             'asset_items' => 'Unit Aset',
-            'pcs' => 'Pendataan PC',
             'asset_loans' => 'Peminjaman Aset',
-            'asset_movements' => 'Mutasi / Tukar Pasang',
+            'asset_mutations' => 'Mutasi Aset',
         ],
         'Maintenance Aset' => [
             'maintenance' => 'Schedule PM',
-            'tickets' => 'Tiket Corrective',
+            'tickets' => 'Aset Corrective',
             'walkarounds' => 'Patroli Walkaround',
             'jobs' => 'Job Desk PM',
             'corrective_job_desks' => 'Job Desk Corrective',
             'mobile_service' => 'Mobile Service',
         ],
-        'Reports & QR_Label' => [
-            'labels' => 'QR Label Unit',
+        'Reports' => [
+            'reports' => 'Report Preventive Maintenance',
+            'corrective_repairs' => 'Report Corrective Maintenance',
+            'asset_movements' => 'Report Mutasi Aset',
+            'report_asset_loans' => 'Report Peminjaman Aset',
+            'report_asset_items' => 'Report Unit Aset',
         ],
         'Data Master' => [
+            'pcs' => 'Pendataan PC',
+            'printers' => 'Pendataan Printer',
             'asset_groups' => 'Master Komoditas',
             'asset_types' => 'Master Kategori',
             'asset_brands' => 'Master Brand / Merk',
@@ -260,8 +265,10 @@ function get_regulated_menus(): array
             'asset_locations' => 'Master Lokasi',
             'asset_companies' => 'Company',
             'master_pengguna' => 'Master Pengguna',
+            'corrective_workshops' => 'Master Bengkel / Workshop',
         ],
         'Pengaturan & Setup' => [
+            'labels' => 'QR Label Unit',
             'users' => 'Akses Users',
         ]
     ];
@@ -328,7 +335,7 @@ function has_regulation(string $menuKey, string $action = 'view', ?array $user =
     $regs = get_user_regulations($role);
     if (!isset($regs[$menuKey])) {
         if ($role === 'maintenance_admin') {
-            if (in_array($menuKey, ['maintenance', 'asset_items', 'tickets', 'walkarounds', 'asset_loans', 'asset_movements', 'jobs', 'corrective_job_desks', 'mobile_service'], true)) {
+            if (in_array($menuKey, ['maintenance', 'asset_items', 'tickets', 'walkarounds', 'asset_loans', 'asset_movements', 'asset_mutations', 'jobs', 'corrective_job_desks', 'mobile_service'], true)) {
                 return true;
             }
         } elseif ($role === 'technician') {
@@ -522,8 +529,8 @@ function render_header(string $title, ?array $user = null): void
 
         echo '<nav class="sidebar-nav">';
 
-        // 1. Transaksi Aset Accordion (Unit Aset, Pendataan PC, Pinjam, Mutasi)
-        $transRoutes = ['asset_items', 'pcs', 'asset_loans', 'mobile_asset_loans', 'asset_movements'];
+        // 1. Transaksi Aset Accordion (Unit Aset, Pinjam, Mutasi)
+        $transRoutes = ['asset_items', 'asset_loans', 'asset_mutations'];
         $isTransOpen = in_array($curRoute, $transRoutes, true);
         echo '<details class="nav-accordion"' . ($isTransOpen ? ' open' : '') . '>';
         echo '  <summary class="nav-item" title="Transaksi Aset"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Transaksi Aset</span><span class="nav-chevron">▶</span></summary>';
@@ -531,87 +538,83 @@ function render_header(string $title, ?array $user = null): void
         if ($isAdmin || has_regulation('asset_items', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_items' ? ' active' : '') . '" href="' . route_url('asset_items') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Unit Aset</span></a>';
         }
-        if ($isAdmin || has_regulation('pcs', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'pcs' ? ' active' : '') . '" href="' . route_url('pcs') . '"><span class="nav-icon">' . $svgPc . '</span><span class="nav-label">Pendataan PC</span></a>';
-        }
         if ($isAdmin || has_regulation('asset_loans', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_loans' ? ' active' : '') . '" href="' . route_url('asset_loans') . '"><span class="nav-icon">' . $svgLoan . '</span><span class="nav-label">Peminjaman Aset</span></a>';
-            echo '<a class="nav-item" href="' . route_url('mobile_asset_loans') . '" target="_blank"><span class="nav-icon">' . $svgMobile . '</span><span class="nav-label">📱 Mobile Pinjam</span><span class="nav-badge">PWA</span></a>';
         }
-        if ($isAdmin || has_regulation('asset_movements', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_movements' ? ' active' : '') . '" href="' . route_url('asset_movements') . '"><span class="nav-icon">' . $svgMove . '</span><span class="nav-label">Mutasi / Tukar Pasang</span></a>';
+        if ($isAdmin || has_regulation('asset_mutations', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'asset_mutations' ? ' active' : '') . '" href="' . route_url('asset_mutations') . '"><span class="nav-icon">' . $svgMove . '</span><span class="nav-label">Mutasi Aset</span></a>';
         }
+
         echo '  </div>';
         echo '</details>';
 
-        // 2. Maintenance Aset Accordion (Schedule PM, Tiket, Patroli, Submenu Job Desk, Submenu Mobile)
+        // 2. Maintenance Aset Accordion
         $maintRoutes = ['maintenance', 'tickets', 'walkarounds', 'jobs', 'corrective_job_desks', 'mobile_service'];
         $isMaintOpen = in_array($curRoute, $maintRoutes, true);
-        echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
-        echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▶</span></summary>';
-        echo '  <div class="nav-submenu">';
-        if ($isAdmin || has_regulation('maintenance', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'maintenance' ? ' active' : '') . '" href="' . route_url('maintenance') . '"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Schedule PM</span></a>';
-        }
-        if ($isAdmin || has_regulation('tickets', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Tiket Corrective</span></a>';
-        }
-        if ($isAdmin || has_regulation('walkarounds', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'walkarounds' ? ' active' : '') . '" href="' . route_url('walkarounds') . '"><span class="nav-icon">' . $svgPatrol . '</span><span class="nav-label">Patroli Walkaround</span></a>';
-        }
-
-        // Sub menu Job Desk
-        $jobDeskRoutes = ['jobs', 'corrective_job_desks'];
-        $isJobDeskOpen = in_array($curRoute, $jobDeskRoutes, true);
-        echo '<details class="nav-subaccordion"' . ($isJobDeskOpen ? ' open' : '') . '>';
-        echo '  <summary title="Job Desk Maintenance"><span>📋 Job Desk</span><span class="nav-chevron">▶</span></summary>';
-        echo '  <div style="display:flex;flex-direction:column;gap:1px;padding-top:2px;">';
-        if ($isAdmin || has_regulation('jobs', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Job Desk PM</span></a>';
-        }
-        if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Job Desk Corrective</span></a>';
-        }
-        echo '  </div>';
-        echo '</details>';
-
-        // Sub menu Mobile
-        if ($isAdmin || has_regulation('mobile_service', 'view', $user)) {
-            echo '<details class="nav-subaccordion"' . ($curRoute === 'mobile_service' ? ' open' : '') . '>';
-            echo '  <summary title="Mobile Field Service"><span>📱 Mobile</span><span class="nav-chevron">▶</span></summary>';
-            echo '  <div style="display:flex;flex-direction:column;gap:1px;padding-top:2px;">';
-            echo '<a class="nav-item' . ($curRoute === 'mobile_service' ? ' active' : '') . '" href="' . route_url('mobile_service') . '" target="_blank"><span class="nav-icon">' . $svgMobile . '</span><span class="nav-label">📱 Mobile Service</span><span class="nav-badge">PWA</span></a>';
+        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('walkarounds', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user) || has_regulation('mobile_service', 'view', $user)) {
+            echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
+            echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▼</span></summary>';
+            echo '  <div class="nav-submenu">';
+            if ($isAdmin || has_regulation('maintenance', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'maintenance' ? ' active' : '') . '" href="' . route_url('maintenance') . '"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Schedule PM</span></a>';
+            }
+            if ($isAdmin || has_regulation('tickets', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
+            }
+            if ($isAdmin || has_regulation('walkarounds', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'walkarounds' ? ' active' : '') . '" href="' . route_url('walkarounds') . '"><span class="nav-icon">' . $svgPatrol . '</span><span class="nav-label">Patroli Walkaround</span></a>';
+            }
+            if ($isAdmin || has_regulation('jobs', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk PM</span></a>';
+            }
+            if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk Corrective</span></a>';
+            }
+            if ($isAdmin || has_regulation('mobile_service', 'view', $user)) {
+                echo '<a class="nav-item" href="' . route_url('mobile_service') . '" target="_blank"><span class="nav-icon">' . $svgMobile . '</span><span class="nav-label">📱 Mobile Service</span><span class="nav-badge">PWA</span></a>';
+            }
             echo '  </div>';
             echo '</details>';
         }
 
-        echo '  </div>';
-        echo '</details>';
-
-        // 3. Reports & QR_Label Accordion
-        $reportRoutes = ['labels', 'reports', 'maintenance_status_report', 'corrective_repairs', 'report_asset_loans'];
+        // 3. Reports Accordion
+        $reportRoutes = ['reports', 'corrective_repairs', 'asset_movements', 'asset_mutations', 'report_asset_loans'];
         $isReportOpen = in_array($curRoute, $reportRoutes, true);
         echo '<details class="nav-accordion"' . ($isReportOpen ? ' open' : '') . '>';
-        echo '  <summary class="nav-item" title="Reports & QR_Label"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Reports & QR_Label</span><span class="nav-chevron">▶</span></summary>';
+        echo '  <summary class="nav-item" title="Reports"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Reports</span><span class="nav-chevron">▶</span></summary>';
         echo '  <div class="nav-submenu">';
-        if ($isAdmin || has_regulation('labels', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'labels' ? ' active' : '') . '" href="' . route_url('labels') . '"><span class="nav-icon">' . $svgQr . '</span><span class="nav-label">QR Label Unit</span></a>';
+        if ($isAdmin || has_regulation('reports', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'reports' ? ' active' : '') . '" href="' . route_url('reports') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Preventive Maintenance</span></a>';
         }
-        echo '<a class="nav-item' . ($curRoute === 'reports' ? ' active' : '') . '" href="' . route_url('reports') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report PM</span></a>';
-        echo '<a class="nav-item' . ($curRoute === 'maintenance_status_report' ? ' active' : '') . '" href="' . route_url('maintenance_status_report') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Status PC/PRN</span></a>';
-        echo '<a class="nav-item' . ($curRoute === 'corrective_repairs' ? ' active' : '') . '" href="' . route_url('corrective_repairs') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Corrective</span></a>';
-        echo '<a class="nav-item' . ($curRoute === 'report_asset_loans' ? ' active' : '') . '" href="' . route_url('report_asset_loans') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Peminjaman</span></a>';
+        if ($isAdmin || has_regulation('corrective_repairs', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'corrective_repairs' ? ' active' : '') . '" href="' . route_url('corrective_repairs') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Corrective Maintenance</span></a>';
+        }
+        if ($isAdmin || has_regulation('asset_movements', 'view', $user) || has_regulation('asset_mutations', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'asset_movements' || $curRoute === 'report_asset_mutations' ? ' active' : '') . '" href="' . route_url('asset_movements') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Mutasi Aset</span></a>';
+        }
+        if ($isAdmin || has_regulation('asset_loans', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'report_asset_loans' ? ' active' : '') . '" href="' . route_url('report_asset_loans') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Peminjaman Aset</span></a>';
+        }
+        if ($isAdmin || has_regulation('asset_items', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'report_asset_items' ? ' active' : '') . '" href="' . route_url('report_asset_items') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Unit Aset</span></a>';
+        }
         echo '  </div>';
         echo '</details>';
 
-        // 4. Data Master Accordion (Posisinya di bawah Reports & QR_Label)
-        $masterRoutes = ['asset_groups', 'asset_types', 'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications', 'asset_locations', 'asset_companies', 'master_pengguna'];
+        // 4. Data Master Accordion
+        $masterRoutes = ['pcs', 'asset_groups', 'asset_types', 'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications', 'asset_locations', 'asset_companies', 'master_pengguna', 'corrective_workshops'];
         $isMasterOpen = in_array($curRoute, $masterRoutes, true);
         echo '<details class="nav-accordion"' . ($isMasterOpen ? ' open' : '') . '>';
         echo '  <summary class="nav-item" title="Data Master"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Data Master</span><span class="nav-chevron">▶</span></summary>';
         echo '  <div class="nav-submenu">';
+        if ($isAdmin || has_regulation('pcs', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'pcs' ? ' active' : '') . '" href="' . route_url('pcs') . '"><span class="nav-icon">' . $svgPc . '</span><span class="nav-label">Pendataan PC</span></a>';
+        }
         if ($isAdmin || has_regulation('asset_groups', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_groups' ? ' active' : '') . '" href="' . route_url('asset_groups') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Komoditas</span></a>';
+        }
+        if ($isAdmin || has_regulation('corrective_workshops', 'view', $user) || has_regulation('corrective_admin', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'corrective_workshops' ? ' active' : '') . '" href="' . route_url('corrective_workshops') . '"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Master Bengkel</span></a>';
         }
         if ($isAdmin || has_regulation('asset_types', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_types' ? ' active' : '') . '" href="' . route_url('asset_types') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Kategori</span></a>';
@@ -641,12 +644,15 @@ function render_header(string $title, ?array $user = null): void
         echo '</details>';
 
         // 5. Setup Accordion
-        if ($isAdmin || has_regulation('users', 'view', $user)) {
-            $setupRoutes = ['users', 'setup_regulations', 'employee_source'];
+        if ($isAdmin || has_regulation('users', 'view', $user) || has_regulation('labels', 'view', $user)) {
+            $setupRoutes = ['labels', 'users', 'setup_regulations', 'employee_source'];
             $isSetupOpen = in_array($curRoute, $setupRoutes, true);
             echo '<details class="nav-accordion"' . ($isSetupOpen ? ' open' : '') . '>';
             echo '  <summary class="nav-item" title="Pengaturan & Setup"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Pengaturan & Setup</span><span class="nav-chevron">▶</span></summary>';
             echo '  <div class="nav-submenu">';
+            if ($isAdmin || has_regulation('labels', 'view', $user)) {
+                echo '<a class="nav-item' . ($curRoute === 'labels' ? ' active' : '') . '" href="' . route_url('labels') . '"><span class="nav-icon">' . $svgQr . '</span><span class="nav-label">QR Label Unit</span></a>';
+            }
             if ($isAdmin || has_regulation('users', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'users' ? ' active' : '') . '" href="' . route_url('users') . '"><span class="nav-icon">' . $svgUsers . '</span><span class="nav-label">Akses Users</span></a>';
             }
@@ -686,16 +692,38 @@ function render_header(string $title, ?array $user = null): void
 
         // Main content wrapper (Topbar Kanan Atas dengan Sign In / Sign Out)
         echo '<div class="main-wrapper">';
-        echo '<header class="topbar">';
-        echo '  <div class="topbar-left">';
-        echo '    <button class="topbar-toggle" onclick="toggleSidebarSlide()" title="Slide / Buka-Tutup Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>';
-        echo '    <h1 class="topbar-title">' . e($title) . '</h1>';
+        $dateStr = date('d M Y, H:i');
+        $svgHome = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:-2px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>';
+        $bgGradient = 'background: linear-gradient(135deg, #0ea5e9, #1e3a8a); color: #fff;';
+        $curRoute = $_GET['route'] ?? '';
+        
+        $homeUrl = route_url('dashboard');
+        $moduleName = 'Master Data';
+        $moduleUrl = $homeUrl;
+
+        if (strpos($curRoute, 'loan') !== false) { $moduleName = 'Peminjaman'; $moduleUrl = route_url('asset_loans'); }
+        elseif (strpos($curRoute, 'corrective') !== false || strpos($curRoute, 'ticket') !== false) { $moduleName = 'Corrective'; $moduleUrl = route_url('tickets'); }
+        elseif (strpos($curRoute, 'maintenance') !== false || strpos($curRoute, 'schedule') !== false) { $moduleName = 'Preventive'; $moduleUrl = route_url('maintenance'); }
+        elseif (strpos($curRoute, 'report') !== false) { $moduleName = 'Reports'; $moduleUrl = route_url('reports'); }
+        elseif ($curRoute === 'dashboard') { $moduleName = 'Overview'; $moduleUrl = route_url('dashboard'); }
+
+        echo '<header class="topbar" style="'.$bgGradient.' border-bottom: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">';
+        echo '  <div class="topbar-left" style="display:flex; align-items:center; gap:12px;">';
+        echo '    <button class="topbar-toggle" onclick="toggleSidebarSlide()" title="Slide / Buka-Tutup Menu" style="background:rgba(255,255,255,0.15); color:#fff; border-color:rgba(255,255,255,0.2);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>';
+        echo '    <div style="font-size:14px; font-weight:500; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">';
+        echo '      <a href="' . $homeUrl . '" style="color:#fff; text-decoration:none; display:flex; align-items:center; gap:6px; opacity:0.85; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.85">' . $svgHome . ' <span>' . e($appName) . '</span></a>';
+        echo '      <span style="opacity:0.5;">/</span>';
+        echo '      <a href="' . $moduleUrl . '" style="color:#fff; text-decoration:none; opacity:0.9; transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.9">' . $moduleName . '</a>';
+        echo '      <span style="opacity:0.5;">/</span>';
+        echo '      <strong style="font-size:15px; font-weight:800; color:#fff; letter-spacing:0.2px;">' . e($title) . '</strong>';
+        echo '    </div>';
         echo '  </div>';
-        echo '  <div class="topbar-right">';
-        echo '    <span class="badge ok">' . e($roleLabel) . '</span>';
-        echo '    <span style="font-size:13px;font-weight:600;color:#334155;">' . e($user['name'] ?? '') . '</span>';
-        echo '    <a href="' . route_url('login') . '" class="btn" style="padding:4px 9px;font-size:12px;display:inline-flex;align-items:center;gap:4px;" title="Sign In Akun Lain / Ganti User"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg> Sign In</a>';
-        echo '    <a href="' . route_url('logout') . '" class="btn danger" style="padding:4px 9px;font-size:12px;display:inline-flex;align-items:center;gap:4px;" title="Sign Out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg> Sign Out</a>';
+        echo '  <div class="topbar-right" style="display:flex; align-items:center; gap:12px;">';
+        echo '    <div style="font-size:12px; font-weight:600; background:rgba(0,0,0,0.2); padding:5px 10px; border-radius:12px;">' . $dateStr . '</div>';
+        echo '    <span class="badge ok" style="background:rgba(255,255,255,0.2); color:#fff; border:1px solid rgba(255,255,255,0.3);">' . e($roleLabel) . '</span>';
+        echo '    <span style="font-size:13px; font-weight:600; color:#e2e8f0;">' . e($user['name'] ?? '') . '</span>';
+        echo '    <a href="' . route_url('login') . '" class="btn" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:#fff; padding:5px 10px; font-size:12px; display:inline-flex; align-items:center; gap:4px;" title="Sign In Akun Lain / Ganti User"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg></a>';
+        echo '    <a href="' . route_url('logout') . '" class="btn danger" style="background:#dc2626; border-color:#b91c1c; color:#fff; padding:5px 10px; font-size:12px; display:inline-flex; align-items:center; gap:4px;" title="Sign Out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></a>';
         echo '  </div>';
         echo '</header>';
         echo '<main>';
@@ -855,7 +883,33 @@ function render_mobile_header(string $title, ?array $user = null): void
     $appName = app_name();
     echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . e($title) . ' - ' . e($appName) . ' Mobile</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="alternate icon" type="image/x-icon" href="favicon.ico"><style>';
     echo 'body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f3f6fb;color:#172033}main{max-width:560px;margin:0 auto;padding:14px 14px 82px}.mobile-top{position:sticky;top:0;z-index:2;background:#172033;color:#fff;padding:14px 16px;font-weight:700}.mobile-nav{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #d9e1ee;display:grid;grid-template-columns:repeat(4,1fr);z-index:3}.mobile-nav a{text-align:center;text-decoration:none;color:#334155;padding:10px 4px;font-size:13px}.panel,.stat{background:#fff;border:1px solid #dde5f0;border-radius:8px;padding:16px;margin-bottom:12px}.grid{display:grid;gap:12px}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.split{display:flex;justify-content:space-between;gap:10px;align-items:center}.btn{display:inline-block;border:1px solid #c7d0df;background:#fff;color:#172033;text-decoration:none;border-radius:6px;padding:10px 12px;cursor:pointer;font:inherit}.btn.primary{background:#1457d9;border-color:#1457d9;color:#fff}.btn.good{background:#0f8a5f;border-color:#0f8a5f;color:#fff}.btn.danger{background:#b91c1c;border-color:#b91c1c;color:#fff}label{display:block;font-weight:600;margin:10px 0 6px}input,select,textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:10px;font:inherit}textarea{min-height:110px}.badge{display:inline-block;border-radius:999px;background:#e8eef7;padding:4px 8px;font-size:12px}.ok{background:#dcfce7;color:#166534}.danger-text{color:#991b1b}.muted{color:#64748b}.flash{padding:12px;border-radius:6px;margin-bottom:12px;background:#e7f7ef;color:#14532d}.flash.err{background:#fee2e2;color:#991b1b}.readonly{opacity:.72}.check-row{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;border-bottom:1px solid #e2e8f0;padding:12px 0}.check-row input[type=checkbox]{width:22px;height:22px;margin:2px 0 0}.check-title{display:block;font-weight:700;line-height:1.35}.check-note-label{font-size:13px;color:#64748b;margin-top:8px}.check-note-label input{margin-top:4px}.scan-video{display:none;width:100%;border-radius:8px;background:#111;margin-bottom:10px}.camera-note{font-size:13px;color:#64748b;margin:8px 0}.photo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.photo-grid img{width:100%;border-radius:6px;border:1px solid #d9e1ee}.signature-pad{width:100%;height:160px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;touch-action:none}@media(max-width:420px){.two,.photo-grid{grid-template-columns:1fr}}';
-    echo '</style></head><body><div class="mobile-top">' . e($appName) . ' Mobile</div><main>';
+    echo '</style></head><body>';
+    $dateStr = date('d M Y, H:i');
+    $svgHome = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:-2px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>';
+    $bgGradient = 'background: linear-gradient(135deg, #0ea5e9, #1e3a8a);';
+    $curRoute = $_GET['route'] ?? '';
+    
+    $homeUrl = route_url('mobile_dashboard');
+    if (($user['role'] ?? '') === 'loan_officer') $homeUrl = route_url('mobile_asset_loans');
+    elseif (($user['role'] ?? '') === 'corrective_maintenance') $homeUrl = route_url('mobile_service');
+
+    $moduleName = 'Mobile';
+    $moduleUrl = $homeUrl;
+
+    if (strpos($curRoute, 'loan') !== false) { $moduleName = 'Peminjaman'; $moduleUrl = route_url('mobile_asset_loans'); }
+    elseif (strpos($curRoute, 'service') !== false) { $moduleName = 'Corrective'; $moduleUrl = route_url('mobile_service'); }
+    elseif (strpos($curRoute, 'maintenance') !== false || strpos($curRoute, 'mobile_') !== false) { $moduleName = 'Preventive'; $moduleUrl = route_url('mobile_dashboard'); }
+    
+    echo '<div class="mobile-top" style="'.$bgGradient.' display:flex; justify-content:space-between; align-items:center; padding: 14px 16px; border-bottom: 2px solid #38bdf8;">';
+    echo '  <div style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
+    echo '    <a href="' . $homeUrl . '" style="color:#fff; text-decoration:none; display:flex; align-items:center; gap:6px; opacity:0.85;">' . $svgHome . ' <span>' . e($appName) . '</span></a>';
+    echo '    <span style="opacity:0.5;">/</span>';
+    echo '    <a href="' . $moduleUrl . '" style="color:#fff; text-decoration:none; opacity:0.9;">' . $moduleName . '</a>';
+    echo '    <span style="opacity:0.5;">/</span>';
+    echo '    <strong style="font-size:14px; font-weight:800; color:#fff;">' . e($title) . '</strong>';
+    echo '  </div>';
+    echo '  <div style="font-size:11px; font-weight:600; opacity:0.9; background:rgba(0,0,0,0.15); padding:4px 8px; border-radius:12px; white-space:nowrap;">' . $dateStr . '</div>';
+    echo '</div><main>';
     if ($flash) {
         echo '<div class="flash ' . e($flash['type']) . '">' . e($flash['message']) . '</div>';
     }
@@ -864,6 +918,8 @@ function render_mobile_header(string $title, ?array $user = null): void
             echo '<nav class="mobile-nav"><a href="' . route_url('asset_items') . '">Unit Aset</a><a href="' . route_url('maintenance') . '">Schedule</a><a href="' . route_url('reports') . '">Reports</a><a href="' . route_url('logout') . '">Logout</a></nav>';
         } elseif (($user['role'] ?? '') === 'loan_officer') {
             echo '<nav class="mobile-nav"><a href="' . route_url('mobile_asset_loans') . '">Pinjaman</a><a href="' . route_url('mobile_asset_loan_create') . '">Pinjam Baru</a><a href="' . route_url('mobile_asset_loan_return') . '">Pengembalian</a><a href="' . route_url('logout') . '">Logout</a></nav>';
+        } elseif (($user['role'] ?? '') === 'corrective_maintenance') {
+            echo '<nav class="mobile-nav"><a href="' . route_url('mobile_service') . '">Dashboard</a><a href="' . route_url('mobile_service_scan') . '">Scan</a><a href="' . route_url('mobile_service_tasks') . '">Tugas</a><a href="' . route_url('logout') . '">Logout</a></nav>';
         } else {
             echo '<nav class="mobile-nav"><a href="' . route_url('mobile_dashboard') . '">Dashboard</a><a href="' . route_url('mobile_schedule') . '">Schedule</a><a href="' . route_url('mobile_scan') . '">Scan</a><a href="' . route_url('mobile_history') . '">History</a></nav>';
         }
@@ -957,6 +1013,29 @@ function find_asset_by_code(PDO $pdo, string $code): array
     if ($clean === '') {
         return ['', '', []];
     }
+
+    // Dekripsi atau ekstrak parameter jika input berupa URL / Query String
+    if (str_contains($clean, 'HTTP://') || str_contains($clean, 'HTTPS://') || str_contains($clean, 'EQR=') || str_contains($clean, 'CODE=')) {
+        if (function_exists('qr_decrypt_payload') && str_contains($clean, 'EQR=')) {
+            $eqrVal = substr($clean, strpos($clean, 'EQR=') + 4);
+            $eqrVal = explode('&', $eqrVal)[0];
+            $dec = qr_decrypt_payload(urldecode($eqrVal));
+            if ($dec) {
+                $clean = strtoupper(trim($dec));
+            }
+        } elseif (str_contains($clean, 'CODE=')) {
+            $cVal = substr($clean, strpos($clean, 'CODE=') + 5);
+            $clean = strtoupper(trim(urldecode(explode('&', $cVal)[0])));
+        }
+    }
+
+    if (function_exists('qr_decrypt_payload')) {
+        $dec = qr_decrypt_payload($clean);
+        if ($dec !== null && $dec !== '') {
+            $clean = strtoupper(trim($dec));
+        }
+    }
+
     [$assetId, $security] = parse_asset_code($clean);
     if ($assetId === '') {
         $assetId = $clean;
@@ -965,16 +1044,45 @@ function find_asset_by_code(PDO $pdo, string $code): array
 
     // 1. PRIORITAS UTAMA: Cari langsung di tabel asset_items (Unit Aset)
     if (db_table_exists($pdo, 'asset_items')) {
-        $stmtAi = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
-                                 FROM asset_items ai
-                                 LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
-                                 LEFT JOIN asset_types at ON at.id = ai.asset_type_id
-                                 LEFT JOIN asset_companies c ON c.id = ai.company_id
-                                 LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                                 WHERE (ai.asset_code = ? OR ai.asset_code = ?) AND ai.status <> "inactive"
-                                 LIMIT 1');
-        $stmtAi->execute([$clean, $assetId]);
-        $ai = $stmtAi->fetch();
+        try {
+            $stmtAi = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
+                                     FROM asset_items ai
+                                     LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+                                     LEFT JOIN asset_types at ON at.id = ai.asset_type_id
+                                     LEFT JOIN asset_companies c ON c.id = ai.company_id
+                                     LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                     WHERE (UPPER(TRIM(ai.asset_code)) = ? OR UPPER(TRIM(ai.asset_code)) = ? 
+                                         OR UPPER(TRIM(ai.alias_code)) = ? OR UPPER(TRIM(ai.alias_code)) = ?
+                                         OR UPPER(TRIM(ai.serial_number)) = ? OR UPPER(TRIM(ai.serial_number)) = ?)
+                                       AND ai.status <> "inactive"
+                                     LIMIT 1');
+            $stmtAi->execute([$clean, $assetId, $clean, $assetId, $clean, $assetId]);
+            $ai = $stmtAi->fetch();
+        } catch (PDOException $e) {
+            $stmtAi = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
+                                     FROM asset_items ai
+                                     LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+                                     LEFT JOIN asset_types at ON at.id = ai.asset_type_id
+                                     LEFT JOIN asset_companies c ON c.id = ai.company_id
+                                     LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                     WHERE (UPPER(TRIM(ai.asset_code)) = ? OR UPPER(TRIM(ai.asset_code)) = ?) AND ai.status <> "inactive"
+                                     LIMIT 1');
+            $stmtAi->execute([$clean, $assetId]);
+            $ai = $stmtAi->fetch();
+        }
+
+        if (!$ai && preg_match('/^#?(\d+)$/', $clean, $mNum)) {
+            $stmtNum = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
+                                     FROM asset_items ai
+                                     LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+                                     LEFT JOIN asset_types at ON at.id = ai.asset_type_id
+                                     LEFT JOIN asset_companies c ON c.id = ai.company_id
+                                     LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                     WHERE ai.id = ? AND ai.status <> "inactive"
+                                     LIMIT 1');
+            $stmtNum->execute([(int)$mNum[1]]);
+            $ai = $stmtNum->fetch();
+        }
 
         if ($ai) {
             // Jika unit merupakan Parent Bundle ('group'), muat anggota anak bundlingnya
@@ -1439,22 +1547,37 @@ function asset_item_options(PDO $pdo, ?int $selected = null, ?string $onlyUnsync
         $params[] = $onlyUnsyncedForPcId;
     }
 
-    $sql = 'SELECT id, asset_code, asset_name, asset_type, asset_category, asset_mode FROM asset_items';
-    if ($where) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
+    try {
+        $sql = 'SELECT id, asset_code, asset_name, asset_type, asset_category, asset_mode, alias_code FROM asset_items';
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY asset_code ASC';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        $sql = 'SELECT id, asset_code, asset_name, asset_type, asset_category, asset_mode FROM asset_items';
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY asset_code ASC';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
     }
-    $sql .= ' ORDER BY asset_code ASC';
 
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-
-    foreach ($stmt->fetchAll() as $row) {
+    foreach ($rows as $row) {
         $sel = (int)$row['id'] === (int)$selected ? ' selected' : '';
         $rawMode = (string)($row['asset_mode'] ?? 'standalone');
         $mode = $rawMode === 'group' ? ' [Bundle]' : ($rawMode === 'child' ? ' [Child]' : '');
         $cat = trim((string)($row['asset_category'] ?? ''));
         $catText = $cat !== '' ? ' (' . $cat . ' / ' . $row['asset_type'] . ')' : ' (' . $row['asset_type'] . ')';
-        $html .= '<option value="' . (int)$row['id'] . '"' . $sel . '>' . e($row['asset_code'] . ' - ' . $row['asset_name'] . $catText . $mode) . '</option>';
+        $alias = trim((string)($row['alias_code'] ?? ''));
+        $aliasText = $alias !== '' ? ' [' . $alias . ']' : '';
+        $html .= '<option value="' . (int)$row['id'] . '"' . $sel . '>' . e($row['asset_code'] . ' - ' . $row['asset_name'] . $catText . $mode . $aliasText) . '</option>';
     }
     return $html;
 }
@@ -1626,6 +1749,7 @@ function render_analysis_section(string $title, array $data): string
             'GPU' => summarize_gpu($data['gpu'] ?? []),
             'Manufacturer' => $data['manufacturer'] ?? '-',
             'Model' => $data['model'] ?? '-',
+            'Serial Number' => !empty($data['serial_number']) ? $data['serial_number'] : '-',
             'BIOS' => $data['bios_version'] ?? '-',
         ]);
         return $html;
@@ -1719,6 +1843,12 @@ function ai_insight_box(string $title, array $lines): string
 function hardware_ai_insights(array $data): array
 {
     $lines = [];
+    $serial = trim((string)($data['serial_number'] ?? $data['serial'] ?? ''));
+    if ($serial !== '' && !preg_match('/^(to be filled|system serial|default string|none|0|00000000|n\/a)$/i', $serial)) {
+        $lines[] = 'Serial Number perangkat terverifikasi: ' . $serial . '.';
+    } else {
+        $lines[] = 'Serial Number perangkat tidak terdeteksi di BIOS/motherboard (mungkin rakitan/placeholder OEM).';
+    }
     $ram = (float)($data['ram_gb'] ?? 0);
     $processor = (string)($data['processor'] ?? '');
     if ($ram > 0 && $ram < 8) {
