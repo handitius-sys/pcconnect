@@ -5768,7 +5768,7 @@ function handle_route_report_asset_items(PDO $pdo): void
         $params[] = $status;
     }
     if ($q !== '') {
-        $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR ai.brand_name LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR ai.owner_name LIKE ?)";
+        $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR COALESCE(ab.brand_name, ai.brand) LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR COALESCE(al.location_name, ai.location_label) LIKE ?)";
         $kw = '%' . $q . '%';
         $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw]);
     }
@@ -5779,10 +5779,12 @@ function handle_route_report_asset_items(PDO $pdo): void
     $sql = "SELECT ai.*, 
             COALESCE(ag.group_code, 'IT') AS group_code,
             COALESCE(ag.group_name, 'IT Asset') AS group_name,
-            ac.company_name,
-            al.location_name
+            COALESCE(ab.brand_name, ai.brand, '-') AS brand_name,
+            COALESCE(al.location_name, ai.location_label, '-') AS display_location,
+            ac.company_name
             FROM asset_items ai
             LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+            LEFT JOIN asset_brands ab ON ab.id = ai.brand_id
             LEFT JOIN asset_companies ac ON ac.id = ai.company_id
             LEFT JOIN asset_locations al ON al.id = ai.location_id
             WHERE {$whereSql}
@@ -5889,16 +5891,23 @@ function handle_route_report_asset_items(PDO $pdo): void
                     ? '<span class="badge ok">Tersedia</span>' 
                     : (($item['status'] ?? '') === 'borrowed' ? '<span class="badge" style="background:#fef3c7;color:#b45309;">Dipinjam</span>' : '<span class="badge">' . e($item['status'] ?? '-') . '</span>');
 
+                $assetName = !empty($item['asset_name']) ? $item['asset_name'] : (!empty($item['model']) ? $item['model'] : '-');
+                $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');
+                $categoryName = !empty($item['asset_category']) ? $item['asset_category'] : (!empty($item['category']) ? $item['category'] : '-');
+                $serialNum = !empty($item['serial_number']) ? $item['serial_number'] : '-';
+                $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
+                $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
+
                 echo '        <tr>';
                 echo '          <td>' . $no++ . '</td>';
                 echo '          <td><strong><a href="' . route_url('asset_items', ['q' => $item['asset_code']]) . '">' . e($item['asset_code']) . '</a></strong></td>';
-                echo '          <td>' . e($item['asset_name'] ?: ($item['model'] ?: '-')) . '</td>';
-                echo '          <td>' . e($item['brand_name'] ?: '-') . '</td>';
-                echo '          <td>' . e($item['asset_category'] ?: '-') . '</td>';
+                echo '          <td>' . e($assetName) . '</td>';
+                echo '          <td>' . e($brandName) . '</td>';
+                echo '          <td>' . e($categoryName) . '</td>';
                 echo '          <td><span class="badge" style="font-size:10px;">' . e($modeLabel) . '</span></td>';
-                echo '          <td><code>' . e($item['serial_number'] ?: '-') . '</code></td>';
-                echo '          <td>' . e($item['location_name'] ?: ($item['owner_name'] ?: '-')) . '</td>';
-                echo '          <td>' . e($item['company_name'] ?: '-') . '</td>';
+                echo '          <td><code>' . e($serialNum) . '</code></td>';
+                echo '          <td>' . e($locName) . '</td>';
+                echo '          <td>' . e($compName) . '</td>';
                 echo '          <td>' . $statusBadge . '</td>';
                 echo '        </tr>';
             }
