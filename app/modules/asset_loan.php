@@ -139,35 +139,7 @@ function handle_route_asset_loans(PDO $pdo): void
     $user = require_regulation('asset_loans', 'view');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_loan') {
-        require_regulation('asset_loans', 'delete');
-        $delId = (int)($_POST['loan_id'] ?? 0);
-        if ($delId > 0) {
-            try {
-                $pdo->beginTransaction();
-                // Kembalikan status unit aset yang masih dipinjam
-                $activeStatusId = (int)$pdo->query("SELECT id FROM asset_statuses WHERE status_code = 'ACTIVE' LIMIT 1")->fetchColumn();
-                $borrowedItemStmt = $pdo->prepare("SELECT asset_item_id FROM asset_loan_items WHERE loan_id = ? AND status = 'borrowed'");
-                $borrowedItemStmt->execute([$delId]);
-                $borrowedAssetIds = $borrowedItemStmt->fetchAll(PDO::FETCH_COLUMN);
-
-                if (!empty($borrowedAssetIds)) {
-                    $rst = $pdo->prepare("UPDATE asset_items SET status = 'active', asset_status_id = ?, custodian_name = NULL, custodian_nik = NULL WHERE id = ?");
-                    foreach ($borrowedAssetIds as $aid) {
-                        $rst->execute([$activeStatusId ?: null, $aid]);
-                    }
-                }
-
-                $pdo->prepare("DELETE FROM asset_loan_items WHERE loan_id = ?")->execute([$delId]);
-                $pdo->prepare("DELETE FROM asset_loans WHERE id = ?")->execute([$delId]);
-                $pdo->commit();
-                flash('Data peminjaman aset berhasil dihapus.');
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                flash('Gagal menghapus peminjaman aset: ' . $e->getMessage(), 'err');
-            }
-        }
+        flash('Data transaksi peminjaman bersifat permanen untuk pencatatan riwayat (history) dan tidak dapat dihapus. Untuk menyelesaikan peminjaman, gunakan tombol Proses Pengembalian.', 'err');
         redirect_to('asset_loans');
     }
 
@@ -383,9 +355,7 @@ function handle_route_asset_loans(PDO $pdo): void
                 . '    <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center;">'
                 . '<a href="' . route_url('asset_loan_detail', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Detail & Cetak Bukti Pinjam"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></a>'
                 . '<a href="' . route_url('asset_loan_detail', ['id' => $l['id'], 'autoprint' => 1]) . '" target="_blank" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Cetak Langsung"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></a>'
-                . '<a href="' . route_url('asset_loan_form', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Edit Data"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>'
                 . ($l['status'] === 'active' ? '      <a class="btn primary" href="' . route_url('asset_loan_return', ['id' => $l['id']]) . '" style="padding:4px 8px;font-size:12px;background:#16a34a;border-color:#16a34a;" title="Proses Pengembalian">📥 Kembalikan</a>' : '')
-                . (has_regulation('asset_loans', 'delete') ? '      <form method="post" action="' . route_url('asset_loans') . '" style="display:inline;" onsubmit="return confirm(\'Hapus transaksi peminjaman ' . e($l['loan_code']) . '? Status unit aset terkait akan dikembalikan ke Aktif.\');">' . csrf_field() . '<input type="hidden" name="action" value="delete_loan"><input type="hidden" name="loan_id" value="' . $l['id'] . '"><button type="submit" class="btn danger" style="padding:4px 8px;font-size:12px;">🗑️ Hapus</button></form>' : '')
                 . '    </div>'
                 . '  </td>'
                 . '</tr>';
@@ -1181,11 +1151,39 @@ function handle_route_asset_loan_detail(PDO $pdo): void
     $isOverdue = ($loan['status'] === 'active' && !empty($loan['expected_return_date']) && $loan['expected_return_date'] < date('Y-m-d'));
 
     echo '<style>
+    @page {
+        size: A4 portrait;
+        margin: 12mm 15mm;
+    }
     @media print {
-        body { background:#fff !important; color:#000 !important; }
-        .nav, .actions, .noprint, .btn { display:none !important; }
-        .panel { border:none !important; box-shadow:none !important; padding:0 !important; }
-        .print-receipt { border:1px solid #333 !important; padding:20px !important; }
+        html, body {
+            background: #fff !important;
+            color: #000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 12pt !important;
+        }
+        .header, .sidebar, .nav, .actions, .noprint, .btn, .app-header, .brand-bar {
+            display: none !important;
+        }
+        .panel {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+        }
+        .print-receipt {
+            border: 1.5px solid #0f172a !important;
+            border-radius: 8px !important;
+            padding: 24px 30px !important;
+            max-width: 100% !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            margin: 0 auto !important;
+            box-sizing: border-box !important;
+            page-break-inside: avoid !important;
+        }
     }
     </style>';
 
@@ -1198,15 +1196,14 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         . '    <button type="button" class="btn" onclick="window.print()" style="display:inline-flex;align-items:center;gap:6px;">🖨️ Cetak Bukti Pinjam</button>'
         . ($loan['status'] === 'active' && has_regulation('asset_loans', 'edit') ? '    <a class="btn" href="' . route_url('asset_loan_form', ['id' => $loan['id']]) . '" style="background:#f59e0b;border-color:#f59e0b;color:#fff;">✏️ Edit</a>' : '')
         . ($loan['status'] === 'active' ? '    <a class="btn primary" href="' . route_url('asset_loan_return', ['id' => $loan['id']]) . '" style="background:#16a34a;border-color:#16a34a;font-weight:bold;">📥 Proses Pengembalian</a>' : '')
-        . (has_regulation('asset_loans', 'delete') ? '    <form method="post" action="' . route_url('asset_loans') . '" style="display:inline;" onsubmit="return confirm(\'Hapus transaksi peminjaman ' . e($loan['loan_code']) . '? Status unit aset terkait akan dikembalikan ke Aktif.\');">' . csrf_field() . '<input type="hidden" name="action" value="delete_loan"><input type="hidden" name="loan_id" value="' . $loan['id'] . '"><button type="submit" class="btn danger">🗑️ Hapus Transaksi</button></form>' : '')
         . '  </div>'
         . '</div>'
 
                         // Lembar Tanda Terima
-        . '<div class="print-receipt" style="background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:50px;max-width:850px;margin:20px auto;box-shadow:0 10px 25px rgba(0,0,0,0.1);font-family: Arial, sans-serif;">'
-        . '  <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:15px;margin-bottom:30px;">'
-        . '    <h2 style="margin:0;font-size:24px;color:#0f172a;letter-spacing:1px;">TANDA TERIMA PEMINJAMAN</h2>'
-        . '    <p style="margin:5px 0 0 0;color:#475569;font-size:14px;">No: ' . e($loan['loan_code']) . '</p>'
+        . '<div class="print-receipt" style="background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:36px 42px;max-width:800px;margin:20px auto;box-shadow:0 10px 25px rgba(0,0,0,0.06);font-family: Arial, sans-serif;">'
+        . '  <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:24px;">'
+        . '    <h2 style="margin:0;font-size:22px;color:#0f172a;letter-spacing:1px;">TANDA TERIMA PEMINJAMAN</h2>'
+        . '    <p style="margin:4px 0 0 0;color:#475569;font-size:13px;font-family:monospace;font-weight:bold;">No: ' . e($loan['loan_code']) . '</p>'
         . '  </div>'
         
         . '  <table style="width:100%;margin-bottom:30px;font-size:15px;line-height:1.6;">'
