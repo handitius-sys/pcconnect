@@ -142,11 +142,15 @@ function handle_route_asset_mutations(PDO $pdo): void
         echo '<p class="muted">Pilih Komoditas dan Kategori terlebih dahulu untuk menampilkan aset.</p>';
     } else {
         // Query assets
-        $sql = "SELECT a.*, mi.item_name, g.group_name, t.type_name, c.company_name, m.maintenance_asset_code
+        $sql = "SELECT a.*, 
+                       COALESCE(NULLIF(a.asset_name, ''), mi.item_name, a.model) AS display_name,
+                       COALESCE(g.group_name, 'IT') AS group_name,
+                       COALESCE(t.type_name, a.asset_type) AS type_name,
+                       c.company_name, m.maintenance_asset_code
                 FROM asset_items a
                 LEFT JOIN asset_master_items mi ON a.master_item_id = mi.id
-                LEFT JOIN asset_groups g ON mi.group_id = g.id
-                LEFT JOIN asset_types t ON mi.type_id = t.id
+                LEFT JOIN asset_groups g ON g.id = COALESCE(a.asset_group_id, mi.asset_group_id)
+                LEFT JOIN asset_types t ON t.id = COALESCE(a.asset_type_id, mi.asset_type_id)
                 LEFT JOIN asset_companies c ON a.company_id = c.id
                 LEFT JOIN asset_bundle_members bm ON a.id = bm.asset_item_id AND bm.detached_at IS NULL
                 LEFT JOIN asset_bundles m ON bm.bundle_id = m.id
@@ -154,15 +158,19 @@ function handle_route_asset_mutations(PDO $pdo): void
         $params = [];
         
         if ($filterGroup > 0) {
-            $sql .= " AND mi.group_id = ?";
+            $sql .= " AND (a.asset_group_id = ? OR mi.asset_group_id = ?)";
+            $params[] = $filterGroup;
             $params[] = $filterGroup;
         }
         if ($filterType > 0) {
-            $sql .= " AND mi.type_id = ?";
+            $sql .= " AND (a.asset_type_id = ? OR mi.asset_type_id = ?)";
+            $params[] = $filterType;
             $params[] = $filterType;
         }
         if ($q !== '') {
-            $sql .= " AND (a.asset_code LIKE ? OR mi.item_name LIKE ?)";
+            $sql .= " AND (a.asset_code LIKE ? OR a.asset_name LIKE ? OR mi.item_name LIKE ? OR a.model LIKE ?)";
+            $params[] = "%$q%";
+            $params[] = "%$q%";
             $params[] = "%$q%";
             $params[] = "%$q%";
         }
@@ -187,7 +195,7 @@ function handle_route_asset_mutations(PDO $pdo): void
             
             foreach ($assets as $row) {
                 echo '<tr>';
-                echo '<td><strong>' . e($row['asset_code']) . '</strong><br><span class="muted">' . e($row['item_name']) . '</span></td>';
+                echo '<td><strong>' . e($row['asset_code']) . '</strong><br><span class="muted">' . e($row['display_name'] ?: ($row['item_name'] ?? '-')) . '</span></td>';
                 echo '<td>' . e($row['company_name'] ?: '-') . '<br><span class="muted">' . e($row['location_label'] ?: '-') . '</span></td>';
                 echo '<td>' . e($row['asset_mode']) . '</td>';
                 
