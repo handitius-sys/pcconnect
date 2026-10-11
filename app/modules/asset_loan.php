@@ -380,7 +380,10 @@ function handle_route_asset_loans(PDO $pdo): void
                 . '  </td>'
                 . '  <td style="padding:10px 12px;vertical-align:top;text-align:center;">' . $badge . '</td>'
                 . '  <td style="padding:10px 12px;vertical-align:top;text-align:center;white-space:nowrap;">'
-                . '    <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center;">'                . '<a href="' . route_url('asset_loan_form', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>'
+                . '    <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center;">'
+                . '<a href="' . route_url('asset_loan_detail', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Detail & Cetak Bukti Pinjam"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></a>'
+                . '<a href="' . route_url('asset_loan_detail', ['id' => $l['id'], 'autoprint' => 1]) . '" target="_blank" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Cetak Langsung"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></a>'
+                . '<a href="' . route_url('asset_loan_form', ['id' => $l['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle;" title="Edit Data"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>'
                 . ($l['status'] === 'active' ? '      <a class="btn primary" href="' . route_url('asset_loan_return', ['id' => $l['id']]) . '" style="padding:4px 8px;font-size:12px;background:#16a34a;border-color:#16a34a;" title="Proses Pengembalian">📥 Kembalikan</a>' : '')
                 . (has_regulation('asset_loans', 'delete') ? '      <form method="post" action="' . route_url('asset_loans') . '" style="display:inline;" onsubmit="return confirm(\'Hapus transaksi peminjaman ' . e($l['loan_code']) . '? Status unit aset terkait akan dikembalikan ke Aktif.\');">' . csrf_field() . '<input type="hidden" name="action" value="delete_loan"><input type="hidden" name="loan_id" value="' . $l['id'] . '"><button type="submit" class="btn danger" style="padding:4px 8px;font-size:12px;">🗑️ Hapus</button></form>' : '')
                 . '    </div>'
@@ -784,8 +787,11 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '</div>'
 
         // Tombol Aksi
-        . '<div class="actions" style="margin-top:20px;">'
-        . '  <button type="submit" class="btn primary" style="padding:10px 26px;font-size:14px;font-weight:bold;">💾 Simpan Peminjaman Aset</button>' . ($id > 0 ? '  <button type="button" class="btn" onclick="window.open(\'' . route_url('asset_loan_detail', ['id' => $id, 'autoprint' => 1]) . '\', \'_self\')" style="padding:10px 18px;display:inline-flex;align-items:center;gap:6px;background:#e2e8f0;border-color:#cbd5e1;color:#0f172a;font-weight:600;">Cetak Bukti Pinjam</button>' : '')
+        . '<div class="actions" style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+        . '  <button type="submit" class="btn primary" style="padding:10px 26px;font-size:14px;font-weight:bold;">💾 Simpan Peminjaman Aset</button>'
+        . ($id > 0 
+            ? '  <a class="btn" href="' . route_url('asset_loan_detail', ['id' => $id, 'autoprint' => 1]) . '" target="_blank" style="padding:10px 18px;display:inline-flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #cbd5e1;color:#0f172a;font-weight:600;">🖨️ Cetak Bukti Peminjaman</a>' 
+            : '  <button type="button" class="btn" onclick="if(validateLoanForm()){this.form.submit();}" style="padding:10px 18px;display:inline-flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #cbd5e1;color:#0f172a;font-weight:600;">🖨️ Simpan & Cetak Bukti</button>')
         . '  <a class="btn" href="' . route_url('asset_loans') . '" style="padding:10px 18px;">Batal</a>'
         . '</div>'
         . '</form>'
@@ -1238,7 +1244,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         . '        <div style="font-weight:bold;color:#0f172a;">( .................................... )</div>'
         . '      </td>'
         . '      <td style="width:50%;vertical-align:top;">'
-        . '        <p style="margin-bottom:90px;color:#334155;">Pemberi,</p>'
+        . '        <p style="margin-bottom:90px;color:#334155;">Admin,</p>'
         . '        <div style="font-weight:bold;color:#0f172a;">( .................................... )</div>'
         . '      </td>'
         . '    </tr>'

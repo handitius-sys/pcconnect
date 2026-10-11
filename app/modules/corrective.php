@@ -1648,6 +1648,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </div>
             <div class="actions">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
+                <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">📥 Export Excel</a>
             </div>
         </div>
 

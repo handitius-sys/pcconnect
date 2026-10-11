@@ -3259,7 +3259,7 @@ function export_excel(PDO $pdo, string $type): never
     if (!$user) {
         redirect_to('login');
     }
-    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'technicians', 'asset_movements', 'asset_mutations', 'asset_loans'];
+    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'technicians', 'asset_movements', 'asset_mutations', 'asset_loans', 'corrective_repairs'];
     
     if ($type === 'asset_items') {
         if (!is_full_admin($user) && !has_regulation('asset_items', 'view', $user)) {
@@ -3649,6 +3649,73 @@ function export_excel(PDO $pdo, string $type): never
             ];
         }
         output_tsv(['No. Pinjam', 'Nama Peminjam', 'NIK', 'Departemen', 'No. HP', 'Daftar Aset', 'Tgl Pinjam', 'Target Kembali', 'Realisasi Kembali', 'Keperluan', 'Lokasi Pakai', 'Status', 'Petugas Penyerah', 'Petugas Penerima'], $exportRows);
+        exit;
+    }
+
+    if ($type === 'corrective_repairs') {
+        $startDate = trim((string)($_GET['start_date'] ?? ''));
+        $endDate = trim((string)($_GET['end_date'] ?? ''));
+        $category = trim((string)($_GET['category'] ?? ''));
+        $q = trim((string)($_GET['q'] ?? ''));
+
+        $where = ["1=1"];
+        $params = [];
+        if ($startDate !== '') {
+            $where[] = "DATE(cr.repaired_at) >= ?";
+            $params[] = $startDate;
+        }
+        if ($endDate !== '') {
+            $where[] = "DATE(cr.repaired_at) <= ?";
+            $params[] = $endDate;
+        }
+        if ($category !== '') {
+            $where[] = "t.asset_category = ?";
+            $params[] = $category;
+        }
+        if ($q !== '') {
+            $where[] = "(t.ticket_code LIKE ? OR ma.maintenance_asset_code LIKE ? OR ma.name LIKE ? OR cr.technician_name LIKE ? OR cr.vendor_name LIKE ? OR cr.action_type LIKE ? OR cr.solution_details LIKE ?)";
+            $kw = '%' . $q . '%';
+            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw, $kw]);
+        }
+
+        $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label,
+                       ma.maintenance_asset_code, ma.name AS maintenance_asset_name
+                FROM corrective_repairs cr
+                JOIN corrective_tickets t ON t.id = cr.ticket_id
+                LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY cr.repaired_at DESC, cr.id DESC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $exportRows = [];
+        foreach ($repairs as $r) {
+            $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
+            $pStmt->execute([(int)$r['id']]);
+            $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+            $partsArr = [];
+            foreach ($parts as $p) {
+                $partsArr[] = $p['new_part_name'] . ' (Rp ' . number_format((float)$p['part_cost'], 0, ',', '.') . ')';
+            }
+            $partsStr = !empty($partsArr) ? implode('; ', $partsArr) : '-';
+
+            $exportRows[] = [
+                $r['repaired_at'] ? date('d/m/Y H:i', strtotime($r['repaired_at'])) : '-',
+                $r['ticket_code'],
+                $r['asset_category'] ?: '-',
+                $r['maintenance_asset_code'] ?: '-',
+                $r['maintenance_asset_name'] ?: '-',
+                $r['technician_name'] ?: '-',
+                $r['vendor_name'] ?: '-',
+                $r['action_type'] ?: '-',
+                $r['solution_details'] ?: '-',
+                $partsStr,
+                $r['repair_cost'],
+            ];
+        }
+
+        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)'], $exportRows);
         exit;
     }
 
