@@ -549,9 +549,9 @@ function render_header(string $title, ?array $user = null): void
         echo '</details>';
 
         // 2. Maintenance Aset Accordion
-        $maintRoutes = ['maintenance', 'tickets', 'walkarounds', 'jobs', 'corrective_job_desks', 'mobile_service'];
+        $maintRoutes = ['maintenance', 'tickets', 'walkarounds', 'jobs', 'corrective_job_desks'];
         $isMaintOpen = in_array($curRoute, $maintRoutes, true);
-        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('walkarounds', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user) || has_regulation('mobile_service', 'view', $user)) {
+        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('walkarounds', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user)) {
             echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
             echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▼</span></summary>';
             echo '  <div class="nav-submenu">';
@@ -569,9 +569,6 @@ function render_header(string $title, ?array $user = null): void
             }
             if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk Corrective</span></a>';
-            }
-            if ($isAdmin || has_regulation('mobile_service', 'view', $user)) {
-                echo '<a class="nav-item" href="' . route_url('mobile_service') . '" target="_blank"><span class="nav-icon">' . $svgMobile . '</span><span class="nav-label">📱 Mobile Service</span><span class="nav-badge">PWA</span></a>';
             }
             echo '  </div>';
             echo '</details>';
