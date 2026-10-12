@@ -201,7 +201,7 @@ function handle_route_asset_mutations(PDO $pdo): void
                 
                 echo '<td>';
                 if ($canCreate) {
-                    echo '<button type="button" class="btn small primary" onclick="openMutationForm(' . $row['id'] . ', \'' . e($row['asset_code']) . '\', ' . (int)$row['company_id'] . ', \'' . e($row['location_label'] ?? '') . '\')"><span style="display:flex;align-items:center;gap:4px;">' . svg_icon_move(14) . ' Mutasi</span></button>';
+                    echo '<button type="button" class="btn small primary" onclick="openMutationForm(' . $row['id'] . ', \'' . e($row['asset_code']) . '\', ' . (int)$row['company_id'] . ', \'' . e($row['location_label'] ?? '') . '\')"><span style="display:inline-flex;align-items:center;gap:5px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Mutasi</span></button>';
                 }
                 echo '</td>';
                 echo '</tr>';
