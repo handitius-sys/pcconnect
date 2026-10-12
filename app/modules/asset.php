@@ -5735,9 +5735,13 @@ function handle_route_report_asset_items(PDO $pdo): void
     }
     ensure_asset_master_schema($pdo);
 
-    // 2. Pengambilan Parameter Filter dari URL GET
+    // 2. Pengambilan Parameter Filter dari URL GET (Gunakan Tipe/Asset Type untuk Kategori)
     $groupId = (int)($_GET['group_id'] ?? 0);
-    $category = trim((string)($_GET['category'] ?? ''));
+    $typeId = (int)($_GET['type_id'] ?? ($_GET['asset_type_id'] ?? ($_GET['category'] ?? 0)));
+    $categoryRaw = trim((string)($_GET['category'] ?? ''));
+    if ($typeId <= 0 && is_numeric($categoryRaw) && (int)$categoryRaw > 0) {
+        $typeId = (int)$categoryRaw;
+    }
     $companyId = (int)($_GET['company_id'] ?? 0);
     $locationId = (int)($_GET['location_id'] ?? 0);
     $status = trim((string)($_GET['status'] ?? ''));
@@ -5751,9 +5755,40 @@ function handle_route_report_asset_items(PDO $pdo): void
         $where[] = "ai.asset_group_id = ?";
         $params[] = $groupId;
     }
-    if ($category !== '') {
-        $where[] = "ai.asset_category = ?";
-        $params[] = $category;
+    // Filter Kategori berbasis Tipe Aset (asset_type / asset_type_id)
+    if ($typeId > 0) {
+        $stmtT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+        $stmtT->execute([$typeId]);
+        $tRow = $stmtT->fetch(PDO::FETCH_ASSOC);
+        $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+        $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+        $typeClauses = ["ai.asset_type_id = ?"];
+        $params[] = $typeId;
+        if ($tCode !== '') {
+            $typeClauses[] = "ai.asset_type = ?";
+            $params[] = $tCode;
+        }
+        if ($tName !== '' && $tName !== $tCode) {
+            $typeClauses[] = "ai.asset_type = ?";
+            $params[] = $tName;
+        }
+        $where[] = "(" . implode(" OR ", $typeClauses) . ")";
+    } elseif ($categoryRaw !== '') {
+        $stmtT2 = $pdo->prepare("SELECT id FROM asset_types WHERE type_code = ? OR type_name = ?");
+        $stmtT2->execute([$categoryRaw, $categoryRaw]);
+        $matchingTypeIds = $stmtT2->fetchAll(PDO::FETCH_COLUMN);
+
+        $catClauses = ["ai.asset_type = ?"];
+        $params[] = $categoryRaw;
+        if (!empty($matchingTypeIds)) {
+            $inPlaceholders = implode(',', array_fill(0, count($matchingTypeIds), '?'));
+            $catClauses[] = "ai.asset_type_id IN ($inPlaceholders)";
+            foreach ($matchingTypeIds as $mtId) {
+                $params[] = (int)$mtId;
+            }
+        }
+        $where[] = "(" . implode(" OR ", $catClauses) . ")";
     }
     if ($companyId > 0) {
         $where[] = "ai.company_id = ?";
@@ -5779,11 +5814,13 @@ function handle_route_report_asset_items(PDO $pdo): void
     $sql = "SELECT ai.*, 
             COALESCE(ag.group_code, 'IT') AS group_code,
             COALESCE(ag.group_name, 'IT Asset') AS group_name,
+            COALESCE(at.type_name, ai.asset_type, '-') AS display_type_name,
             COALESCE(ab.brand_name, ai.brand, '-') AS brand_name,
             COALESCE(al.location_name, ai.location_label, '-') AS display_location,
             ac.company_name
             FROM asset_items ai
             LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+            LEFT JOIN asset_types at ON at.id = ai.asset_type_id
             LEFT JOIN asset_brands ab ON ab.id = ai.brand_id
             LEFT JOIN asset_companies ac ON ac.id = ai.company_id
             LEFT JOIN asset_locations al ON al.id = ai.location_id
@@ -5848,7 +5885,7 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;">';
     echo '    <input type="hidden" name="route" value="report_asset_items">';
     echo '    <label style="margin:0;flex:1;min-width:180px;">Komoditas (Grup Aset)<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select></label>';
-    echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori Aset<select name="category" onchange="this.form.submit()">' . asset_category_options($pdo, $category, true, 'Semua Kategori') . '</select></label>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori Aset (Tipe)<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori (Tipe)', true) . '</select></label>';
     echo '    <label style="margin:0;flex:1;min-width:160px;">Company<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select></label>';
     echo '    <label style="margin:0;flex:1.2;min-width:200px;">Cari (Kode/Nama/Brand/SN)<input name="q" value="' . e($q) . '" placeholder="Ketik kata kunci..."></label>';
     echo '    <button class="btn primary" type="submit">Filter</button>';
@@ -5893,7 +5930,9 @@ function handle_route_report_asset_items(PDO $pdo): void
 
                 $assetName = !empty($item['asset_name']) ? $item['asset_name'] : (!empty($item['model']) ? $item['model'] : '-');
                 $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');
-                $categoryName = !empty($item['asset_category']) ? $item['asset_category'] : (!empty($item['category']) ? $item['category'] : '-');
+                $categoryName = !empty($item['display_type_name']) && $item['display_type_name'] !== '-' 
+                    ? $item['display_type_name'] 
+                    : (!empty($item['asset_type']) ? $item['asset_type'] : (!empty($item['asset_category']) ? $item['asset_category'] : '-'));
                 $serialNum = !empty($item['serial_number']) ? $item['serial_number'] : '-';
                 $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
                 $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
