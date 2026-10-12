@@ -383,7 +383,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name 
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name 
                                            FROM asset_items ai 
                                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
                                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
@@ -1009,7 +1009,7 @@ function handle_route_mobile_asset_loan_return(PDO $pdo): void
         }
 
         // Ambil data item
-        $itemsStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name
+        $itemsStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
             FROM asset_loan_items ali
             JOIN asset_items ai ON ai.id = ali.asset_item_id
             LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
@@ -1346,7 +1346,7 @@ function handle_route_mobile_asset_loan_detail(PDO $pdo): void
         redirect_to('mobile_asset_loans');
     }
 
-    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name
+    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
         LEFT JOIN asset_groups g ON g.id = ai.asset_group_id

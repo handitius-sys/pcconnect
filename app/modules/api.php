@@ -403,7 +403,7 @@ function handle_route_api_lookup_asset_for_loan(PDO $pdo): void
             'model' => (string)($item['model'] ?? ''),
             'serial_number' => (string)($item['serial_number'] ?? ''),
             'group_name' => (string)($item['group_name'] ?? 'IT'),
-            'type_name' => (string)($item['type_name'] ?? 'General'),
+            'type_name' => (string)(!empty($item['type_name']) && $item['type_name'] !== '-' ? $item['type_name'] : (!empty($item['asset_type']) ? $item['asset_type'] : 'General')),
             'location_name' => (string)($item['location_name'] ?: ($item['location_label'] ?? '-')),
             'status' => $status,
             'loan_info' => $loanInfo,

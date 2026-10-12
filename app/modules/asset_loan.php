@@ -72,7 +72,7 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
     }
 
     // 1. Cari exact match asset_code
-    $stmt = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
+    $stmt = $pdo->prepare("SELECT ai.*, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                            FROM asset_items ai
                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
@@ -85,7 +85,7 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
     // 1.5. Cari alias_code
     if (!$item) {
         try {
-            $stmt_alias = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
+            $stmt_alias = $pdo->prepare("SELECT ai.*, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                                    FROM asset_items ai
                                    LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                                    LEFT JOIN asset_types t ON t.id = ai.asset_type_id
@@ -101,7 +101,7 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
 
     // 2. Cari serial_number
     if (!$item) {
-        $stmt2 = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
+        $stmt2 = $pdo->prepare("SELECT ai.*, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                                 FROM asset_items ai
                                 LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                                 LEFT JOIN asset_types t ON t.id = ai.asset_type_id
@@ -114,7 +114,7 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
 
     // 3. Cari id jika format #123 atau angka murni
     if (!$item && preg_match('/^#?(\d+)$/', $code, $m)) {
-        $stmt3 = $pdo->prepare("SELECT ai.*, g.group_name, t.type_name, loc.location_name
+        $stmt3 = $pdo->prepare("SELECT ai.*, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                                 FROM asset_items ai
                                 LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
                                 LEFT JOIN asset_types t ON t.id = ai.asset_type_id
@@ -204,7 +204,7 @@ function handle_route_asset_loans(PDO $pdo): void
     $loanItems = [];
     if (!empty($loanIds)) {
         $inPlaceholders = implode(',', array_fill(0, count($loanIds), '?'));
-        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name
+        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
             FROM asset_loan_items ali
             JOIN asset_items ai ON ai.id = ali.asset_item_id
             LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
@@ -321,7 +321,8 @@ function handle_route_asset_loans(PDO $pdo): void
                 } elseif ($it['status'] === 'damaged') {
                     $itemStatus = ' <span style="font-size:10px;color:#991b1b;background:#fee2e2;padding:1px 5px;border-radius:4px;">Rusak</span>';
                 }
-                $itemsHtml .= '<div style="font-size:12px;line-height:1.3;">' . $codeBadge . ' &bull; ' . $nameDesc . $itemStatus . '</div>';
+                $catBadge = !empty($it['type_name']) && $it['type_name'] !== '-' ? ' <span class="badge" style="font-size:10px;padding:1px 6px;background:#f1f5f9;color:#334155;font-weight:600;">' . e($it['type_name']) . '</span>' : '';
+                $itemsHtml .= '<div style="font-size:12px;line-height:1.3;">' . $codeBadge . $catBadge . ' &bull; ' . $nameDesc . $itemStatus . '</div>';
             }
             $itemsHtml .= '</div>';
 
@@ -600,7 +601,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name 
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name 
                                            FROM asset_items ai 
                                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
                                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
@@ -619,7 +620,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
             'brand' => (string)($it['brand'] ?? ''),
             'model' => (string)($it['model'] ?? ''),
             'group_name' => (string)($it['group_name'] ?? 'IT'),
-            'type_name' => (string)($it['type_name'] ?? 'General'),
+            'type_name' => (string)(!empty($it['type_name']) && $it['type_name'] !== '-' ? $it['type_name'] : (!empty($it['asset_type']) ? $it['asset_type'] : '-')),
             'location_name' => (string)($it['location_name'] ?? '-'),
             'condition_out' => (string)($it['condition_out'] ?: 'Normal / Baik'),
             'notes_out' => (string)($it['notes_out'] ?? ''),
@@ -1133,7 +1134,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
     }
 
     $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
-        g.group_name, t.type_name, loc.location_name, comp.company_name AS asset_company_name
+        g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name, comp.company_name AS asset_company_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
         LEFT JOIN asset_companies comp ON comp.id = ai.company_id
@@ -1216,18 +1217,21 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         . '  <table style="width:100%;border-collapse:collapse;margin-bottom:50px;font-size:14px;">'
         . '    <thead>'
         . '      <tr style="background:#f1f5f9;color:#0f172a;">'
-        . '        <th style="border:1px solid #cbd5e1;padding:12px 8px;text-align:center;width:50px;">No</th>'
-        . '        <th style="border:1px solid #cbd5e1;padding:12px 15px;text-align:left;">Kode Aset yang di Pinjam</th>'
-        . '        <th style="border:1px solid #cbd5e1;padding:12px 15px;text-align:left;">Nama Barang</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 8px;text-align:center;width:40px;">No</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Kode Aset</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Nama Barang</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Kategori</th>'
         . '      </tr>'
         . '    </thead>'
         . '    <tbody>';
 
     foreach ($items as $idx => $it) {
+        $catLabel = !empty($it['type_name']) && $it['type_name'] !== '-' ? $it['type_name'] : (!empty($it['asset_type']) ? $it['asset_type'] : '-');
         echo '      <tr>'
             . '        <td style="border:1px solid #cbd5e1;padding:10px 8px;text-align:center;">' . ($idx + 1) . '</td>'
-            . '        <td style="border:1px solid #cbd5e1;padding:10px 15px;font-family:monospace;font-size:15px;">' . e($it['asset_code']) . '</td>'
-            . '        <td style="border:1px solid #cbd5e1;padding:10px 15px;">' . e($it['asset_name'] ?: $it['model']) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;font-family:monospace;font-size:14px;font-weight:bold;">' . e($it['asset_code']) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;">' . e($it['asset_name'] ?: $it['model']) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;">' . e($catLabel) . '</td>'
             . '      </tr>';
     }
 
@@ -1354,7 +1358,7 @@ function handle_route_asset_loan_return(PDO $pdo): void
     }
 
     // Ambil item yang dipinjam
-    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name
+    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
         LEFT JOIN asset_groups g ON g.id = ai.asset_group_id

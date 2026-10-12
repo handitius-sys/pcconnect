@@ -174,11 +174,10 @@ function asset_items_table(PDO $pdo, array $rows): string
     $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Asset Code <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Company <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna / Custodian <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Category <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kategori <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Type <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama / Merek <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama / Merek <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
     $html .= '<th style="text-align:center;width:96px;">Aksi</th>';
     $html .= '</tr></thead><tbody>';
 
@@ -222,6 +221,10 @@ function asset_items_table(PDO $pdo, array $rows): string
             $sourcePcBadge = '<div style="margin-top:4px;"><span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:11px;font-weight:600;" title="Diimport dari Data PC">📥 Import PC: ' . e($row['source_pc_id']) . '</span></div>';
         }
 
+        $displayCategory = !empty($row['type_name']) && $row['type_name'] !== '-' 
+            ? $row['type_name'] 
+            : (!empty($row['asset_type']) ? $row['asset_type'] : (!empty($row['asset_category']) ? $row['asset_category'] : '-'));
+
         // Exclusive compact action icons
         $itemActions = '';
         if (has_regulation('asset_items', 'edit')) {
@@ -236,9 +239,8 @@ function asset_items_table(PDO $pdo, array $rows): string
         $html .= '<td><strong>' . e($row['asset_code']) . '</strong><br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span>' . $sourcePcBadge . $idfHtml . '</td>';
         $html .= '<td>' . e($row['company_name'] ?: '-') . '</td>';
         $html .= '<td>' . $custodianText . '</td>';
-        $html .= '<td>' . e($row['asset_category'] ?? '-') . '</td>';
+        $html .= '<td><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' . e($displayCategory) . '</span></td>';
         $html .= '<td>' . $mode . '</td>';
-        $html .= '<td>' . e($row['asset_type']) . '</td>';
         $html .= '<td>' . e($row['asset_name']) . '<br><span class="muted">' . e(trim(($row['brand'] ?? '') . ' ' . ($row['model'] ?? ''))) . '</span></td>';
         $html .= '<td><span class="badge">' . e($row['status']) . '</span></td>';
         $html .= '<td style="text-align:center;"><div style="display:inline-flex;gap:5px;align-items:center;justify-content:center;">' . $itemActions . '</div></td>';
@@ -1536,9 +1538,9 @@ function save_asset_master_item(PDO $pdo, int $id, array $post): int
     }
 
     if ($id) {
-        $pdo->prepare('UPDATE asset_items SET master_item_id=?,brand_id=?,asset_code=?,asset_group_id=?,asset_type_id=?,asset_status_id=?,asset_mode=?,asset_name=?,brand=?,model=?,custodian_name=?,custodian_nik=?,notes=?,company_id=?,location_id=?,location_label=?,installed_at=?,purchase_value=?,warranty_until=?,source_pc_id=?,asset_type=? WHERE id=?')->execute([...$p, $c['type']['type_name'], $id]);
+        $pdo->prepare('UPDATE asset_items SET master_item_id=?,brand_id=?,asset_code=?,asset_group_id=?,asset_type_id=?,asset_status_id=?,asset_mode=?,asset_name=?,brand=?,model=?,custodian_name=?,custodian_nik=?,notes=?,company_id=?,location_id=?,location_label=?,installed_at=?,purchase_value=?,warranty_until=?,source_pc_id=?,asset_type=?,asset_category=? WHERE id=?')->execute([...$p, $c['type']['type_name'], $c['type']['type_name'], $id]);
     } else {
-        $pdo->prepare("INSERT INTO asset_items(master_item_id,brand_id,asset_code,asset_group_id,asset_type_id,asset_status_id,asset_mode,asset_name,brand,model,custodian_name,custodian_nik,notes,company_id,location_id,location_label,installed_at,purchase_value,warranty_until,source_pc_id,asset_type,asset_category,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Legacy','active')")->execute([...$p, $c['type']['type_name']]);
+        $pdo->prepare("INSERT INTO asset_items(master_item_id,brand_id,asset_code,asset_group_id,asset_type_id,asset_status_id,asset_mode,asset_name,brand,model,custodian_name,custodian_nik,notes,company_id,location_id,location_label,installed_at,purchase_value,warranty_until,source_pc_id,asset_type,asset_category,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active')")->execute([...$p, $c['type']['type_name'], $c['type']['type_name']]);
         $id = (int)$pdo->lastInsertId();
     }
     foreach ($c['identifiers'] as $x) {
@@ -1648,7 +1650,7 @@ function asset_child_item_options(PDO $pdo, int $parentId = 0): string
             $statusNote = ' [Single / Bebas]';
         }
 
-        $html .= '<option value="' . e($row['id']) . '">' . e($row['asset_code'] . ' - ' . $row['asset_name'] . ' (' . ($row['asset_category'] ?? '-') . ' / ' . $row['asset_type'] . ')' . $statusNote) . '</option>';
+        $html .= '<option value="' . e($row['id']) . '">' . e($row['asset_code'] . ' - ' . $row['asset_name'] . ' (' . ($row['asset_type'] ?: '-') . ')' . $statusNote) . '</option>';
     }
     return $html;
 }
@@ -1658,7 +1660,7 @@ function asset_group_item_options(PDO $pdo, ?int $selected = null): string
     $html = '<option value="">- Pilih Unit Aset Gabungan -</option>';
     foreach ($pdo->query("SELECT id, asset_code, asset_name, asset_type, asset_category FROM asset_items WHERE asset_mode='group' ORDER BY asset_code") as $row) {
         $sel = (int)$row['id'] === (int)$selected ? ' selected' : '';
-        $html .= '<option value="' . e($row['id']) . '"' . $sel . '>' . e($row['asset_code'] . ' - ' . $row['asset_name'] . ' (' . ($row['asset_category'] ?? '-') . ' / ' . $row['asset_type'] . ')') . '</option>';
+        $html .= '<option value="' . e($row['id']) . '"' . $sel . '>' . e($row['asset_code'] . ' - ' . $row['asset_name'] . ' (' . ($row['asset_type'] ?: '-') . ')') . '</option>';
     }
     return $html;
 }
@@ -5115,7 +5117,11 @@ function handle_route_asset_items(PDO $pdo): void
     
     $masterItemId = (int)($_GET['master_item_id'] ?? 0);
     $groupId = (int)($_GET['group_id'] ?? 0);
-    $category = trim((string)($_GET['category'] ?? ''));
+    $typeId = (int)($_GET['type_id'] ?? ($_GET['asset_type_id'] ?? ($_GET['category'] ?? 0)));
+    $categoryRaw = trim((string)($_GET['category'] ?? ''));
+    if ($typeId <= 0 && is_numeric($categoryRaw) && (int)$categoryRaw > 0) {
+        $typeId = (int)$categoryRaw;
+    }
     $companyId = (int)($_GET['company_id'] ?? 0);
     $locationId = (int)($_GET['location_id'] ?? 0);
 
@@ -5129,9 +5135,40 @@ function handle_route_asset_items(PDO $pdo): void
         $where[] = "ai.asset_group_id = ?";
         $params[] = $groupId;
     }
-    if ($category !== '') {
-        $where[] = "ai.asset_category = ?";
-        $params[] = $category;
+    // Filter Kategori berbasis Tipe Aset (asset_type / asset_type_id)
+    if ($typeId > 0) {
+        $stmtT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+        $stmtT->execute([$typeId]);
+        $tRow = $stmtT->fetch(PDO::FETCH_ASSOC);
+        $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+        $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+        $typeClauses = ["ai.asset_type_id = ?"];
+        $params[] = $typeId;
+        if ($tCode !== '') {
+            $typeClauses[] = "ai.asset_type = ?";
+            $params[] = $tCode;
+        }
+        if ($tName !== '' && $tName !== $tCode) {
+            $typeClauses[] = "ai.asset_type = ?";
+            $params[] = $tName;
+        }
+        $where[] = "(" . implode(" OR ", $typeClauses) . ")";
+    } elseif ($categoryRaw !== '') {
+        $stmtT2 = $pdo->prepare("SELECT id FROM asset_types WHERE type_code = ? OR type_name = ?");
+        $stmtT2->execute([$categoryRaw, $categoryRaw]);
+        $matchingTypeIds = $stmtT2->fetchAll(PDO::FETCH_COLUMN);
+
+        $catClauses = ["ai.asset_type = ?"];
+        $params[] = $categoryRaw;
+        if (!empty($matchingTypeIds)) {
+            $inPlaceholders = implode(',', array_fill(0, count($matchingTypeIds), '?'));
+            $catClauses[] = "ai.asset_type_id IN ($inPlaceholders)";
+            foreach ($matchingTypeIds as $mtId) {
+                $params[] = (int)$mtId;
+            }
+        }
+        $where[] = "(" . implode(" OR ", $catClauses) . ")";
     }
     if ($companyId > 0) {
         $where[] = "ai.company_id = ?";
@@ -5142,10 +5179,12 @@ function handle_route_asset_items(PDO $pdo): void
         $params[] = $locationId;
     }
 
-    $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code 
+    $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code,
+            COALESCE(t.type_name, ai.asset_type, '-') AS type_name
             FROM asset_items ai 
             LEFT JOIN asset_companies c ON c.id = ai.company_id 
             LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id 
+            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
             WHERE " . implode(" AND ", $where) . " 
             ORDER BY ai.updated_at DESC";
     $stmt = $pdo->prepare($sql);
@@ -5175,10 +5214,10 @@ function handle_route_asset_items(PDO $pdo): void
         echo '<input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
     }
     echo '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>';
-    echo '<select name="category" onchange="this.form.submit()">' . asset_category_options($pdo, $category, true, 'Semua Kategori') . '</select>';
+    echo '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>';
     echo '<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>';
     echo '<select name="location_id" onchange="this.form.submit()">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>';
-    if ($masterItemId || $groupId || $category !== '' || $companyId || $locationId) {
+    if ($masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId) {
         echo '<a class="btn" href="' . route_url('asset_items') . '">Reset Filter</a>';
     }
     echo '</form>';
