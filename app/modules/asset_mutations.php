@@ -264,6 +264,24 @@ function handle_route_asset_mutations(PDO $pdo): void
         echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> dan <strong>Kategori (Tipe Aset)</strong> pada filter di atas untuk menampilkan daftar unit aset yang siap dimutasi.</p>';
         echo '</div>';
     } else {
+        // Ambil info type_code & type_name dari asset_types untuk filtering yang aman dari isu collation MySQL
+        $stT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+        $stT->execute([$filterType]);
+        $tRow = $stT->fetch(PDO::FETCH_ASSOC);
+        $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+        $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+        $typeClauses = ["a.asset_type_id = ?"];
+        $params = [$filterGroup, $filterType];
+        if ($tCode !== '') {
+            $typeClauses[] = "a.asset_type = ?";
+            $params[] = $tCode;
+        }
+        if ($tName !== '' && $tName !== $tCode) {
+            $typeClauses[] = "a.asset_type = ?";
+            $params[] = $tName;
+        }
+
         // Query unit aset terfilter berdasarkan Komoditas & Kategori
         $sql = "SELECT a.*, 
                        COALESCE(NULLIF(a.asset_name, ''), a.model, '-') AS display_name,
@@ -277,9 +295,7 @@ function handle_route_asset_mutations(PDO $pdo): void
                 LEFT JOIN asset_companies c ON a.company_id = c.id
                 LEFT JOIN asset_locations loc ON a.location_id = loc.id
                 WHERE a.asset_group_id = ?
-                AND (a.asset_type_id = ? OR a.asset_type = (SELECT type_code FROM asset_types WHERE id = ?) OR a.asset_type = (SELECT type_name FROM asset_types WHERE id = ?))";
-        
-        $params = [$filterGroup, $filterType, $filterType, $filterType];
+                AND (" . implode(" OR ", $typeClauses) . ")";
         
         if ($q !== '') {
             $sql .= " AND (a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";
