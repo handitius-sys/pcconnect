@@ -461,6 +461,8 @@ function render_header(string $title, ?array $user = null): void
     echo '.btn-icon.view{color:#0284c7;border-color:#bae6fd;background:#f0f9ff}.btn-icon.view:hover{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}';
     echo '.btn-icon.repair{color:#d97706;border-color:#fde68a;background:#fffbeb}.btn-icon.repair:hover{background:#fef3c7;color:#b45309;border-color:#fcd34d}';
     echo '.btn-icon.delete{color:#dc2626;border-color:#fecaca;background:#fef2f2}.btn-icon.delete:hover{background:#fee2e2;color:#b91c1c;border-color:#fca5a5}';
+    echo '.btn-icon.add{color:#16a34a;border-color:#bbf7d0;background:#f0fdf4}.btn-icon.add:hover{background:#dcfce7;color:#15803d;border-color:#86efac}';
+    echo '.btn-icon.toggle{color:#64748b;border-color:#cbd5e1;background:#f8fafc}.btn-icon.toggle:hover{background:#f1f5f9;color:#334155}';
     echo 'label{display:block;font-weight:600;margin:12px 0 6px;font-size:13px;color:#334155}';
     echo 'input,select,textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;padding:9px 12px;font:inherit;font-size:13px;background:#fff;transition:border-color .15s,box-shadow .15s}';
     echo 'input:focus,select:focus,textarea:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}';
@@ -485,7 +487,7 @@ function render_header(string $title, ?array $user = null): void
     echo '.qr-img{width:126px;height:126px;object-fit:contain;margin:8px 0;display:block}';
     // Mobile responsive
     echo '@media(max-width:900px){.sidebar{transform:translateX(-100%);transition:transform .25s ease}.sidebar.mobile-open{transform:translateX(0)}.sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99}.sidebar-overlay.active{display:block}.main-wrapper,.app-layout.collapsed .main-wrapper{margin-left:0;width:100%}.hero,.two,.three,.four,.six{grid-template-columns:1fr}main{padding:14px}table{display:block;overflow-x:auto}}';
-    echo '@media print{.sidebar,.topbar,.no-print,.btn{display:none!important}body{background:#fff}.main-wrapper{margin-left:0!important}main{max-width:none;padding:0}.qr-label{page-break-inside:avoid}}';
+    echo '@media print{.sidebar,.topbar,.no-print,.btn,.flash,.flash.ok,.flash.err{display:none!important}body{background:#fff}.main-wrapper{margin-left:0!important}main{max-width:none;padding:0}.qr-label{page-break-inside:avoid}}';
     echo '</style></head><body>';
 
     if ($user) {
@@ -1509,6 +1511,31 @@ function geo_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): flo
     $dLng = deg2rad($lng2 - $lng1);
     $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
     return $earthRadius * 2 * atan2(sqrt($a), sqrt(max(0, 1 - $a)));
+}
+
+function btn_icon_edit(string $url, string $title = 'Edit Data'): string
+{
+    return '<a class="btn-icon edit" href="' . e($url) . '" title="' . e($title) . '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>';
+}
+
+function btn_icon_delete(string $actionUrl, int|string $id, string $confirmMsg = 'Hapus data ini?', string $title = 'Hapus Data', string $idField = 'id'): string
+{
+    return '<form method="post" action="' . e($actionUrl) . '" style="display:inline-block;margin:0;" onsubmit="return confirm(\'' . addslashes($confirmMsg) . '\')">'
+        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" name="action" value="delete">'
+        . '<input type="hidden" name="' . e($idField) . '" value="' . e((string)$id) . '">'
+        . '<button type="submit" class="btn-icon delete" title="' . e($title) . '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>'
+        . '</form>';
+}
+
+function btn_icon_add(string $url, string $label = 'Tambah Data', string $title = 'Tambah Data'): string
+{
+    return '<a class="btn primary" href="' . e($url) . '" title="' . e($title) . '" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:6px 12px;font-weight:600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>' . e($label) . '</span></a>';
+}
+
+function btn_icon_add_mini(string $url, string $title = 'Tambah Baru'): string
+{
+    return '<a class="btn-icon add" href="' . e($url) . '" title="' . e($title) . '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></a>';
 }
 
 function company_options(PDO $pdo, ?int $selected = null, bool $allowAll = false, string $allLabel = '- Tanpa company -'): string

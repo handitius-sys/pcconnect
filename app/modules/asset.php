@@ -9,8 +9,8 @@ function asset_nav_html(): string
 
 function asset_company_form_html(?array $company): string
 {
-    $company = $company ?: ['id' => 0, 'company_code' => '', 'company_name' => '', 'legal_name' => '', 'address' => '', 'is_active' => 1];
-    return '<section class="panel"><h1>' . ((int)$company['id'] > 0 ? 'Edit Company' : 'Tambah Company') . '</h1><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($company['id']) . '"><div class="grid two"><label>Company Code<input name="company_code" value="' . e($company['company_code']) . '" required></label><label>Company Name<input name="company_name" value="' . e($company['company_name']) . '" required></label></div><label>Legal Name<input name="legal_name" value="' . e($company['legal_name']) . '"></label><label>Address<textarea name="address">' . e($company['address']) . '</textarea></label><label><input style="width:auto" type="checkbox" name="is_active" value="1" ' . ((int)$company['is_active'] ? 'checked' : '') . '> Aktif</label><button class="btn primary">Simpan Company</button></form></section>';
+    $addBtn = (int)$company['id'] > 0 ? btn_icon_add(route_url('asset_companies'), 'Tambah Company Baru', 'Tambah Company Baru') : '';
+    return '<section class="panel"><div class="split"><h1>' . ((int)$company['id'] > 0 ? 'Edit Company' : 'Tambah Company') . '</h1>' . $addBtn . '</div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($company['id']) . '"><div class="grid two"><label>Company Code<input name="company_code" value="' . e($company['company_code']) . '" required></label><label>Company Name<input name="company_name" value="' . e($company['company_name']) . '" required></label></div><label>Legal Name<input name="legal_name" value="' . e($company['legal_name']) . '"></label><label>Address<textarea name="address">' . e($company['address']) . '</textarea></label><label><input style="width:auto" type="checkbox" name="is_active" value="1" ' . ((int)$company['is_active'] ? 'checked' : '') . '> Aktif</label><div class="actions"><button class="btn primary">Simpan Company</button>' . ((int)$company['id'] > 0 ? ' <a class="btn" href="' . route_url('asset_companies') . '">Batal</a>' : '') . '</div></form></section>';
 }
 
 function asset_category_form_html(?array $category): string
@@ -2854,7 +2854,7 @@ function asset_master_page(PDO $pdo, string $route, array $user): void
     if ($showMasterForm) {
         echo '<section class="panel"><div class="split"><h1>' . e($edit ? 'Edit ' : 'Tambah ') . e($title) . '</h1>';
         if ($edit) {
-            echo '<a class="btn" href="' . route_url($route) . '">+ Tambah ' . e($title) . ' Baru</a>';
+            echo btn_icon_add(route_url($route), 'Tambah ' . e($title) . ' Baru', 'Tambah ' . e($title) . ' Baru');
         }
         echo '</div><form method="post" style="margin-top:14px"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($edit['id'] ?? '') . '">';
         if ($route === 'asset_types') {
@@ -2962,13 +2962,13 @@ function asset_master_page(PDO $pdo, string $route, array $user): void
     
     foreach ($rows as $r) {
         $delBtn = $canDeleteMaster
-            ? ('<form method="post" style="display:inline" onsubmit="return confirm(\'Hapus ' . e($title) . ' ini?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int)$r['id'] . '"><button class="btn danger" style="padding:4px 8px;font-size:12px">Hapus</button></form>')
+            ? btn_icon_delete(route_url($route), (int)$r['id'], 'Hapus ' . e($title) . ' ini?', 'Hapus ' . e($title))
             : '';
         $editBtn = $canEditMaster
-            ? ('<a class="btn" href="' . route_url($route, ['id' => $r['id']]) . '">Edit</a> ')
+            ? (btn_icon_edit(route_url($route, ['id' => $r['id']]), 'Edit ' . e($title)) . ' ')
             : '';
         $actionCell = ($canEditMaster || $canDeleteMaster)
-            ? ('<td><div class="actions" style="display:flex;gap:6px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
+            ? ('<td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
             : '<td><span class="muted">-</span></td>';
         
         if ($route === 'asset_types') {
@@ -3136,7 +3136,7 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
     if ($showIdfForm) {
         echo '<section class="panel"><div class="split"><h1>' . ($edit ? 'Edit' : 'Tambah') . ' Identifier Aset</h1>';
         if ($edit) {
-            echo '<a class="btn" href="' . route_url('asset_identifiers') . '">+ Tambah Identifier Baru</a>';
+            echo btn_icon_add(route_url('asset_identifiers'), 'Tambah Identifier Baru', 'Tambah Identifier Baru');
         }
         echo '</div><form method="post" style="margin-top:14px"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" id="idfEditId" name="id" value="' . (int)($edit['id'] ?? 0) . '">';
         
@@ -3394,13 +3394,13 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
             }
 
             $delBtn = $canDeleteIdf
-                ? ('<form method="post" style="display:inline" onsubmit="return confirm(\'Hapus Identifier ' . e($r['identifier_code']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int)$r['id'] . '"><button class="btn danger" style="padding:4px 8px;font-size:12px">Hapus</button></form>')
+                ? btn_icon_delete(route_url('asset_identifiers'), (int)$r['id'], 'Hapus Identifier ' . e($r['identifier_code']) . '?', 'Hapus Identifier')
                 : '';
             $editBtn = $canEditIdf
-                ? ('<a class="btn" href="' . route_url('asset_identifiers', ['id' => $r['id']]) . '">Edit</a> ')
+                ? (btn_icon_edit(route_url('asset_identifiers', ['id' => $r['id']]), 'Edit Identifier') . ' ')
                 : '';
             $actionCell = ($canEditIdf || $canDeleteIdf)
-                ? ('<td><div class="actions" style="display:flex;gap:6px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
+                ? ('<td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
                 : '<td><span class="muted">-</span></td>';
             $uCnt = (int)($r['unit_count'] ?? 0);
             $unitLink = $uCnt > 0 
@@ -3514,7 +3514,7 @@ function asset_specification_master_page(PDO $pdo, array $user): void
     if ($showSpecForm) {
         echo '<section class="panel"><div class="split"><h1>' . ($edit ? 'Edit' : 'Tambah') . ' Spesifikasi Aset</h1>';
         if ($edit) {
-            echo '<a class="btn" href="' . route_url('asset_specifications') . '">+ Tambah Spesifikasi Baru</a>';
+            echo btn_icon_add(route_url('asset_specifications'), 'Tambah Spesifikasi Baru', 'Tambah Spesifikasi Baru');
         }
         echo '</div><form method="post" style="margin-top:14px"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" id="specEditId" name="id" value="' . (int)($edit['id'] ?? 0) . '">';
         
@@ -3821,13 +3821,13 @@ function asset_specification_master_page(PDO $pdo, array $user): void
             }
 
             $delBtn = $canDeleteSpec
-                ? ('<form method="post" style="display:inline" onsubmit="return confirm(\'Hapus Spesifikasi ' . e($r['specification_code']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int)$r['id'] . '"><button class="btn danger" style="padding:4px 8px;font-size:12px">Hapus</button></form>')
+                ? btn_icon_delete(route_url('asset_specifications'), (int)$r['id'], 'Hapus Spesifikasi ' . e($r['specification_code']) . '?', 'Hapus Spesifikasi')
                 : '';
             $editBtn = $canEditSpec
-                ? ('<a class="btn" href="' . route_url('asset_specifications', ['id' => $r['id']]) . '">Edit</a> ')
+                ? (btn_icon_edit(route_url('asset_specifications', ['id' => $r['id']]), 'Edit Spesifikasi') . ' ')
                 : '';
             $actionCell = ($canEditSpec || $canDeleteSpec)
-                ? ('<td><div class="actions" style="display:flex;gap:6px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
+                ? ('<td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
                 : '<td><span class="muted">-</span></td>';
             $uCnt = (int)($r['unit_count'] ?? 0);
             $unitLink = $uCnt > 0 
@@ -4348,12 +4348,12 @@ function handle_route_asset_companies(PDO $pdo): void
     foreach ($pdo->query('SELECT * FROM asset_companies ORDER BY company_name') as $row) {
         $actions = '';
         if ($canEdit) {
-            $actions .= '<a class="btn" href="' . route_url('asset_companies', ['id' => $row['id']]) . '">Edit</a>';
+            $actions .= btn_icon_edit(route_url('asset_companies', ['id' => $row['id']]), 'Edit Company');
         }
         if ($canDelete) {
-            $actions .= ' <form method="post" action="' . route_url('asset_companies') . '" style="display:inline;" onsubmit="return confirm(\'Hapus company ' . addslashes((string)$row['company_name']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button></form>';
+            $actions .= ' ' . btn_icon_delete(route_url('asset_companies'), (int)$row['id'], 'Hapus company ' . addslashes((string)$row['company_name']) . '?', 'Hapus Company');
         }
-        echo '<tr><td>' . e($row['company_code']) . '</td><td>' . e($row['company_name']) . '</td><td>' . e($row['legal_name'] ?: '-') . '</td><td>' . ((int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>') . '</td><td><div class="actions">' . ($actions ?: '-') . '</div></td></tr>';
+        echo '<tr><td>' . e($row['company_code']) . '</td><td>' . e($row['company_name']) . '</td><td>' . e($row['legal_name'] ?: '-') . '</td><td>' . ((int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>') . '</td><td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . ($actions ?: '-') . '</div></td></tr>';
     }
     echo '</table></section>';
     render_footer();
@@ -4443,11 +4443,11 @@ function handle_route_asset_categories(PDO $pdo): void
     foreach ($pdo->query('SELECT ac.*, (SELECT COUNT(*) FROM asset_items ai WHERE ai.asset_category=ac.category_name) usage_count FROM asset_categories ac ORDER BY ac.is_system DESC, ac.category_name') as $row) {
         $sysBadge = (int)$row['is_system'] ? '<span class="badge ok">Sistem</span>' : '<span class="badge">Custom</span>';
         $activeBadge = (int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>';
-        echo '<tr><td><strong>' . e($row['category_name']) . '</strong></td><td>' . $sysBadge . '</td><td>' . $activeBadge . '</td><td>' . e($row['usage_count']) . ' item</td><td><div class="actions"><a class="btn" href="' . route_url('asset_categories', ['id' => $row['id']]) . '">Edit</a>';
+        $actCat = btn_icon_edit(route_url('asset_categories', ['id' => $row['id']]), 'Edit Kategori');
         if ((int)$row['is_system'] !== 1) {
-            echo '<form method="post" onsubmit="return confirm(\'Hapus kategori ' . e($row['category_name']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . e($row['id']) . '"><button class="btn danger">Hapus</button></form>';
+            $actCat .= ' ' . btn_icon_delete(route_url('asset_categories'), (int)$row['id'], 'Hapus kategori ' . e($row['category_name']) . '?', 'Hapus Kategori');
         }
-        echo '</div></td></tr>';
+        echo '<tr><td><strong>' . e($row['category_name']) . '</strong></td><td>' . $sysBadge . '</td><td>' . $activeBadge . '</td><td>' . e($row['usage_count']) . ' item</td><td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . $actCat . '</div></td></tr>';
     }
     echo '</table></section>';
     render_footer();
@@ -4601,7 +4601,7 @@ function handle_route_asset_master_items(PDO $pdo): void
             echo '<button type="button" class="btn warning" id="btnMiImportPc" onclick="openMiImportPcModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:16px;">📥</span> Import dari Data PC</button>';
         }
         if ($edit && $canCreateMi) {
-            echo '<a class="btn" href="' . route_url('asset_master_items') . '">+ Tambah Barang Baru</a>';
+            echo btn_icon_add(route_url('asset_master_items'), 'Tambah Barang Baru', 'Tambah Barang Baru');
         }
         echo '</div></div>';
 
@@ -4684,15 +4684,15 @@ function handle_route_asset_master_items(PDO $pdo): void
             echo '<td>' . e($row['brand_name'] ?: '-') . '</td>';
             echo '<td>' . $unitLink . '</td>';
             echo '<td>' . ((int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>') . '</td>';
-            echo '<td><div class="actions">';
+            echo '<td><div class="actions" style="display:flex;gap:4px;align-items:center;">';
             if ($canEditMi) {
-                echo '<a class="btn" href="' . route_url('asset_master_items', ['id' => $row['id']]) . '">Edit</a>';
+                echo btn_icon_edit(route_url('asset_master_items', ['id' => $row['id']]), 'Edit Master Barang');
             }
             if ($canDeleteMi && (int)$row['total_units'] === 0) {
-                echo '<form method="post" style="display:inline" onsubmit="return confirm(\'Hapus Master Barang ini?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button class="btn danger">Hapus</button></form>';
+                echo btn_icon_delete(route_url('asset_master_items'), (int)$row['id'], 'Hapus Master Barang ini?', 'Hapus Master Barang');
             }
             if (!$canEditMi && (!$canDeleteMi || (int)$row['total_units'] > 0)) {
-                echo '-';
+                echo '<span class="muted">-</span>';
             }
             echo '</div></td>';
             echo '</tr>';

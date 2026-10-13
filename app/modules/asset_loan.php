@@ -514,7 +514,6 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 }
 
                 $pdo->commit();
-                flash("Perubahan peminjaman aset <strong>{$loan['loan_code']}</strong> berhasil disimpan.", 'ok');
                 redirect_to('asset_loan_detail', ['id' => $id, 'autoprint' => 1]);
             } else {
                 // INSERT Transaksi Baru
@@ -563,7 +562,6 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 }
 
                 $pdo->commit();
-                flash("Peminjaman aset berhasil disimpan dengan nomor: <strong>{$loanCode}</strong>.", 'ok');
                 redirect_to('asset_loan_detail', ['id' => $loanId, 'autoprint' => 1]);
             }
         } catch (Throwable $e) {
@@ -1121,6 +1119,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
     try { $pdo->exec("ALTER TABLE asset_loans ADD COLUMN company_id INT NULL AFTER id"); } catch (Exception $e) {}
     $user = require_regulation('asset_loans', 'view');
     $id = (int)($_GET['id'] ?? 0);
+    unset($_SESSION['flash']);
 
     $stmt = $pdo->prepare("SELECT al.*, u1.name AS officer_name, u2.name AS return_officer_name, loan_comp.company_name AS loan_company_name FROM asset_loans al LEFT JOIN asset_companies loan_comp ON loan_comp.id = al.company_id LEFT JOIN users u1 ON u1.id = al.officer_user_id
         LEFT JOIN users u2 ON u2.id = al.return_officer_user_id
@@ -1164,7 +1163,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
             padding: 0 !important;
             font-size: 12pt !important;
         }
-        .header, .sidebar, .nav, .actions, .noprint, .btn, .app-header, .brand-bar {
+        .header, .sidebar, .nav, .actions, .noprint, .btn, .app-header, .brand-bar, .flash, .flash.ok, .flash.err, .flash-message {
             display: none !important;
         }
         .panel {

@@ -34,8 +34,8 @@ function handle_route_asset_mutations(PDO $pdo): void
         require_regulation('asset_mutations', 'create');
 
         $assetItemId = (int)($_POST['asset_item_id'] ?? 0);
-        $newCompanyId = (int)($_POST['new_company_id'] ?? 0);
-        $newLocationId = (int)($_POST['new_location_id'] ?? 0);
+        $rawCompany = trim((string)($_POST['new_company_id'] ?? 'keep'));
+        $rawLocation = trim((string)($_POST['new_location_id'] ?? 'keep'));
         $newLocationLabel = trim((string)($_POST['new_location_label'] ?? ''));
         $hasCustodianInput = isset($_POST['new_custodian_name']);
         $newCustodianNik = trim((string)($_POST['new_custodian_nik'] ?? ''));
@@ -50,24 +50,64 @@ function handle_route_asset_mutations(PDO $pdo): void
             redirect_to('asset_mutations', $_GET);
         }
 
-        // Resolusi nama lokasi jika memilih dari master lokasi namun label belum diisi
-        if ($newLocationId > 0 && $newLocationLabel === '' && db_table_exists($pdo, 'asset_locations')) {
-            $locName = (string)$pdo->query("SELECT location_name FROM asset_locations WHERE id = {$newLocationId}")->fetchColumn() ?: '';
-            if ($locName !== '') {
-                $newLocationLabel = $locName;
-            }
-        }
-
-        $oldCompanyId = (int)($item['company_id'] ?? 0);
-        $oldLocationId = (int)($item['location_id'] ?? 0);
+        $oldCompanyId = !empty($item['company_id']) ? (int)$item['company_id'] : 0;
+        $oldLocationId = !empty($item['location_id']) ? (int)$item['location_id'] : 0;
         $oldLocationLabel = (string)($item['location_label'] ?? '');
         $oldCustodianNik = (string)($item['custodian_nik'] ?? '');
         $oldCustodianName = (string)($item['custodian_name'] ?? '');
 
-        // Deteksi perubahan spesifik pada 3 dimensi: Company, Lokasi, Pengguna
-        $companyChanged = ($newCompanyId > 0 && $newCompanyId !== $oldCompanyId);
-        $locationChanged = (($newLocationId > 0 && $newLocationId !== $oldLocationId) || ($newLocationLabel !== '' && $newLocationLabel !== $oldLocationLabel));
-        $custodianChanged = ($hasCustodianInput && ($newCustodianName !== $oldCustodianName || $newCustodianNik !== $oldCustodianNik));
+        // 1. Deteksi Perubahan Company
+        $companyChanged = false;
+        $targetCompanyId = $oldCompanyId > 0 ? $oldCompanyId : null;
+        if ($rawCompany !== 'keep') {
+            if ($rawCompany === 'none' || $rawCompany === '0' || $rawCompany === '') {
+                $companyChanged = true;
+                $targetCompanyId = null;
+            } elseif (is_numeric($rawCompany) && (int)$rawCompany > 0) {
+                $compVal = (int)$rawCompany;
+                $companyChanged = true;
+                $targetCompanyId = $compVal;
+            }
+        }
+
+        // 2. Deteksi Perubahan Lokasi
+        $locationChanged = false;
+        $targetLocationId = $oldLocationId > 0 ? $oldLocationId : null;
+        $targetLocationLabel = $oldLocationLabel;
+        if ($rawLocation !== 'keep') {
+            if ($rawLocation === 'none' || $rawLocation === '0' || $rawLocation === '') {
+                $locationChanged = true;
+                $targetLocationId = null;
+            } elseif (is_numeric($rawLocation) && (int)$rawLocation > 0) {
+                $locVal = (int)$rawLocation;
+                $locationChanged = true;
+                $targetLocationId = $locVal;
+                if ($newLocationLabel === '' && db_table_exists($pdo, 'asset_locations')) {
+                    $locName = (string)$pdo->query("SELECT location_name FROM asset_locations WHERE id = {$locVal}")->fetchColumn() ?: '';
+                    if ($locName !== '') {
+                        $targetLocationLabel = $locName;
+                    }
+                }
+            }
+        }
+        if ($newLocationLabel !== '' && $newLocationLabel !== $oldLocationLabel) {
+            $locationChanged = true;
+            $targetLocationLabel = $newLocationLabel;
+        }
+
+        // 3. Deteksi Perubahan Pengguna
+        $custodianChanged = false;
+        $targetCustodianNik = $oldCustodianNik;
+        $targetCustodianName = $oldCustodianName;
+        if ($hasCustodianInput) {
+            $normNewCustName = ($newCustodianName === '-' ? '' : $newCustodianName);
+            $normOldCustName = ($oldCustodianName === '-' ? '' : $oldCustodianName);
+            if ($normNewCustName !== $normOldCustName || $newCustodianNik !== $oldCustodianNik) {
+                $custodianChanged = true;
+                $targetCustodianNik = $newCustodianNik ?: null;
+                $targetCustodianName = $normNewCustName ?: null;
+            }
+        }
 
         if (!$companyChanged && !$locationChanged && !$custodianChanged) {
             flash('Tidak ada data mutasi yang diubah. Silakan tentukan Company, Lokasi, atau Pengguna tujuan baru.', 'err');
@@ -76,13 +116,6 @@ function handle_route_asset_mutations(PDO $pdo): void
 
         try {
             $pdo->beginTransaction();
-
-            // Tentukan target nilai baru
-            $targetCompanyId = $companyChanged ? $newCompanyId : $oldCompanyId;
-            $targetLocationId = ($newLocationId > 0) ? $newLocationId : ($locationChanged ? null : $oldLocationId);
-            $targetLocationLabel = ($newLocationLabel !== '') ? $newLocationLabel : $oldLocationLabel;
-            $targetCustodianNik = $custodianChanged ? $newCustodianNik : $oldCustodianNik;
-            $targetCustodianName = $custodianChanged ? $newCustodianName : $oldCustodianName;
 
             // Kumpulkan unit aset yang akan dimutasi (parent + children jika bundle)
             $itemsToUpdate = [$item];
@@ -486,8 +519,17 @@ function handle_route_asset_mutations(PDO $pdo): void
                             🏢 1. Mutasi Antar Company (Perusahaan)
                         </label>
                         <select name="new_company_id" id="mutCompanySelect" style="width:100%;box-sizing:border-box;">
-                            <option value="0">-- Tetap (Tidak Ada Perubahan Company) --</option>
-                            ' . company_options($pdo) . '
+                            <option value="keep">-- Tetap (Tidak Ada Perubahan Company) --</option>
+                            <option value="none">-- Lepas Company (Unit Pool / Tanpa Company) --</option>
+                            ' . (function() use ($pdo): string {
+                                $h = '';
+                                if (db_table_exists($pdo, 'asset_companies')) {
+                                    foreach ($pdo->query('SELECT id, company_code, company_name FROM asset_companies WHERE is_active=1 ORDER BY company_name') as $cRow) {
+                                        $h .= '<option value="' . e($cRow['id']) . '">' . e($cRow['company_code'] . ' - ' . $cRow['company_name']) . '</option>';
+                                    }
+                                }
+                                return $h;
+                            })() . '
                         </select>
                         <small style="color:#64748b;display:block;margin-top:4px;">Pilih company tujuan jika unit dipindahtugaskan ke entitas perusahaan lain.</small>
                     </div>
@@ -501,7 +543,17 @@ function handle_route_asset_mutations(PDO $pdo): void
                             <div>
                                 <small style="color:#475569;display:block;margin-bottom:3px;font-weight:600;">Master Lokasi Tujuan:</small>
                                 <select name="new_location_id" id="mutLocationSelect" style="width:100%;box-sizing:border-box;">
-                                    ' . asset_location_options($pdo, 0, true, '-- Tetap (Tidak Ada Perubahan Lokasi) --') . '
+                                    <option value="keep">-- Tetap (Tidak Ada Perubahan Lokasi) --</option>
+                                    <option value="none">-- Lepas Lokasi (Unit Pool / Tanpa Lokasi) --</option>
+                                    ' . (function() use ($pdo): string {
+                                        $h = '';
+                                        if (db_table_exists($pdo, 'asset_locations')) {
+                                            foreach ($pdo->query('SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name ASC') as $lRow) {
+                                                $h .= '<option value="' . e($lRow['id']) . '">' . e($lRow['location_name'] . ' (' . $lRow['location_code'] . ')') . '</option>';
+                                            }
+                                        }
+                                        return $h;
+                                    })() . '
                                 </select>
                             </div>
                             <div>
@@ -582,8 +634,8 @@ function handle_route_asset_mutations(PDO $pdo): void
         document.getElementById("mutOldLocationText").innerText = item.location_label || "-";
         document.getElementById("mutOldCustodianText").innerText = item.custodian_name ? (item.custodian_name + (item.custodian_nik ? " (" + item.custodian_nik + ")" : "")) : "-";
 
-        document.getElementById("mutCompanySelect").value = "0";
-        document.getElementById("mutLocationSelect").value = "0";
+        document.getElementById("mutCompanySelect").value = "keep";
+        document.getElementById("mutLocationSelect").value = "keep";
         document.getElementById("mutLocationLabelInput").value = "";
         
         document.getElementById("mutCustodianSearchInput").value = "";

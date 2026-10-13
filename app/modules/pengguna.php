@@ -474,7 +474,8 @@ function handle_route_master_pengguna(PDO $pdo): void
 
     // Filter & Table Master Pengguna
     echo '<section class="panel">';
-    echo '<form method="get" class="actions" style="margin-bottom:16px;">';
+    echo '<div class="split" style="margin-bottom:16px;">';
+    echo '<form method="get" class="actions" style="margin:0;">';
     echo '<input type="hidden" name="route" value="master_pengguna">';
     echo '<input name="q" value="' . e($q) . '" placeholder="Cari NIK, Nama, atau Departemen..." style="width:260px;">';
     echo '<select name="status" onchange="this.form.submit()">';
@@ -487,6 +488,10 @@ function handle_route_master_pengguna(PDO $pdo): void
         echo '<a class="btn" href="' . route_url('master_pengguna') . '">Reset</a>';
     }
     echo '</form>';
+    if (has_regulation('master_pengguna', 'create')) {
+        echo btn_icon_add('#formTambahPengguna', 'Tambah Pengguna', 'Tambah Pengguna Baru');
+    }
+    echo '</div>';
 
     if (!$rows) {
         echo '<p class="muted">Tidak ada pengguna yang cocok dengan kriteria pencarian.</p>';
@@ -534,19 +539,19 @@ function handle_route_master_pengguna(PDO $pdo): void
             echo '<td>' . $statusBadge . '</td>';
             echo '<td>' . $accountBadge . '</td>';
             echo '<td>' . $assetSummary . '</td>';
-            echo '<td><div class="actions" style="display:flex;gap:4px;flex-wrap:nowrap;">';
+            echo '<td><div class="actions" style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center;">';
             if (has_regulation('master_pengguna', 'edit')) {
-                echo '<a class="btn" style="padding:4px 8px;font-size:12px;" href="' . route_url('master_pengguna', ['edit_nik' => $nik, 'q' => $q, 'status' => $statusFilter]) . '">Edit</a>';
-                echo '<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="nik" value="' . e($nik) . '"><button class="btn" style="padding:4px 8px;font-size:12px;">' . (!empty($r['is_active']) ? 'Nonaktifkan' : 'Aktifkan') . '</button></form>';
+                echo btn_icon_edit(route_url('master_pengguna', ['edit_nik' => $nik, 'q' => $q, 'status' => $statusFilter]), 'Edit Pengguna');
+                echo '<form method="post" style="display:inline-block;margin:0;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="nik" value="' . e($nik) . '"><button type="submit" class="btn-icon toggle" title="' . (!empty($r['is_active']) ? 'Nonaktifkan Pengguna' : 'Aktifkan Pengguna') . '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg></button></form>';
             }
             
             // Tombol buat akun login jika belum punya akun
             if (empty($r['user_account_id']) && has_regulation('users', 'create')) {
-                echo '<button type="button" class="btn" style="padding:4px 8px;font-size:12px;background:#f1f5f9;" onclick="openCreateLoginModal(' . htmlspecialchars(json_encode(['nik' => $nik, 'name' => $name]), ENT_QUOTES) . ')">+ Akun</button>';
+                echo '<button type="button" class="btn-icon add" title="Buat Akun Login Sistem" onclick="openCreateLoginModal(' . htmlspecialchars(json_encode(['nik' => $nik, 'name' => $name]), ENT_QUOTES) . ')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></button>';
             }
             
             if (has_regulation('master_pengguna', 'delete')) {
-                echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Hapus pengguna ' . addslashes($name) . ' dari master lokal?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="nik" value="' . e($nik) . '"><button class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button></form>';
+                echo btn_icon_delete(route_url('master_pengguna'), $nik, 'Hapus pengguna ' . addslashes($name) . ' dari master lokal?', 'Hapus Pengguna', 'nik');
             }
             echo '</div></td>';
             echo '</tr>';

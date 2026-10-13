@@ -2615,6 +2615,25 @@ function handle_route_corrective_workshops(PDO $pdo): void
     $user = require_regulation('corrective_admin', 'view');
     ensure_corrective_maintenance_schema($pdo);
 
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+        verify_csrf();
+        require_regulation('corrective_admin', 'delete');
+        $delId = (int)($_POST['id'] ?? 0);
+        if ($delId > 0) {
+            $inUse = 0;
+            if (db_table_exists($pdo, 'tickets') && db_column_exists($pdo, 'tickets', 'handled_by_workshop_id')) {
+                $inUse = (int)$pdo->query("SELECT COUNT(*) FROM tickets WHERE handled_by_workshop_id = {$delId}")->fetchColumn();
+            }
+            if ($inUse > 0) {
+                flash("Bengkel tidak dapat dihapus karena digunakan pada {$inUse} tiket perbaikan.", 'err');
+            } else {
+                $pdo->prepare("DELETE FROM corrective_workshops WHERE id = ?")->execute([$delId]);
+                flash("Bengkel berhasil dihapus.");
+            }
+        }
+        redirect_to('corrective_workshops');
+    }
+
     $stmt = $pdo->query("SELECT * FROM corrective_workshops ORDER BY id DESC");
     $rows = $stmt->fetchAll();
 
@@ -2622,7 +2641,7 @@ function handle_route_corrective_workshops(PDO $pdo): void
     echo '<section class="panel">';
     echo '<div class="split"><h1>Master Bengkel / Workshop</h1>';
     if (has_regulation('corrective_admin', 'create', $user)) {
-        echo '<a class="btn primary" href="' . route_url('corrective_workshop_form') . '">+ Tambah Data Bengkel</a>';
+        echo btn_icon_add(route_url('corrective_workshop_form'), 'Tambah Data Bengkel', 'Tambah Data Bengkel');
     }
     echo '</div>';
     echo '<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>ID</th><th>Kode</th><th>Nama Bengkel</th><th>Alamat</th><th>Aksi</th></tr></thead><tbody>';
@@ -2630,11 +2649,14 @@ function handle_route_corrective_workshops(PDO $pdo): void
         echo '<tr><td colspan="5" class="muted" style="text-align:center;">Belum ada data bengkel / workshop.</td></tr>';
     } else {
         foreach ($rows as $r) {
-            echo '<tr><td>' . (int)$r['id'] . '</td><td><code>' . e($r['workshop_code']) . '</code></td><td><strong>' . e($r['workshop_name']) . '</strong></td><td>' . e($r['address'] ?: '-') . '</td><td>';
+            $actions = '';
             if (has_regulation('corrective_admin', 'update', $user)) {
-                echo '<a class="btn" href="' . route_url('corrective_workshop_form', ['id' => $r['id']]) . '">Edit</a>';
+                $actions .= btn_icon_edit(route_url('corrective_workshop_form', ['id' => $r['id']]), 'Edit Data Bengkel');
             }
-            echo '</td></tr>';
+            if (has_regulation('corrective_admin', 'delete', $user)) {
+                $actions .= ($actions ? ' ' : '') . btn_icon_delete(route_url('corrective_workshops'), (int)$r['id'], 'Hapus bengkel ' . addslashes((string)$r['workshop_name']) . '?', 'Hapus Data Bengkel');
+            }
+            echo '<tr><td>' . (int)$r['id'] . '</td><td><code>' . e($r['workshop_code']) . '</code></td><td><strong>' . e($r['workshop_name']) . '</strong></td><td>' . e($r['address'] ?: '-') . '</td><td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . ($actions ?: '-') . '</div></td></tr>';
         }
     }
     echo '</tbody></table></div></section>';
