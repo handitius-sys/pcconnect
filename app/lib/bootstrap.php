@@ -4,14 +4,25 @@ declare(strict_types=1);
 date_default_timezone_set('Asia/Jakarta');
 
 if (!function_exists('ensure_session_started')) {
-    function ensure_session_started(): void
+    function ensure_session_started(?string $route = null): void
     {
+        $r = (string)($route ?? ($_GET['route'] ?? 'dashboard'));
+        $mode = (string)($_GET['mode'] ?? ($_POST['mode'] ?? ''));
+        $isMobile = str_starts_with($r, 'mobile_') || $mode === 'mobile';
+        $targetSessionName = $isMobile ? 'ASETCONNECT_MOBILE_SESS' : 'ASETCONNECT_WEB_SESS';
+
         if (session_status() === PHP_SESSION_ACTIVE) {
-            return;
+            if (session_name() === $targetSessionName) {
+                return;
+            }
+            session_write_close();
         }
+
         if (headers_sent($file, $line)) {
             throw new RuntimeException('Session tidak dapat dimulai karena output sudah dikirim dari ' . $file . ':' . $line . '.');
         }
+
+        session_name($targetSessionName);
         session_start();
     }
 }
@@ -184,14 +195,18 @@ if (!function_exists('enforce_idle_logout')) {
         if (substr($route, 0, 4) === 'api_' || in_array($route, ['login', 'logout', 'mobile_service_login', 'mobile_service_logout'], true) || empty($_SESSION['user_id'])) {
             return;
         }
-        $timeoutSeconds = 1800;
+        // Auto-logout setelah 1 jam (3600 detik) tidak ada aktivitas
+        $timeoutSeconds = 3600;
         $lastActivity = (int)($_SESSION['last_activity_at'] ?? 0);
         $now = time();
         if ($lastActivity > 0 && ($now - $lastActivity) > $timeoutSeconds) {
             $isFieldService = str_starts_with($route, 'mobile_service') || str_starts_with($route, 'mobile_repair');
+            $isMobile = str_starts_with($route, 'mobile_') || ((string)($_GET['mode'] ?? '') === 'mobile');
             unset($_SESSION['user_id'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
             if ($isFieldService) {
                 redirect_to('mobile_service_login');
+            } elseif ($isMobile) {
+                redirect_to('login', ['mode' => 'mobile']);
             } else {
                 redirect_to('login');
             }

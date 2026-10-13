@@ -9,15 +9,18 @@ if (!function_exists('enforce_idle_logout')) {
         if (substr($route, 0, 4) === 'api_' || in_array($route, ['login', 'logout', 'mobile_service_login', 'mobile_service_logout'], true) || empty($_SESSION['user_id'])) {
             return;
         }
-        // Auto-logout setelah 30 menit (1800 detik) tidak digunakan
-        $timeoutSeconds = 1800;
+        // Auto-logout setelah 1 jam (3600 detik) tidak ada aktivitas
+        $timeoutSeconds = 3600;
         $lastActivity = (int)($_SESSION['last_activity_at'] ?? 0);
         $now = time();
         if ($lastActivity > 0 && ($now - $lastActivity) > $timeoutSeconds) {
             $isFieldService = str_starts_with($route, 'mobile_service') || str_starts_with($route, 'mobile_repair');
+            $isMobile = str_starts_with($route, 'mobile_') || ((string)($_GET['mode'] ?? '') === 'mobile');
             unset($_SESSION['user_id'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
             if ($isFieldService) {
                 redirect_to('mobile_service_login');
+            } elseif ($isMobile) {
+                redirect_to('login', ['mode' => 'mobile']);
             } else {
                 redirect_to('login');
             }
@@ -118,6 +121,9 @@ function delete_user_account(PDO $pdo, int $userId): void
 function handle_route_login(PDO $pdo): void
 {
     $appName = app_name();
+    $mode = (string)($_POST['mode'] ?? ($_GET['mode'] ?? ''));
+    $isMobile = $mode === 'mobile';
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ? AND is_active = 1');
         $stmt->execute([trim((string)($_POST['username'] ?? ''))]);
@@ -125,24 +131,29 @@ function handle_route_login(PDO $pdo): void
         if ($user && password_verify((string)($_POST['password'] ?? ''), (string)$user['password_hash'])) {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['last_activity_at'] = time();
-            if ($user['role'] === 'technician' && !empty($_SESSION['pending_mobile_code'])) {
-                $pendingCode = (string)$_SESSION['pending_mobile_code'];
-                unset($_SESSION['pending_mobile_code']);
-                redirect_to('mobile_scan', ['code' => $pendingCode]);
+
+            if ($isMobile) {
+                if ($user['role'] === 'technician' && !empty($_SESSION['pending_mobile_code'])) {
+                    $pendingCode = (string)$_SESSION['pending_mobile_code'];
+                    unset($_SESSION['pending_mobile_code']);
+                    redirect_to('mobile_scan', ['code' => $pendingCode]);
+                }
+                if ($user['role'] === 'corrective_maintenance') {
+                    redirect_to('mobile_service');
+                }
+                if ($user['role'] === 'loan_officer') {
+                    redirect_to('mobile_asset_loans');
+                }
+                redirect_to('mobile_dashboard');
+            } else {
+                if ($user['role'] === 'maintenance_admin') {
+                    redirect_to('maintenance');
+                }
+                redirect_to('dashboard');
             }
-            if ($user['role'] === 'maintenance_admin') {
-                redirect_to('maintenance');
-            }
-            if ($user['role'] === 'corrective_maintenance') {
-                redirect_to('mobile_service');
-            }
-            if ($user['role'] === 'loan_officer') {
-                redirect_to('mobile_asset_loans');
-            }
-            redirect_to($user['role'] === 'technician' ? 'mobile_dashboard' : 'dashboard');
         }
         flash('Username atau password salah.', 'err');
-        redirect_to('login');
+        redirect_to('login', $isMobile ? ['mode' => 'mobile'] : []);
     }
     $loginQuotes = [
         [
@@ -285,6 +296,9 @@ function handle_route_login(PDO $pdo): void
 
     echo '    <form method="post" autocomplete="on">';
     echo '      <input type="hidden" name="csrf" value="' . csrf_token() . '">';
+    if ($isMobile) {
+        echo '      <input type="hidden" name="mode" value="mobile">';
+    }
     echo '      <div class="login-group">';
     echo '        <label for="loginUser">Username atau NIK</label>';
     echo '        <div class="input-wrap">';
@@ -400,8 +414,26 @@ function handle_route_login(PDO $pdo): void
  */
 function handle_route_logout(): never
 {
-    session_destroy();
-    redirect_to('login');
+    $mode = (string)($_GET['mode'] ?? '');
+    $isMobile = str_starts_with($_GET['route'] ?? '', 'mobile_') || $mode === 'mobile';
+    
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params['path'], $params['domain'],
+            $params['secure'], $params['httponly']
+        );
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+    }
+
+    if ($isMobile) {
+        redirect_to('login', ['mode' => 'mobile']);
+    } else {
+        redirect_to('login');
+    }
 }
 
 /**

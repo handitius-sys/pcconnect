@@ -51,22 +51,33 @@ require_once $baseDir . '/app/lib/bootstrap.php';
 require_once $baseDir . '/app/lib/schema.php';
 require_once $baseDir . '/app/modules/auth.php';
 
+$route = (string)($_GET['route'] ?? 'dashboard');
+
 if (!function_exists('ensure_session_started')) {
-    function ensure_session_started(): void
+    function ensure_session_started(?string $route = null): void
     {
+        $r = (string)($route ?? ($_GET['route'] ?? 'dashboard'));
+        $mode = (string)($_GET['mode'] ?? ($_POST['mode'] ?? ''));
+        $isMobile = str_starts_with($r, 'mobile_') || $mode === 'mobile';
+        $targetSessionName = $isMobile ? 'ASETCONNECT_MOBILE_SESS' : 'ASETCONNECT_WEB_SESS';
+
         if (session_status() === PHP_SESSION_ACTIVE) {
-            return;
+            if (session_name() === $targetSessionName) {
+                return;
+            }
+            session_write_close();
         }
+
         if (headers_sent($file, $line)) {
             throw new RuntimeException('Session tidak dapat dimulai karena output sudah dikirim dari ' . $file . ':' . $line . '.');
         }
+
+        session_name($targetSessionName);
         session_start();
     }
 }
 
-ensure_session_started();
-
-$route = (string)($_GET['route'] ?? 'dashboard');
+ensure_session_started($route);
 
 // Route-based lazy loading: only load modules required by the requested route
 $modulesToLoad = [];

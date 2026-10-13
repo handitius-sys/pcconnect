@@ -12,7 +12,7 @@ function require_mobile_loan_user(): array
 {
     if (!isset($_SESSION['user_id'])) {
         flash('Silakan login terlebih dahulu untuk mengakses Peminjaman Aset Mobile.', 'err');
-        redirect_to('login');
+        redirect_to('login', ['mode' => 'mobile']);
     }
     return require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer']);
 }

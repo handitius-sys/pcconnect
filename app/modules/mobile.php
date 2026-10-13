@@ -81,7 +81,7 @@ function expire_stale_mobile_work_or_logout(PDO $pdo, array $user, ?int $schedul
     $pdo->prepare("UPDATE maintenance_schedules SET status='scheduled', arrival_at=NULL, arrival_ip=NULL, arrival_user_agent=NULL, arrival_lat=NULL, arrival_lng=NULL, arrival_browser=NULL, photo_challenge_code=NULL, photo_challenge_generated_at=NULL WHERE id=? AND status<>'completed'")->execute([$expiredId]);
     unset($_SESSION['user_id'], $_SESSION['pending_mobile_code']);
     flash('Sesi maintenance expired karena lebih dari 1 jam belum scan selesai. Silakan login ulang dan mulai dari Scan Mulai. Foto maintenance harus diambil ulang.', 'err');
-    redirect_to('login');
+    redirect_to('login', ['mode' => 'mobile']);
 }
 
 function smart_maintenance_card(array $schedule): string
@@ -265,7 +265,7 @@ function mobile_scan(PDO $pdo): void
         if ($code !== '') {
             $_SESSION['pending_mobile_code'] = $code;
         }
-        redirect_to('login');
+        redirect_to('login', ['mode' => 'mobile']);
     }
     $user = require_role(['admin', 'technician']);
     expire_stale_mobile_work_or_logout($pdo, $user, $scheduleId > 0 ? $scheduleId : null);
