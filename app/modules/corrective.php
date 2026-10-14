@@ -624,7 +624,6 @@ function handle_route_tickets(PDO $pdo): void
                 <?php endif; ?>
                 <a class="btn good" href="<?= route_url('mobile_service') ?>" target="_blank">📱 Mobile Service</a>
                 <a class="btn" href="<?= route_url('corrective_repairs') ?>">Riwayat Reparasi & Part</a>
-                <a class="btn" href="<?= route_url('walkarounds') ?>">Patroli Walkaround</a>
             </div>
         </div>
 

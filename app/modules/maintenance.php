@@ -2696,7 +2696,7 @@ function handle_route_jobs(PDO $pdo): void
     $canDeleteJobs = has_regulation('jobs', 'delete');
     $showDeskForm = ($isEditing && $canEditJobs) || (!$isEditing && $canCreateJobs);
 
-    $formTitle = $isEditing ? ('Edit Job Desk Preventive Maintenance #' . $editDeskId) : 'Tambah Job Desk Preventive Maintenance';
+    $formTitle = $isEditing ? ('Edit Job Desk Preventive Maintenance #' . $editDeskId) : 'Tambah Job Desk Per Kategori';
     $formAction = $isEditing ? 'edit_desk' : 'add_desk';
 
     echo '<section class="' . ($showDeskForm ? 'grid two' : '') . '">';

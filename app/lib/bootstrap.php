@@ -256,7 +256,6 @@ function get_regulated_menus(): array
         'Maintenance Aset' => [
             'maintenance' => 'Schedule PM',
             'tickets' => 'Aset Corrective',
-            'walkarounds' => 'Patroli Walkaround',
             'jobs' => 'Job Desk PM',
             'corrective_job_desks' => 'Job Desk Corrective',
             'mobile_service' => 'Mobile Service',
@@ -350,7 +349,7 @@ function has_regulation(string $menuKey, string $action = 'view', ?array $user =
     $regs = get_user_regulations($role);
     if (!isset($regs[$menuKey])) {
         if ($role === 'maintenance_admin') {
-            if (in_array($menuKey, ['maintenance', 'asset_items', 'tickets', 'walkarounds', 'asset_loans', 'asset_movements', 'asset_mutations', 'jobs', 'corrective_job_desks', 'mobile_service'], true)) {
+            if (in_array($menuKey, ['maintenance', 'asset_items', 'tickets', 'asset_loans', 'asset_movements', 'asset_mutations', 'jobs', 'corrective_job_desks', 'mobile_service'], true)) {
                 return true;
             }
         } elseif ($role === 'technician') {
@@ -358,7 +357,7 @@ function has_regulation(string $menuKey, string $action = 'view', ?array $user =
                 return true;
             }
         } elseif ($role === 'corrective_maintenance') {
-            if (in_array($menuKey, ['tickets', 'walkarounds', 'corrective_job_desks', 'mobile_service'], true)) {
+            if (in_array($menuKey, ['tickets', 'corrective_job_desks', 'mobile_service'], true)) {
                 return true;
             }
         } elseif ($role === 'loan_officer') {
@@ -566,9 +565,9 @@ function render_header(string $title, ?array $user = null): void
         echo '</details>';
 
         // 2. Maintenance Aset Accordion
-        $maintRoutes = ['maintenance', 'tickets', 'walkarounds', 'jobs', 'corrective_job_desks'];
+        $maintRoutes = ['maintenance', 'tickets', 'jobs', 'corrective_job_desks'];
         $isMaintOpen = in_array($curRoute, $maintRoutes, true);
-        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('walkarounds', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user)) {
+        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user)) {
             echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
             echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▼</span></summary>';
             echo '  <div class="nav-submenu">';
@@ -577,9 +576,6 @@ function render_header(string $title, ?array $user = null): void
             }
             if ($isAdmin || has_regulation('tickets', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
-            }
-            if ($isAdmin || has_regulation('walkarounds', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'walkarounds' ? ' active' : '') . '" href="' . route_url('walkarounds') . '"><span class="nav-icon">' . $svgPatrol . '</span><span class="nav-label">Patroli Walkaround</span></a>';
             }
             if ($isAdmin || has_regulation('jobs', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk PM</span></a>';
