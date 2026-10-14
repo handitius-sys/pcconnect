@@ -129,10 +129,18 @@ function handle_route_login(PDO $pdo): void
         $stmt->execute([trim((string)($_POST['username'] ?? ''))]);
         $user = $stmt->fetch();
         if ($user && password_verify((string)($_POST['password'] ?? ''), (string)$user['password_hash'])) {
+            $isMobileRole = in_array($user['role'], ['technician', 'corrective_maintenance', 'loan_officer'], true);
+
+            // Jika user role khusus mobile login dari desktop, alihkan ke sesi mobile agar sesi web tetap steril
+            if ($isMobileRole && !$isMobile) {
+                unset($_SESSION['user_id'], $_SESSION['last_activity_at']);
+                ensure_session_started('mobile_dashboard');
+            }
+
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['last_activity_at'] = time();
 
-            if ($isMobile) {
+            if ($isMobile || $isMobileRole) {
                 if ($user['role'] === 'technician' && !empty($_SESSION['pending_mobile_code'])) {
                     $pendingCode = (string)$_SESSION['pending_mobile_code'];
                     unset($_SESSION['pending_mobile_code']);
@@ -294,22 +302,27 @@ function handle_route_login(PDO $pdo): void
     echo '      <p>Masuk untuk mengakses sistem ' . e($appName) . '</p>';
     echo '    </div>';
 
-    echo '    <form method="post" autocomplete="on">';
+    echo '    <form method="post" autocomplete="off" id="loginForm">';
     echo '      <input type="hidden" name="csrf" value="' . csrf_token() . '">';
     if ($isMobile) {
         echo '      <input type="hidden" name="mode" value="mobile">';
     }
+    // Decoy inputs to trap browser password manager autofill
+    echo '      <div style="position:absolute;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none;" aria-hidden="true">';
+    echo '        <input type="text" name="fake_usernameremembered" tabindex="-1" autocomplete="username">';
+    echo '        <input type="password" name="fake_passwordremembered" tabindex="-1" autocomplete="current-password">';
+    echo '      </div>';
     echo '      <div class="login-group">';
     echo '        <label for="loginUser">Username atau NIK</label>';
     echo '        <div class="input-wrap">';
-    echo '          <input id="loginUser" name="username" placeholder="Masukkan username / NIK" required autofocus>';
+    echo '          <input id="loginUser" name="username" placeholder="Masukkan username / NIK" required autofocus autocomplete="off" value="">';
     echo '        </div>';
     echo '      </div>';
 
     echo '      <div class="login-group">';
     echo '        <label for="loginPass">Password</label>';
     echo '        <div class="input-wrap">';
-    echo '          <input type="password" id="loginPass" name="password" placeholder="Masukkan password" required>';
+    echo '          <input type="password" id="loginPass" name="password" placeholder="Masukkan password" required autocomplete="new-password" value="">';
     echo '          <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility()" title="Lihat/Sembunyikan Password">';
     echo '            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
     echo '          </button>';
@@ -400,6 +413,30 @@ function handle_route_login(PDO $pdo): void
         if (!p) return;
         p.type = p.type === "password" ? "text" : "password";
     }
+
+    // Cegah browser mengisikan (autofill) akun mobile ke desktop login
+    window.addEventListener("pageshow", function() {
+        var isMobileMode = ' . ($isMobile ? 'true' : 'false') . ';
+        if (!isMobileMode) {
+            var u = document.getElementById("loginUser");
+            var p = document.getElementById("loginPass");
+            if (u && p) {
+                setTimeout(function() {
+                    if (!u.hasAttribute("data-touched")) {
+                        u.value = "";
+                        p.value = "";
+                    }
+                }, 60);
+            }
+        }
+    });
+    document.addEventListener("DOMContentLoaded", function() {
+        var u = document.getElementById("loginUser");
+        if (u) {
+            u.addEventListener("input", function() { this.setAttribute("data-touched", "1"); });
+            u.addEventListener("keydown", function() { this.setAttribute("data-touched", "1"); });
+        }
+    });
 
     renderQuoteDots();
     restartQuoteTimer();

@@ -110,7 +110,7 @@ function handle_route_mobile_service_login(PDO $pdo): void
 
             <div class="login-footer">
                 Khusus teknisi role Corrective Maintenance.<br>
-                Sesi otomatis logout jika tidak aktif selama 30 menit.
+                Sesi otomatis logout jika tidak aktif selama 1 jam.
             </div>
         </div>
     </body>
