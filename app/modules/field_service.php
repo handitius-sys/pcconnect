@@ -47,6 +47,7 @@ function handle_route_mobile_service_login(PDO $pdo): void
                 flash('Akses ditolak. Akun Anda (' . e(function_exists('role_label') ? role_label((string)$user['role']) : $user['role']) . ') bukan role Corrective Maintenance.', 'err');
             } else {
                 $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_role'] = $user['role'];
                 $_SESSION['last_activity_at'] = time();
                 flash('Selamat datang, ' . $user['name'] . '! Anda berhasil masuk ke Field Service.');
                 redirect_to('mobile_service');

@@ -39,9 +39,10 @@ function handle_route_setup_regulations(PDO $pdo): void
             try {
                 // Delete current regulations for this role and re-seed default
                 $pdo->prepare('DELETE FROM role_regulations WHERE role = ?')->execute([$selectedRole]);
+                $pdo->prepare('INSERT INTO role_settings (role, idle_timeout_minutes, updated_at) VALUES (?, 60, NOW()) ON DUPLICATE KEY UPDATE idle_timeout_minutes = 60, updated_at = NOW()')->execute([$selectedRole]);
                 ensure_role_regulations_schema($pdo);
                 clear_role_regulations_cache();
-                flash('Regulasi hak akses untuk role ' . e($roles[$selectedRole]) . ' berhasil direset ke pengaturan bawaan.');
+                flash('Regulasi hak akses dan waktu auto sign-out untuk role ' . e($roles[$selectedRole]) . ' berhasil direset ke pengaturan bawaan (60 menit).');
             } catch (Throwable $e) {
                 flash('Gagal mereset regulasi: ' . $e->getMessage(), 'err');
             }
@@ -50,36 +51,39 @@ function handle_route_setup_regulations(PDO $pdo): void
 
         if ($action === 'save') {
             $submitted = (array)($_POST['reg'] ?? []);
+            $timeoutMinutes = max(1, min(10080, (int)($_POST['idle_timeout_minutes'] ?? 60)));
+
             $pdo->beginTransaction();
             try {
-                $stmtDel = $pdo->prepare('DELETE FROM role_regulations WHERE role = ?');
-                $stmtDel->execute([$selectedRole]);
+                // Simpan durasi idle timeout untuk role ini
+                $stmtSet = $pdo->prepare('INSERT INTO role_settings (role, idle_timeout_minutes, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE idle_timeout_minutes = VALUES(idle_timeout_minutes), updated_at = NOW()');
+                $stmtSet->execute([$selectedRole, $timeoutMinutes]);
 
-                $stmtIns = $pdo->prepare('INSERT INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
+                if ($selectedRole !== 'admin') {
+                    $stmtDel = $pdo->prepare('DELETE FROM role_regulations WHERE role = ?');
+                    $stmtDel->execute([$selectedRole]);
 
-                foreach ($menus as $group => $items) {
-                    foreach ($items as $mKey => $mLabel) {
-                        $v = !empty($submitted[$mKey]['view']) ? 1 : 0;
-                        $c = !empty($submitted[$mKey]['create']) ? 1 : 0;
-                        $e = !empty($submitted[$mKey]['edit']) ? 1 : 0;
-                        $d = !empty($submitted[$mKey]['delete']) ? 1 : 0;
+                    $stmtIns = $pdo->prepare('INSERT INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
 
-                        // Jika create/edit/delete aktif, pastikan view juga aktif
-                        if ($c || $e || $d) {
-                            $v = 1;
+                    foreach ($menus as $group => $items) {
+                        foreach ($items as $mKey => $mLabel) {
+                            $v = !empty($submitted[$mKey]['view']) ? 1 : 0;
+                            $c = !empty($submitted[$mKey]['create']) ? 1 : 0;
+                            $e = !empty($submitted[$mKey]['edit']) ? 1 : 0;
+                            $d = !empty($submitted[$mKey]['delete']) ? 1 : 0;
+
+                            // Jika create/edit/delete aktif, pastikan view juga aktif
+                            if ($c || $e || $d) {
+                                $v = 1;
+                            }
+
+                            $stmtIns->execute([$selectedRole, $mKey, $v, $c, $e, $d]);
                         }
-
-                        // Jika admin, selalu 1
-                        if ($selectedRole === 'admin') {
-                            $v = $c = $e = $d = 1;
-                        }
-
-                        $stmtIns->execute([$selectedRole, $mKey, $v, $c, $e, $d]);
                     }
                 }
                 $pdo->commit();
                 clear_role_regulations_cache();
-                flash('Regulasi hak akses role ' . e($roles[$selectedRole]) . ' berhasil disimpan dan langsung aktif.');
+                flash('Pengaturan role ' . e($roles[$selectedRole]) . ' (hak akses & auto sign-out: ' . $timeoutMinutes . ' menit) berhasil disimpan dan langsung aktif.');
             } catch (Throwable $e) {
                 $pdo->rollBack();
                 flash('Gagal menyimpan regulasi: ' . $e->getMessage(), 'err');
@@ -95,6 +99,7 @@ function handle_route_setup_regulations(PDO $pdo): void
     while ($r = $stmtCur->fetch(PDO::FETCH_ASSOC)) {
         $curData[$r['menu_key']] = $r;
     }
+    $curTimeoutMinutes = function_exists('get_role_idle_timeout_minutes') ? get_role_idle_timeout_minutes($selectedRole, $pdo) : 60;
 
     render_header('Regulasi Hak Akses', $user);
     ?>
@@ -134,6 +139,36 @@ function handle_route_setup_regulations(PDO $pdo): void
         <input type="hidden" name="action" value="save" id="formAction">
 
         <section class="panel">
+            <!-- Pengaturan Waktu Auto Sign-Out Per Role -->
+            <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:16px 20px; margin-bottom:24px; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                    <div style="max-width:550px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:18px;">⏱️</span>
+                            <strong style="font-size:15px; color:#0f172a;">Waktu Auto Sign Out (Idle Timeout)</strong>
+                        </div>
+                        <p class="muted" style="margin:4px 0 0 0; font-size:13px; line-height:1.4;">
+                            Sesi pengguna dengan role <strong><?= e($roles[$selectedRole]) ?></strong> akan otomatis sign out jika tidak ada aktivitas selama durasi ini.
+                        </p>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <input type="number" id="idleTimeoutInput" name="idle_timeout_minutes" min="1" max="10080" value="<?= (int)$curTimeoutMinutes ?>" style="width:90px; padding:8px 10px; font-size:16px; font-weight:700; border:1px solid #94a3b8; border-radius:8px; text-align:center;" required>
+                            <span style="font-weight:600; font-size:14px; color:#334155;">Menit</span>
+                            <span id="timeoutHumanDisplay" style="font-size:12px; font-weight:700; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; padding:4px 10px; border-radius:20px; min-width:80px; text-align:center;"></span>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(15)">15 mnt</button>
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(30)">30 mnt</button>
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(60)">1 Jam</button>
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(120)">2 Jam</button>
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(240)">4 Jam</button>
+                            <button type="button" class="btn" style="padding:2px 8px; font-size:11px;" onclick="setTimeoutPreset(480)">8 Jam</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="split" style="margin-bottom:16px;">
                 <div>
                     <h2 style="margin:0;">Matriks Izin Role: <span style="color:#2563eb;"><?= e($roles[$selectedRole]) ?></span></h2>
@@ -210,10 +245,8 @@ function handle_route_setup_regulations(PDO $pdo): void
 
             <div class="split" style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;align-items:center;">
                 <div style="display:flex;gap:12px;align-items:center;">
-                    <?php if ($selectedRole !== 'admin'): ?>
-                        <button type="submit" class="btn primary" style="padding:10px 24px;font-size:14px;">💾 Simpan Regulasi Hak Akses</button>
-                        <a href="<?= route_url('setup_regulations', ['role' => $selectedRole]) ?>" class="btn" style="padding:10px 20px;font-size:14px;">❌ Batal</a>
-                    <?php endif; ?>
+                    <button type="submit" class="btn primary" style="padding:10px 24px;font-size:14px;">💾 Simpan Pengaturan Role <?= e($roles[$selectedRole]) ?></button>
+                    <a href="<?= route_url('setup_regulations', ['role' => $selectedRole]) ?>" class="btn" style="padding:10px 20px;font-size:14px;">❌ Batal</a>
                 </div>
                 <div>
                     <?php if ($selectedRole !== 'admin'): ?>
@@ -225,6 +258,36 @@ function handle_route_setup_regulations(PDO $pdo): void
     </form>
 
     <script>
+    function updateTimeoutHuman(val) {
+        val = parseInt(val, 10) || 0;
+        var disp = document.getElementById('timeoutHumanDisplay');
+        if (!disp) return;
+        if (val <= 0) { disp.textContent = '-'; return; }
+        if (val < 60) {
+            disp.textContent = val + ' menit';
+        } else if (val % 60 === 0) {
+            disp.textContent = (val / 60) + ' jam';
+        } else {
+            var h = Math.floor(val / 60);
+            var m = val % 60;
+            disp.textContent = h + ' jam ' + m + ' mnt';
+        }
+    }
+
+    function setTimeoutPreset(val) {
+        var inp = document.getElementById('idleTimeoutInput');
+        if (inp) {
+            inp.value = val;
+            updateTimeoutHuman(val);
+        }
+    }
+
+    var timeoutInp = document.getElementById('idleTimeoutInput');
+    if (timeoutInp) {
+        timeoutInp.addEventListener('input', function() { updateTimeoutHuman(this.value); });
+        updateTimeoutHuman(timeoutInp.value);
+    }
+
     function checkAll(status) {
         document.querySelectorAll('#formRegulasi input[type=checkbox]').forEach(function(cb) {
             if (!cb.disabled) cb.checked = status;

@@ -2453,6 +2453,28 @@ function ensure_role_regulations_schema(PDO $pdo): void
             INDEX idx_role (role)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+        $pdo->exec("CREATE TABLE IF NOT EXISTS role_settings (
+            role VARCHAR(50) NOT NULL PRIMARY KEY,
+            idle_timeout_minutes INT NOT NULL DEFAULT 60,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Inisialisasi default timeout per role jika kosong
+        $setCount = (int)$pdo->query("SELECT COUNT(*) FROM role_settings")->fetchColumn();
+        if ($setCount === 0) {
+            $defTimeouts = [
+                'admin' => 60,
+                'maintenance_admin' => 60,
+                'technician' => 60,
+                'corrective_maintenance' => 60,
+                'loan_officer' => 60,
+            ];
+            $stmtSet = $pdo->prepare("INSERT IGNORE INTO role_settings (role, idle_timeout_minutes) VALUES (?, ?)");
+            foreach ($defTimeouts as $rRole => $rTimeout) {
+                $stmtSet->execute([$rRole, $rTimeout]);
+            }
+        }
+
         // Periksa apakah tabel kosong, jika ya inisialisasi default permissions
         $count = (int)$pdo->query("SELECT COUNT(*) FROM role_regulations")->fetchColumn();
         if ($count === 0) {

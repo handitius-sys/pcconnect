@@ -195,14 +195,21 @@ if (!function_exists('enforce_idle_logout')) {
         if (substr($route, 0, 4) === 'api_' || in_array($route, ['login', 'logout', 'mobile_service_login', 'mobile_service_logout'], true) || empty($_SESSION['user_id'])) {
             return;
         }
-        // Auto-logout setelah 1 jam (3600 detik) tidak ada aktivitas
-        $timeoutSeconds = 3600;
+        $role = (string)($_SESSION['user_role'] ?? '');
+        if ($role === '') {
+            $user = current_user();
+            $role = (string)($user['role'] ?? '');
+            if ($role !== '') {
+                $_SESSION['user_role'] = $role;
+            }
+        }
+        $timeoutSeconds = function_exists('get_role_idle_timeout_seconds') ? get_role_idle_timeout_seconds($role) : 3600;
         $lastActivity = (int)($_SESSION['last_activity_at'] ?? 0);
         $now = time();
         if ($lastActivity > 0 && ($now - $lastActivity) > $timeoutSeconds) {
             $isFieldService = str_starts_with($route, 'mobile_service') || str_starts_with($route, 'mobile_repair');
             $isMobile = str_starts_with($route, 'mobile_') || ((string)($_GET['mode'] ?? '') === 'mobile');
-            unset($_SESSION['user_id'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
+            unset($_SESSION['user_id'], $_SESSION['user_role'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
             if ($isFieldService) {
                 redirect_to('mobile_service_login');
             } elseif ($isMobile) {
@@ -329,9 +336,45 @@ function get_user_regulations(?string $role): array
 
 function clear_role_regulations_cache(): void
 {
-    if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['cached_role_regulations'])) {
-        unset($_SESSION['cached_role_regulations']);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        unset($_SESSION['cached_role_regulations'], $_SESSION['cached_role_timeouts']);
     }
+}
+
+function get_role_idle_timeout_minutes(?string $role, ?PDO $pdo = null): int
+{
+    static $memoryCache = [];
+    $role = (string)$role;
+    if ($role === '') {
+        return 60;
+    }
+    if (isset($memoryCache[$role])) {
+        return $memoryCache[$role];
+    }
+    if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['cached_role_timeouts'][$role])) {
+        $memoryCache[$role] = (int)$_SESSION['cached_role_timeouts'][$role];
+        return $memoryCache[$role];
+    }
+    try {
+        $pdo = $pdo ?: Database::pdo();
+        ensure_role_regulations_schema($pdo);
+        $stmt = $pdo->prepare('SELECT idle_timeout_minutes FROM role_settings WHERE role = ?');
+        $stmt->execute([$role]);
+        $val = $stmt->fetchColumn();
+        $minutes = ($val !== false && $val !== null && (int)$val > 0) ? (int)$val : 60;
+    } catch (Throwable $e) {
+        $minutes = 60;
+    }
+    $memoryCache[$role] = $minutes;
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['cached_role_timeouts'][$role] = $minutes;
+    }
+    return $minutes;
+}
+
+function get_role_idle_timeout_seconds(?string $role, ?PDO $pdo = null): int
+{
+    return get_role_idle_timeout_minutes($role, $pdo) * 60;
 }
 
 function has_regulation(string $menuKey, string $action = 'view', ?array $user = null): bool

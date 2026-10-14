@@ -993,8 +993,9 @@ function handle_route_maintenance(PDO $pdo): void
     } catch (Throwable $e) {
         $rows = $pdo->query("SELECT s.*, s.pc_id asset_id, 'pc' asset_type, p.owner_name, p.computer_name, u.name technician, 'IT Asset' asset_group_name, 'IT' asset_group_code, NULL asset_mode FROM maintenance_schedules s JOIN pcs p ON p.pc_id = s.pc_id LEFT JOIN users u ON u.id=s.technician_id $where ORDER BY s.scheduled_date DESC, s.id DESC")->fetchAll();
     }
+    $mobilePmBtn = '<a class="btn good" href="' . route_url('mobile_dashboard') . '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">📱 Mobile Preventive Maintenance</a>';
     $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">Tambah Schedule</a>' : '';
-    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions"><a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
+    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
     $scheduleIds = array_filter(array_map('intval', array_column($rows, 'id')));
     $reportsBySchedule = [];
     if ($scheduleIds) {

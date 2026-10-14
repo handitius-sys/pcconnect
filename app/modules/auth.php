@@ -9,14 +9,21 @@ if (!function_exists('enforce_idle_logout')) {
         if (substr($route, 0, 4) === 'api_' || in_array($route, ['login', 'logout', 'mobile_service_login', 'mobile_service_logout'], true) || empty($_SESSION['user_id'])) {
             return;
         }
-        // Auto-logout setelah 1 jam (3600 detik) tidak ada aktivitas
-        $timeoutSeconds = 3600;
+        $role = (string)($_SESSION['user_role'] ?? '');
+        if ($role === '') {
+            $user = current_user();
+            $role = (string)($user['role'] ?? '');
+            if ($role !== '') {
+                $_SESSION['user_role'] = $role;
+            }
+        }
+        $timeoutSeconds = function_exists('get_role_idle_timeout_seconds') ? get_role_idle_timeout_seconds($role) : 3600;
         $lastActivity = (int)($_SESSION['last_activity_at'] ?? 0);
         $now = time();
         if ($lastActivity > 0 && ($now - $lastActivity) > $timeoutSeconds) {
             $isFieldService = str_starts_with($route, 'mobile_service') || str_starts_with($route, 'mobile_repair');
             $isMobile = str_starts_with($route, 'mobile_') || ((string)($_GET['mode'] ?? '') === 'mobile');
-            unset($_SESSION['user_id'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
+            unset($_SESSION['user_id'], $_SESSION['user_role'], $_SESSION['last_activity_at'], $_SESSION['csrf'], $_SESSION['pending_mobile_code']);
             if ($isFieldService) {
                 redirect_to('mobile_service_login');
             } elseif ($isMobile) {
@@ -133,11 +140,12 @@ function handle_route_login(PDO $pdo): void
 
             // Jika user role khusus mobile login dari desktop, alihkan ke sesi mobile agar sesi web tetap steril
             if ($isMobileRole && !$isMobile) {
-                unset($_SESSION['user_id'], $_SESSION['last_activity_at']);
+                unset($_SESSION['user_id'], $_SESSION['user_role'], $_SESSION['last_activity_at']);
                 ensure_session_started('mobile_dashboard');
             }
 
             $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_role'] = $user['role'];
             $_SESSION['last_activity_at'] = time();
 
             if ($isMobile || $isMobileRole) {
