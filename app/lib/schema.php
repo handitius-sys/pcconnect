@@ -1299,6 +1299,7 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
             subject VARCHAR(200) NOT NULL,
             description TEXT NULL,
             photo_before VARCHAR(255) NULL,
+            invoice_photo VARCHAR(255) NULL,
             status VARCHAR(30) NOT NULL DEFAULT 'open',
             assigned_technician_name VARCHAR(120) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1313,6 +1314,7 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
         try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_type VARCHAR(20) NOT NULL DEFAULT 'internal'"); } catch (Throwable $e) {}
         try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_user_id BIGINT NULL"); } catch (Throwable $e) {}
         try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_workshop_id BIGINT NULL"); } catch (Throwable $e) {}
+        try { if (!db_column_exists($pdo, 'corrective_tickets', 'invoice_photo')) { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN invoice_photo VARCHAR(255) NULL AFTER photo_before"); } } catch (Throwable $e) {}
 
         $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_repairs (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -1325,10 +1327,13 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
             vendor_invoice_no VARCHAR(100) NULL,
             repair_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
             photo_after VARCHAR(255) NULL,
+            invoice_photo VARCHAR(255) NULL,
             repaired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_cr_ticket(ticket_id),
             INDEX idx_cr_date(repaired_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        try { if (!db_column_exists($pdo, 'corrective_repairs', 'invoice_photo')) { $pdo->exec("ALTER TABLE corrective_repairs ADD COLUMN invoice_photo VARCHAR(255) NULL AFTER photo_after"); } } catch (Throwable $e) {}
 
         $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_repair_parts (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,

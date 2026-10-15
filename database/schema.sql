@@ -486,6 +486,7 @@ CREATE TABLE IF NOT EXISTS corrective_tickets (
     subject VARCHAR(200) NOT NULL,
     description TEXT NULL,
     photo_before VARCHAR(255) NULL,
+    invoice_photo VARCHAR(255) NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'open',
     assigned_technician_name VARCHAR(120) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -508,6 +509,7 @@ CREATE TABLE IF NOT EXISTS corrective_repairs (
     vendor_invoice_no VARCHAR(100) NULL,
     repair_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
     photo_after VARCHAR(255) NULL,
+    invoice_photo VARCHAR(255) NULL,
     repaired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_cr_ticket(ticket_id),
     INDEX idx_cr_date(repaired_at)

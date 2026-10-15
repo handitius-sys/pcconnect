@@ -3802,7 +3802,7 @@ function export_excel(PDO $pdo, string $type): never
             $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw, $kw]);
         }
 
-        $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label,
+        $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
                        ma.maintenance_asset_code, ma.name AS maintenance_asset_name
                 FROM corrective_repairs cr
                 JOIN corrective_tickets t ON t.id = cr.ticket_id
@@ -3823,6 +3823,7 @@ function export_excel(PDO $pdo, string $type): never
                 $partsArr[] = $p['new_part_name'] . ' (Rp ' . number_format((float)$p['part_cost'], 0, ',', '.') . ')';
             }
             $partsStr = !empty($partsArr) ? implode('; ', $partsArr) : '-';
+            $invPhoto = $r['invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
 
             $exportRows[] = [
                 $r['repaired_at'] ? date('d/m/Y H:i', strtotime($r['repaired_at'])) : '-',
@@ -3836,10 +3837,11 @@ function export_excel(PDO $pdo, string $type): never
                 $r['solution_details'] ?: '-',
                 $partsStr,
                 $r['repair_cost'],
+                $invPhoto ? url($invPhoto) : '-',
             ];
         }
 
-        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)'], $exportRows);
+        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
         exit;
     }
 

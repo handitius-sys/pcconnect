@@ -731,6 +731,9 @@ function handle_route_tickets(PDO $pdo): void
                                 <?php else: ?>
                                     <span class="muted">Rp 0</span>
                                 <?php endif; ?>
+                                <?php if (!empty($t['invoice_photo'])): ?>
+                                    <br><a href="<?= e(url($t['invoice_photo'])) ?>" target="_blank" style="font-size:11px; text-decoration:none; color:#0284c7; font-weight:600; display:inline-flex; align-items:center; gap:3px; margin-top:3px;">🧾 Kwitansi</a>
+                                <?php endif; ?>
                             </td>
                             <td style="text-align:center;">
                                 <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Detail Tiket & Penanganan" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
@@ -753,6 +756,358 @@ function handle_route_tickets(PDO $pdo): void
     </section>
     <?php
     render_footer();
+}
+
+/**
+ * Helper: Simpan foto/scan kwitansi atau invoice (dari file upload maupun live camera base64)
+ */
+function save_corrective_invoice_photo(?array $file, ?string $base64): ?string
+{
+    $uploadDir = __DIR__ . '/../../public/uploads/invoices';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0777, true);
+    }
+
+    // 1. Direct file upload (Image / PDF)
+    if (!empty($file['tmp_name']) && is_uploaded_file($file['tmp_name'])) {
+        $origName = (string)($file['name'] ?? '');
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+        if (in_array($ext, $allowedExts, true)) {
+            $filename = 'invoice_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+            $targetPath = $uploadDir . '/' . $filename;
+            if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+                if ($ext !== 'pdf' && function_exists('compress_image_to_limit')) {
+                    @compress_image_to_limit($targetPath, 1500000);
+                }
+                return 'uploads/invoices/' . $filename;
+            }
+        }
+    }
+
+    // 2. Base64 snapshot dari live kamera
+    if (!empty($base64) && is_string($base64)) {
+        $base64 = trim($base64);
+        if (preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/i', $base64, $matches)) {
+            $ext = strtolower($matches[1]);
+            if ($ext === 'jpeg') { $ext = 'jpg'; }
+            $data = base64_decode($matches[2]);
+            if ($data !== false && strlen($data) > 0) {
+                $filename = 'invoice_cam_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                $targetPath = $uploadDir . '/' . $filename;
+                if (file_put_contents($targetPath, $data) !== false) {
+                    if (function_exists('compress_image_to_limit')) {
+                        @compress_image_to_limit($targetPath, 1500000);
+                    }
+                    return 'uploads/invoices/' . $filename;
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Render modal dan JavaScript untuk fitur live kamera & preview dokumen kwitansi/invoice
+ */
+function render_invoice_camera_modal_and_script(): void
+{
+    static $rendered = false;
+    if ($rendered) return;
+    $rendered = true;
+    ?>
+    <!-- Modal Live Kamera untuk Kwitansi / Invoice -->
+    <div id="invoiceCameraModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.85); z-index:99999; align-items:center; justify-content:center; padding:16px;">
+        <div style="background:#fff; border-radius:12px; width:100%; max-width:520px; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); display:flex; flex-direction:column; max-height:92vh;">
+            <div style="background:#0f172a; color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;">
+                    <span>📷</span> Potret Kwitansi / Invoice Fisik
+                </div>
+                <button type="button" onclick="closeInvoiceCameraModal()" style="background:none; border:none; color:#cbd5e1; font-size:22px; cursor:pointer; line-height:1; padding:0 4px;" title="Tutup">&times;</button>
+            </div>
+            
+            <div style="padding:14px; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; min-height:300px; flex:1;">
+                <video id="invoiceCamVideo" autoplay playsinline muted style="width:100%; max-height:55vh; border-radius:6px; object-fit:contain;"></video>
+                <img id="invoiceCamSnapshot" alt="Hasil Foto" style="display:none; width:100%; max-height:55vh; border-radius:6px; object-fit:contain;">
+                <canvas id="invoiceCamCanvas" style="display:none;"></canvas>
+                <div id="invoiceCamMsg" style="position:absolute; bottom:12px; left:16px; right:16px; text-align:center; background:rgba(0,0,0,0.65); color:#f8fafc; font-size:12px; padding:6px 10px; border-radius:20px;">
+                    Posisikan kwitansi / invoice agar teks dan nominal terbaca jelas
+                </div>
+            </div>
+            
+            <div style="padding:12px 16px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div id="invoiceCamLiveControls" style="display:flex; gap:8px; width:100%; justify-content:space-between; align-items:center;">
+                    <button type="button" class="btn secondary" onclick="switchInvoiceCamera()" id="btnSwitchCam" style="font-size:13px; padding:7px 12px; display:inline-flex; align-items:center; gap:5px;">
+                        🔄 Ganti Kamera
+                    </button>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn" onclick="closeInvoiceCameraModal()" style="font-size:13px; padding:7px 14px;">Batal</button>
+                        <button type="button" class="btn primary" onclick="takeInvoiceSnapshot()" style="font-size:13px; padding:7px 18px; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                            📸 Potret Foto
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="invoiceCamSnapControls" style="display:none; gap:8px; width:100%; justify-content:space-between; align-items:center;">
+                    <button type="button" class="btn secondary" onclick="retakeInvoiceSnapshot()" style="font-size:13px; padding:7px 14px;">
+                        🔄 Ulangi Foto
+                    </button>
+                    <button type="button" class="btn primary" onclick="confirmInvoiceSnapshot()" style="font-size:13px; padding:7px 18px; font-weight:600; background:#16a34a; border-color:#16a34a;">
+                        ✔️ Gunakan Foto Ini
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Lightbox Viewer untuk Foto Kwitansi / Invoice -->
+    <div id="invoiceImageViewerModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:999999; align-items:center; justify-content:center; padding:16px;" onclick="closeInvoiceImageViewer()">
+        <div style="position:relative; max-width:92vw; max-height:92vh; text-align:center;" onclick="event.stopPropagation()">
+            <button type="button" onclick="closeInvoiceImageViewer()" style="position:absolute; top:-38px; right:0; background:none; border:none; color:#fff; font-size:30px; cursor:pointer; line-height:1;" title="Tutup">&times;</button>
+            <img id="invoiceViewerImg" src="" alt="Bukti Kwitansi" style="max-width:92vw; max-height:85vh; border-radius:6px; box-shadow:0 10px 30px rgba(0,0,0,0.6); object-fit:contain; background:#fff;">
+            <div style="margin-top:10px;">
+                <a id="invoiceViewerDownload" href="" target="_blank" download class="btn" style="background:#fff; color:#0f172a; font-size:12px; padding:6px 14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                    ⬇️ Buka / Unduh Ukuran Asli
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    var invoiceStream = null;
+    var invoiceCurrentFacing = 'environment';
+    var invoiceCapturedDataUrl = null;
+    var currentInvoiceTargetPrefix = '';
+
+    function openInvoiceCameraModal(prefix) {
+        currentInvoiceTargetPrefix = prefix || '';
+        var modal = document.getElementById('invoiceCameraModal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        resetInvoiceCamState();
+        startInvoiceCameraStream(invoiceCurrentFacing);
+    }
+
+    function closeInvoiceCameraModal() {
+        stopInvoiceCameraStream();
+        var modal = document.getElementById('invoiceCameraModal');
+        if (modal) modal.style.display = 'none';
+        resetInvoiceCamState();
+    }
+
+    function resetInvoiceCamState() {
+        invoiceCapturedDataUrl = null;
+        var video = document.getElementById('invoiceCamVideo');
+        var snap = document.getElementById('invoiceCamSnapshot');
+        var liveCtrls = document.getElementById('invoiceCamLiveControls');
+        var snapCtrls = document.getElementById('invoiceCamSnapControls');
+        var msg = document.getElementById('invoiceCamMsg');
+        
+        if (video) video.style.display = 'block';
+        if (snap) { snap.style.display = 'none'; snap.src = ''; }
+        if (liveCtrls) liveCtrls.style.display = 'flex';
+        if (snapCtrls) snapCtrls.style.display = 'none';
+        if (msg) msg.textContent = 'Posisikan kwitansi / invoice agar teks dan nominal terbaca jelas';
+    }
+
+    async function startInvoiceCameraStream(facing) {
+        stopInvoiceCameraStream();
+        var video = document.getElementById('invoiceCamVideo');
+        var msg = document.getElementById('invoiceCamMsg');
+        
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Fitur akses kamera langsung tidak didukung atau dibatasi pada browser ini. Silakan gunakan tombol "Pilih File / Scan".');
+            closeInvoiceCameraModal();
+            var inputId = currentInvoiceTargetPrefix ? currentInvoiceTargetPrefix + 'FileInput' : 'invoiceFileInput';
+            var fileInput = document.getElementById(inputId);
+            if (fileInput) fileInput.click();
+            return;
+        }
+
+        try {
+            var constraints = {
+                video: {
+                    facingMode: { ideal: facing },
+                    width: { ideal: 1920, min: 640 },
+                    height: { ideal: 1080, min: 480 }
+                },
+                audio: false
+            };
+            var stream = await navigator.mediaDevices.getUserMedia(constraints);
+            invoiceStream = stream;
+            if (video) {
+                video.srcObject = stream;
+                video.play();
+            }
+        } catch (err) {
+            console.warn('Camera stream error, trying fallback:', err);
+            try {
+                var fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                invoiceStream = fallbackStream;
+                if (video) {
+                    video.srcObject = fallbackStream;
+                    video.play();
+                }
+            } catch (e) {
+                alert('Tidak dapat mengakses kamera (' + (e.message || 'Izin ditolak') + '). Pastikan izin akses kamera telah diizinkan.');
+                closeInvoiceCameraModal();
+                var inputId = currentInvoiceTargetPrefix ? currentInvoiceTargetPrefix + 'FileInput' : 'invoiceFileInput';
+                var fileInput = document.getElementById(inputId);
+                if (fileInput) fileInput.click();
+            }
+        }
+    }
+
+    function stopInvoiceCameraStream() {
+        if (invoiceStream) {
+            try {
+                invoiceStream.getTracks().forEach(function(track) { track.stop(); });
+            } catch (e) {}
+            invoiceStream = null;
+        }
+    }
+
+    function switchInvoiceCamera() {
+        invoiceCurrentFacing = (invoiceCurrentFacing === 'environment') ? 'user' : 'environment';
+        startInvoiceCameraStream(invoiceCurrentFacing);
+    }
+
+    function takeInvoiceSnapshot() {
+        var video = document.getElementById('invoiceCamVideo');
+        var canvas = document.getElementById('invoiceCamCanvas');
+        var snap = document.getElementById('invoiceCamSnapshot');
+        var liveCtrls = document.getElementById('invoiceCamLiveControls');
+        var snapCtrls = document.getElementById('invoiceCamSnapControls');
+        var msg = document.getElementById('invoiceCamMsg');
+        
+        if (!video || !canvas) return;
+        
+        var w = video.videoWidth || 1280;
+        var h = video.videoHeight || 720;
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+        
+        invoiceCapturedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        
+        if (snap) {
+            snap.src = invoiceCapturedDataUrl;
+            snap.style.display = 'block';
+        }
+        video.style.display = 'none';
+        if (liveCtrls) liveCtrls.style.display = 'none';
+        if (snapCtrls) snapCtrls.style.display = 'flex';
+        if (msg) msg.textContent = 'Periksa hasil foto. Klik "Gunakan Foto Ini" jika sudah jelas dan terbaca.';
+    }
+
+    function retakeInvoiceSnapshot() {
+        resetInvoiceCamState();
+        var video = document.getElementById('invoiceCamVideo');
+        if (video && invoiceStream) {
+            video.play();
+        } else {
+            startInvoiceCameraStream(invoiceCurrentFacing);
+        }
+    }
+
+    function confirmInvoiceSnapshot() {
+        if (!invoiceCapturedDataUrl) return;
+        
+        var p = currentInvoiceTargetPrefix;
+        var base64Input = document.getElementById(p ? p + 'Base64' : 'invoicePhotoBase64');
+        var fileInput = document.getElementById(p ? p + 'FileInput' : 'invoiceFileInput');
+        var previewContainer = document.getElementById(p ? p + 'PreviewContainer' : 'invoicePreviewContainer');
+        var previewImg = document.getElementById(p ? p + 'PreviewImg' : 'invoicePreviewImg');
+        var pdfBadge = document.getElementById(p ? p + 'PdfBadge' : 'invoicePdfBadge');
+        var fileInfo = document.getElementById(p ? p + 'FileInfo' : 'invoiceFileInfo');
+        var fileSub = document.getElementById(p ? p + 'FileSub' : 'invoiceFileSub');
+        
+        if (base64Input) base64Input.value = invoiceCapturedDataUrl;
+        if (fileInput) fileInput.value = '';
+        
+        if (previewImg) {
+            previewImg.src = invoiceCapturedDataUrl;
+            previewImg.style.display = 'block';
+        }
+        if (pdfBadge) pdfBadge.style.display = 'none';
+        if (fileInfo) fileInfo.textContent = 'Foto Kwitansi (Live Kamera)';
+        if (fileSub) fileSub.textContent = 'Format: JPEG (Siap disimpan)';
+        if (previewContainer) previewContainer.style.display = 'flex';
+        
+        closeInvoiceCameraModal();
+    }
+
+    function handleInvoiceFileSelected(input, prefix) {
+        if (!input || !input.files || !input.files[0]) return;
+        var file = input.files[0];
+        var p = prefix || '';
+        
+        var base64Input = document.getElementById(p ? p + 'Base64' : 'invoicePhotoBase64');
+        var previewContainer = document.getElementById(p ? p + 'PreviewContainer' : 'invoicePreviewContainer');
+        var previewImg = document.getElementById(p ? p + 'PreviewImg' : 'invoicePreviewImg');
+        var pdfBadge = document.getElementById(p ? p + 'PdfBadge' : 'invoicePdfBadge');
+        var pdfName = document.getElementById(p ? p + 'PdfName' : 'invoicePdfName');
+        var fileInfo = document.getElementById(p ? p + 'FileInfo' : 'invoiceFileInfo');
+        var fileSub = document.getElementById(p ? p + 'FileSub' : 'invoiceFileSub');
+        
+        if (base64Input) base64Input.value = '';
+        
+        var isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        var sizeKb = (file.size / 1024).toFixed(1);
+        
+        if (isPdf) {
+            if (previewImg) previewImg.style.display = 'none';
+            if (pdfBadge) pdfBadge.style.display = 'flex';
+            if (pdfName) pdfName.textContent = file.name;
+        } else {
+            if (pdfBadge) pdfBadge.style.display = 'none';
+            if (previewImg) {
+                previewImg.src = URL.createObjectURL(file);
+                previewImg.style.display = 'block';
+            }
+        }
+        
+        if (fileInfo) fileInfo.textContent = file.name;
+        if (fileSub) fileSub.textContent = (isPdf ? 'Dokumen PDF' : 'Gambar/Scan') + ' (' + sizeKb + ' KB)';
+        if (previewContainer) previewContainer.style.display = 'flex';
+    }
+
+    function clearInvoicePhoto(prefix) {
+        var p = prefix || '';
+        var base64Input = document.getElementById(p ? p + 'Base64' : 'invoicePhotoBase64');
+        var fileInput = document.getElementById(p ? p + 'FileInput' : 'invoiceFileInput');
+        var previewContainer = document.getElementById(p ? p + 'PreviewContainer' : 'invoicePreviewContainer');
+        var previewImg = document.getElementById(p ? p + 'PreviewImg' : 'invoicePreviewImg');
+        var pdfBadge = document.getElementById(p ? p + 'PdfBadge' : 'invoicePdfBadge');
+        
+        if (base64Input) base64Input.value = '';
+        if (fileInput) fileInput.value = '';
+        if (previewImg) { previewImg.src = ''; previewImg.style.display = 'none'; }
+        if (pdfBadge) pdfBadge.style.display = 'none';
+        if (previewContainer) previewContainer.style.display = 'none';
+    }
+
+    function openInvoiceImageViewer(src) {
+        var modal = document.getElementById('invoiceImageViewerModal');
+        var img = document.getElementById('invoiceViewerImg');
+        var dl = document.getElementById('invoiceViewerDownload');
+        if (!modal || !img) {
+            window.open(src, '_blank');
+            return;
+        }
+        img.src = src;
+        if (dl) dl.href = src;
+        modal.style.display = 'flex';
+    }
+
+    function closeInvoiceImageViewer() {
+        var modal = document.getElementById('invoiceImageViewerModal');
+        if (modal) modal.style.display = 'none';
+    }
+    </script>
+    <?php
 }
 
 /**
@@ -850,6 +1205,9 @@ function handle_route_ticket_form(PDO $pdo): void
             }
         }
 
+        // Upload invoice / kwitansi photo (via file or live camera)
+        $invoicePhoto = save_corrective_invoice_photo($_FILES['invoice_photo'] ?? null, $_POST['invoice_photo_base64'] ?? null);
+
         $handledByType = trim((string)($_POST['handled_by_type'] ?? 'internal'));
         $handledByUserId = (int)($_POST['handled_by_user_id'] ?? 0) ?: null;
         $handledByWorkshopId = (int)($_POST['handled_by_workshop_id'] ?? 0) ?: null;
@@ -859,14 +1217,14 @@ function handle_route_ticket_form(PDO $pdo): void
         $stmt = $pdo->prepare("INSERT INTO corrective_tickets (
             ticket_code, asset_category, asset_item_id, maintenance_asset_id, pc_id, company_id, 
             location_label, vehicle_odometer_km, reporter_name, reporter_nik, reporter_contact, 
-            issue_category, priority, subject, description, photo_before, status, assigned_technician_name,
+            issue_category, priority, subject, description, photo_before, invoice_photo, status, assigned_technician_name,
             handled_by_type, handled_by_user_id, handled_by_workshop_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)");
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)");
 
         $stmt->execute([
             $code, $assetCat, $assetItemId, $maintAssetId, $pcId, $companyId,
             $location, $odometer, $reporterName, $reporterNik, $reporterContact,
-            $issueCat, $priority, $subject, $desc, $photoBefore,
+            $issueCat, $priority, $subject, $desc, $photoBefore, $invoicePhoto,
             ($user['role'] === 'technician' ? $user['name'] : null),
             $handledByType, $handledByUserId, $handledByWorkshopId
         ]);
@@ -883,19 +1241,19 @@ function handle_route_ticket_form(PDO $pdo): void
             }
         }
 
-        // Save repair cost, solution details, & spareparts if provided
+        // Save repair cost, solution details, invoice photo, & spareparts if provided
         $repairCost = (float)($_POST['repair_cost'] ?? 0);
         $solutionDetails = trim((string)($_POST['solution_details'] ?? ''));
         $partNewName = trim((string)($_POST['part_new_name'] ?? ''));
         $partNewSerial = trim((string)($_POST['part_new_serial'] ?? ''));
         $partCost = (float)($_POST['part_cost'] ?? 0);
 
-        if ($repairCost > 0 || $solutionDetails !== '' || $partNewName !== '') {
+        if ($repairCost > 0 || $solutionDetails !== '' || $partNewName !== '' || $invoicePhoto !== null) {
             $repStmt = $pdo->prepare("INSERT INTO corrective_repairs (
-                ticket_id, technician_name, action_type, solution_details, repair_cost
-            ) VALUES (?, ?, 'corrective', ?, ?)");
+                ticket_id, technician_name, action_type, solution_details, repair_cost, invoice_photo
+            ) VALUES (?, ?, 'corrective', ?, ?, ?)");
             $repStmt->execute([
-                $ticketId, $user['name'], $solutionDetails ?: 'Pekerjaan perbaikan saat tiket dibuat.', $repairCost
+                $ticketId, $user['name'], $solutionDetails ?: 'Pencatatan nota/kwitansi perbaikan saat tiket dibuat.', $repairCost, $invoicePhoto
             ]);
             $repairId = (int)$pdo->lastInsertId();
 
@@ -1042,6 +1400,40 @@ function handle_route_ticket_form(PDO $pdo): void
                 <label>Catatan Kerja Lainnya
                     <textarea name="solution_details" style="min-height:70px;" placeholder="Catatan perbaikan tambahan, tindakan penanganan teknisi, atau instruksi khusus..."></textarea>
                 </label>
+
+                <div style="margin-top:14px; padding:12px 14px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:6px;">
+                    <label style="font-weight:600; display:block; margin-bottom:4px; color:#1e293b; font-size:13px;">
+                        🧾 Foto / Scan Kwitansi / Invoice
+                    </label>
+                    <p class="muted" style="font-size:12px; margin-top:0; margin-bottom:10px;">
+                        Tambahkan file image/scan bukti kwitansi / invoice (JPG, PNG, PDF) atau gunakan live kamera untuk mengambil foto secara langsung.
+                    </p>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                        <label class="btn" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; padding:7px 13px; font-size:13px; background:#fff; border:1px solid #cbd5e1; border-radius:6px; font-weight:500;">
+                            📁 Pilih File Image / Scan PDF
+                            <input type="file" id="invoiceFileInput" name="invoice_photo" accept="image/*,.pdf,application/pdf" style="display:none;" onchange="handleInvoiceFileSelected(this, '')">
+                        </label>
+
+                        <button type="button" class="btn primary" onclick="openInvoiceCameraModal('')" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; border-radius:6px;">
+                            📷 Ambil Foto (Live Kamera)
+                        </button>
+                    </div>
+
+                    <input type="hidden" id="invoicePhotoBase64" name="invoice_photo_base64" value="">
+
+                    <div id="invoicePreviewContainer" style="display:none; margin-top:10px; align-items:center; gap:12px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px;">
+                        <img id="invoicePreviewImg" src="" alt="Preview Kwitansi" style="max-height:80px; max-width:110px; border-radius:4px; object-fit:cover; border:1px solid #cbd5e1; display:none;">
+                        <div id="invoicePdfBadge" style="display:none; align-items:center; gap:6px; background:#fee2e2; color:#b91c1c; padding:6px 10px; border-radius:4px; font-weight:600; font-size:12px;">
+                            📄 <span id="invoicePdfName">Dokumen PDF</span>
+                        </div>
+                        <div style="flex:1;">
+                            <strong id="invoiceFileInfo" style="font-size:13px; color:#334155; display:block;">File terpilih</strong>
+                            <span id="invoiceFileSub" class="muted" style="font-size:11px;">Siap disimpan</span>
+                        </div>
+                        <button type="button" class="btn danger" onclick="clearInvoicePhoto('')" style="padding:4px 8px; font-size:11px;">✕ Hapus</button>
+                    </div>
+                </div>
             </div>
 
             <h2>4. Informasi Pelapor</h2>
@@ -1295,6 +1687,7 @@ function handle_route_ticket_form(PDO $pdo): void
     }
     </script>
     <?php
+    render_invoice_camera_modal_and_script();
     render_footer();
 }
 
@@ -1391,10 +1784,22 @@ function handle_route_ticket_detail(PDO $pdo): void
                 <p>Subjek: <?= e($ticket['subject']) ?></p>
                 <p>Deskripsi Masalah:<br><?= nl2br(e($ticket['description'] ?: '-')) ?></p>
                 <?php if ($ticket['photo_before']): ?>
-                    <p>Foto Kondisi Awal:</p>
-                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank">
+                    <p style="margin-bottom:4px;">Foto Kondisi Awal:</p>
+                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;">
                         <img src="<?= e($ticket['photo_before']) ?>" style="max-width:240px;max-height:160px;border-radius:6px;border:1px solid #cbd5e1;display:block;">
                     </a>
+                <?php endif; ?>
+                <?php if (!empty($ticket['invoice_photo'])): ?>
+                    <p style="margin-top:12px; margin-bottom:4px;"><strong>🧾 Foto / Scan Kwitansi / Invoice:</strong></p>
+                    <?php if (str_ends_with(strtolower($ticket['invoice_photo']), '.pdf')): ?>
+                        <a href="<?= e(url($ticket['invoice_photo'])) ?>" target="_blank" class="btn secondary" style="display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 12px; text-decoration:none;">
+                            📄 Buka Dokumen PDF Kwitansi
+                        </a>
+                    <?php else: ?>
+                        <a href="<?= e(url($ticket['invoice_photo'])) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;">
+                            <img src="<?= e(url($ticket['invoice_photo'])) ?>" alt="Kwitansi / Invoice" style="max-width:240px;max-height:160px;border-radius:6px;border:1px solid #cbd5e1;display:block;">
+                        </a>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -1447,6 +1852,39 @@ function handle_route_ticket_detail(PDO $pdo): void
                     <label>Biaya Jasa Servis (Rp)
                         <input type="number" name="repair_cost" value="0" placeholder="0">
                     </label>
+                </div>
+
+                <div style="margin-top:10px; margin-bottom:14px; padding:12px 14px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:6px;">
+                    <label style="font-weight:600; display:block; margin-bottom:4px; color:#1e293b; font-size:13px;">
+                        🧾 Foto / Scan Kwitansi / Invoice Vendor
+                    </label>
+                    <p class="muted" style="font-size:12px; margin-top:0; margin-bottom:10px;">
+                        Unggah scan file kwitansi / invoice rekanan (JPG, PNG, PDF) atau gunakan live kamera untuk memotret fisik nota.
+                    </p>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                        <label class="btn" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:13px; background:#fff; border:1px solid #cbd5e1; border-radius:6px;">
+                            📁 Pilih File / Scan PDF
+                            <input type="file" id="act_invoiceFileInput" name="invoice_photo" accept="image/*,.pdf,application/pdf" style="display:none;" onchange="handleInvoiceFileSelected(this, 'act_invoice')">
+                        </label>
+                        <button type="button" class="btn primary" onclick="openInvoiceCameraModal('act_invoice')" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:13px; border-radius:6px;">
+                            📷 Buka Live Kamera
+                        </button>
+                    </div>
+
+                    <input type="hidden" id="act_invoiceBase64" name="invoice_photo_base64" value="">
+
+                    <div id="act_invoicePreviewContainer" style="display:none; margin-top:10px; align-items:center; gap:12px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px;">
+                        <img id="act_invoicePreviewImg" src="" alt="Preview Kwitansi" style="max-height:80px; max-width:110px; border-radius:4px; object-fit:cover; border:1px solid #cbd5e1; display:none;">
+                        <div id="act_invoicePdfBadge" style="display:none; align-items:center; gap:6px; background:#fee2e2; color:#b91c1c; padding:6px 10px; border-radius:4px; font-weight:600; font-size:12px;">
+                            📄 <span id="act_invoicePdfName">Dokumen PDF</span>
+                        </div>
+                        <div style="flex:1;">
+                            <strong id="act_invoiceFileInfo" style="font-size:13px; color:#334155; display:block;">File terpilih</strong>
+                            <span id="act_invoiceFileSub" class="muted" style="font-size:11px;">Siap disimpan</span>
+                        </div>
+                        <button type="button" class="btn danger" onclick="clearInvoicePhoto('act_invoice')" style="padding:4px 8px; font-size:11px;">✕ Hapus</button>
+                    </div>
                 </div>
 
                 <h3>Penggantian Sparepart (Jika Ada Part Baru Dipasang)</h3>
@@ -1522,9 +1960,25 @@ function handle_route_ticket_detail(PDO $pdo): void
 
                     <?php if ($r['photo_after']): ?>
                         <div style="margin-top:8px;">
-                            <a href="<?= e($r['photo_after']) ?>" target="_blank">
-                                <img src="<?= e($r['photo_after']) ?>" style="max-height:100px;border-radius:4px;border:1px solid #cbd5e1;">
+                            <span class="muted" style="font-size:12px; display:block;">Foto Selesai Pengerjaan:</span>
+                            <a href="<?= e(url($r['photo_after'])) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;">
+                                <img src="<?= e(url($r['photo_after'])) ?>" style="max-height:100px;border-radius:4px;border:1px solid #cbd5e1;">
                             </a>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($r['invoice_photo'])): ?>
+                        <div style="margin-top:10px;">
+                            <span class="muted" style="font-size:12px; display:block; font-weight:600; color:#334155;">🧾 Bukti Foto / Scan Kwitansi / Invoice:</span>
+                            <?php if (str_ends_with(strtolower($r['invoice_photo']), '.pdf')): ?>
+                                <a href="<?= e(url($r['invoice_photo'])) ?>" target="_blank" class="btn secondary" style="font-size:11px; padding:3px 8px; margin-top:4px; display:inline-flex; align-items:center; gap:4px; text-decoration:none;">
+                                    📄 Buka Dokumen PDF
+                                </a>
+                            <?php else: ?>
+                                <a href="<?= e(url($r['invoice_photo'])) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;">
+                                    <img src="<?= e(url($r['invoice_photo'])) ?>" alt="Kwitansi" style="max-height:100px; border-radius:4px; border:1px solid #cbd5e1; margin-top:4px; display:block; cursor:pointer;">
+                                </a>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -1532,6 +1986,7 @@ function handle_route_ticket_detail(PDO $pdo): void
         <?php endif; ?>
     </section>
     <?php
+    render_invoice_camera_modal_and_script();
     render_footer();
 }
 
@@ -1580,16 +2035,23 @@ function handle_route_ticket_action(PDO $pdo): void
         }
     }
 
-    if ($solution !== '') {
+    // Upload invoice / kwitansi photo (via file or live camera)
+    $invoicePhoto = save_corrective_invoice_photo($_FILES['invoice_photo'] ?? null, $_POST['invoice_photo_base64'] ?? null);
+
+    if ($solution !== '' || $invoicePhoto !== null || $repairCost > 0) {
         $repStmt = $pdo->prepare("INSERT INTO corrective_repairs (
             ticket_id, technician_name, action_type, root_cause_analysis, solution_details, 
-            vendor_name, vendor_invoice_no, repair_cost, photo_after
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            vendor_name, vendor_invoice_no, repair_cost, photo_after, invoice_photo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $repStmt->execute([
-            $ticketId, $techName, $actionType, $rootCause, $solution,
-            $vendorName ?: null, $vendorInv ?: null, $repairCost, $photoAfter
+            $ticketId, $techName, $actionType, $rootCause, $solution ?: 'Tindakan perbaikan dan lampiran invoice/kwitansi.',
+            $vendorName ?: null, $vendorInv ?: null, $repairCost, $photoAfter, $invoicePhoto
         ]);
         $repairId = (int)$pdo->lastInsertId();
+
+        if ($invoicePhoto) {
+            $pdo->prepare("UPDATE corrective_tickets SET invoice_photo = COALESCE(invoice_photo, ?) WHERE id = ?")->execute([$invoicePhoto, $ticketId]);
+        }
 
         // Simpan part replacements
         $parts = $_POST['parts'] ?? [];
@@ -1629,7 +2091,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $user = require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance']);
     ensure_corrective_maintenance_schema($pdo);
 
-    $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label,
+    $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
                    ma.maintenance_asset_code, ma.name AS maintenance_asset_name
             FROM corrective_repairs cr
             JOIN corrective_tickets t ON t.id = cr.ticket_id
@@ -1660,17 +2122,20 @@ function handle_route_corrective_repairs(PDO $pdo): void
                     <th>Tindakan & Solusi</th>
                     <th>Sparepart Diganti</th>
                     <th>Biaya Jasa Servis</th>
+                    <th style="text-align:center;">Foto Kwitansi / Invoice</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (!$repairs): ?>
-                    <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
+                    <tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
                 <?php else: ?>
                     <?php foreach ($repairs as $r): ?>
                         <?php
                         $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
                         $pStmt->execute([(int)$r['id']]);
                         $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                        $invPhoto = $r['invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
+                        $isPdf = $invPhoto && str_ends_with(strtolower($invPhoto), '.pdf');
                         ?>
                         <tr>
                             <td>
@@ -1702,6 +2167,19 @@ function handle_route_corrective_repairs(PDO $pdo): void
                             <td>
                                 Rp <?= number_format((float)$r['repair_cost'], 0, ',', '.') ?>
                             </td>
+                            <td style="text-align:center;">
+                                <?php if (!$invPhoto): ?>
+                                    <span class="muted">-</span>
+                                <?php elseif ($isPdf): ?>
+                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" class="btn secondary" style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px; text-decoration:none;" title="Buka Dokumen PDF">
+                                        📄 Buka PDF
+                                    </a>
+                                <?php else: ?>
+                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;" title="Klik untuk memperbesar foto kwitansi" style="display:inline-block; vertical-align:middle;">
+                                        <img src="<?= e(url($invPhoto)) ?>" alt="Kwitansi" style="width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;">
+                                    </a>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -1709,6 +2187,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
         </table>
     </section>
     <?php
+    render_invoice_camera_modal_and_script();
     render_footer();
 }
 
