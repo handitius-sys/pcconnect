@@ -500,8 +500,27 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             $status = 'open';
         }
 
-        if ($subject === '' || $reporterName === '') {
-            flash('Nama pelapor dan subjek kendala wajib diisi.', 'err');
+        if ($subject === '') {
+            $unitCode = (string)($unit['item_asset_code'] ?: ($unit['asset_code'] ?? 'Unit'));
+            $unitName = (string)($unit['name'] ?: ($unit['asset_name'] ?? ''));
+            $jobDesk = (string)($unit['job_desk_name'] ?? '');
+            $subject = 'Perbaikan ' . ($jobDesk !== '' ? "[$jobDesk] " : '') . $unitCode . ($unitName !== '' ? ' - ' . $unitName : '');
+            if (mb_strlen($subject) > 190) {
+                $subject = mb_substr($subject, 0, 187) . '...';
+            }
+        }
+
+        if ($desc === '') {
+            $solDetails = trim((string)($_POST['solution_details'] ?? ''));
+            $desc = $solDetails !== '' ? $solDetails : 'Perbaikan unit via Mobile Corrective Maintenance.';
+        }
+
+        if ($reporterName === '') {
+            $reporterName = trim((string)($unit['custodian_name'] ?? '')) ?: ($user['name'] ?? 'Teknisi');
+        }
+
+        if ($reporterName === '') {
+            flash('Nama pelapor wajib diisi.', 'err');
             $redirectParams = [];
             if ($maintAssetId) $redirectParams['maintenance_asset_id'] = $maintAssetId;
             elseif ($assetItemId) $redirectParams['asset_item_id'] = $assetItemId;
@@ -638,7 +657,6 @@ function handle_route_mobile_service_direct(PDO $pdo): void
 
     $mechanics = $pdo->query("SELECT id, name FROM users WHERE role='corrective_maintenance' AND is_active=1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
     $workshops = $pdo->query("SELECT id, workshop_name FROM corrective_workshops ORDER BY workshop_name")->fetchAll(PDO::FETCH_ASSOC);
-    $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
 
     $groupCode = strtoupper((string)($unit['group_code'] ?? ''));
     $isVehicle = ($groupCode === 'VH' || stripos((string)($unit['group_name'] ?? ''), 'VEHICLE') !== false);
@@ -693,7 +711,9 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         <input type="hidden" name="maintenance_asset_id" value="<?= (int)($unit['maintenance_asset_id'] ?? $preMntId) ?>">
         <input type="hidden" name="asset_item_id" value="<?= (int)($unit['asset_item_id'] ?? $preAssetId) ?>">
 
-        <!-- 2. Foto Sebelum & Sesudah Perbaikan -->
+        <input type="hidden" name="location_label" value="<?= e($unit['location_label'] ?? '') ?>">
+
+        <!-- Foto Sebelum & Sesudah Perbaikan -->
         <div class="panel">
             <h2 style="font-size:16px;color:#0369a1;margin-top:0;">📸 Foto Sebelum & Sesudah Perbaikan</h2>
             <p class="muted" style="font-size:12px;margin:0 0 12px;">Ambil foto kerusakan awal dan foto hasil setelah perbaikan selesai langsung dengan kamera HP.</p>
@@ -721,56 +741,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             </div>
         </div>
 
-        <!-- 3. Rincian Masalah & Gejala Kerusakan -->
-        <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">🚨 Rincian Kendala / Kerusakan</h2>
-            
-            <label>Judul / Subjek Kendala *
-                <input name="subject" required placeholder="Contoh: Layar mati / Ban bocor / AC panas">
-            </label>
-
-            <label>Deskripsi Gejala Kerusakan
-                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
-            </label>
-
-            <div class="grid two">
-                <label>Kategori Masalah
-                    <select name="issue_category" id="ticketIssueCat">
-                        <option value="hardware">Kerusakan Hardware / Komponen</option>
-                        <option value="software">Masalah Software / OS / Aplikasi</option>
-                        <option value="network">Jaringan / Koneksi Internet</option>
-                        <option value="printer">Printer / Scanner Error</option>
-                        <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
-                        <option value="electrical">Kelistrikan / Aki / Lampu</option>
-                        <option value="hvac">AC / Pendingin Ruangan</option>
-                        <option value="plumbing">Pipa / Sanitasi Air</option>
-                        <option value="general">Lain-lain / Kerusakan Fisik</option>
-                    </select>
-                </label>
-
-                <label>Tingkat Prioritas *
-                    <select name="priority" required>
-                        <option value="low">Low (Bisa ditunda)</option>
-                        <option value="medium" selected>Medium (Standard)</option>
-                        <option value="high">High (Mendesak / Operasional Terganggu)</option>
-                        <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
-                    </select>
-                </label>
-            </div>
-
-            <div id="locationFieldWrapper" style="margin-top:6px;">
-                <label>Lokasi / Ruangan
-                    <select name="location_label" id="locInput">
-                        <option value="">-- Pilih Lokasi --</option>
-                        <?php foreach ($locationsList as $loc): ?>
-                            <option value="<?= e($loc['location_name']) ?>" <?= (($unit['location_label'] ?? '') === $loc['location_name']) ? 'selected' : '' ?>><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-            </div>
-        </div>
-
-        <!-- 4. Penanganan Oleh -->
+        <!-- Penanganan Oleh -->
         <div class="panel">
             <h2 style="font-size:16px;color:#0369a1;margin-top:0;">👥 Penanganan Oleh</h2>
             
@@ -937,15 +908,12 @@ function handle_route_mobile_service_direct(PDO $pdo): void
     function toggleHandledBy() {
         var rad = document.querySelector('input[name="handled_by_type"]:checked');
         var type = rad ? rad.value : 'internal';
-        var locWrap = document.getElementById('locationFieldWrapper');
         if (type === 'internal') {
             document.getElementById('handledInternalWrap').style.display = 'block';
             document.getElementById('handledWorkshopWrap').style.display = 'none';
-            if (locWrap) locWrap.style.display = 'block';
         } else {
             document.getElementById('handledInternalWrap').style.display = 'none';
             document.getElementById('handledWorkshopWrap').style.display = 'block';
-            if (locWrap) locWrap.style.display = 'none';
         }
     }
     toggleHandledBy();
