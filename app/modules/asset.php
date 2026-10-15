@@ -230,7 +230,6 @@ function asset_items_table(PDO $pdo, array $rows): string
         if (has_regulation('asset_items', 'edit')) {
             $itemActions .= '<a class="btn-icon edit" href="' . route_url('asset_item_form', ['id' => $row['id']]) . '" title="Edit Unit Aset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a> ';
         }
-        $itemActions .= '<a class="btn-icon repair" href="' . route_url('asset_repair_form', ['asset_item_id' => $row['id']]) . '" title="Input Repair"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></a> ';
         if (has_regulation('asset_items', 'delete')) {
             $itemActions .= '<form method="post" action="' . route_url('asset_items') . '" style="display:inline-block;margin:0;" onsubmit="return confirm(\'Hapus unit aset ' . addslashes((string)$row['asset_code']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_item"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button type="submit" class="btn-icon delete" title="Hapus Unit Aset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>';
         }
@@ -423,7 +422,7 @@ function asset_master_item_form_html(PDO $pdo, array $i, bool $editing): string
     $allTypesData = $allTypesStmt ? $allTypesStmt->fetchAll(PDO::FETCH_ASSOC) : [];
     $jsonAllTypes = json_encode($allTypesData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
 
-    $searchPlaceholder = 'Ketik nama atau model barang untuk mencari...';
+    $searchPlaceholder = '🔍 Cari atau pilih dari daftar master barang...';
 
     $sourcePcId = trim((string)($i['source_pc_id'] ?? ''));
     $linkedPcInfo = null;
@@ -560,7 +559,7 @@ function asset_master_item_form_html(PDO $pdo, array $i, bool $editing): string
 
     $maintHeaderBtn = '';
 
-    return '<section class="panel">' . $bundleBanner . '<div class="split" style="align-items:center;margin-bottom:16px;"><div><h1 style="margin:0;">' . ($editing ? 'Edit' : 'Tambah') . ' Unit Aset' . ($parentAsset && !$editing ? ' (Anggota Bundle)' : '') . '</h1>' . $headerBadge . '</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $maintHeaderBtn . '<button type="button" class="btn warning" id="btnImportPc" onclick="openImportPcModal()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-weight:600;" title="Pilih Master Barang terlebih dahulu sebelum Import PC"><span style="font-size:16px;">📥</span> Import dari Data PC</button></div></div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">' . ($parentId > 0 ? '<input type="hidden" name="parent_asset_item_id" value="' . e($parentId) . '"><input type="hidden" name="bundle_role" value="Unit Anggota">' : '') . '<input type="hidden" name="source_pc_id" id="sourcePcId" value="' . e($effectivePcId) . '"><input type="hidden" name="linked_pc_id" id="linkedPcId" value="' . e($effectivePcId) . '"><div id="upgradeHiddenInputs"></div><h2>1. Klasifikasi Aset & Master Barang</h2><div class="grid three"><label>Komoditas (Grup Aset) *<select id="assetGroup" name="asset_group_id" onchange="onGroupSelectChanged()" required>' . asset_group_options($pdo, (int)$i['asset_group_id'], true, '- Pilih Komoditas (Grup Aset) -') . '</select></label><label>Kategori (Tipe Aset) *<select id="assetType" name="asset_type_id" onchange="reloadAssetForm()" required>' . $types . '</select></label><label>ID Aset (Kode Unit)<input id="assetCode" name="asset_code" value="' . e($code) . '" readonly></label></div><div class="grid two"><div style="position:relative;"><label for="masterItemSearch" style="display:flex;justify-content:space-between;align-items:center;"><span>Pilih / Cari Master Barang <span style="color:#ef4444;" title="Wajib dipilih">*</span></span><a href="' . route_url('asset_master_items') . '" target="_blank" style="font-size:12px;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:3px;" title="Buka form Master Barang di tab baru">➕ Tambah Master Barang Baru ↗</a></label><div style="display:flex;gap:6px;align-items:stretch;"><div style="position:relative;flex:1;"><input type="text" id="masterItemSearch" placeholder="' . e($searchPlaceholder) . '" autocomplete="off" value="' . e($masterItemText) . '" style="width:100%;box-sizing:border-box;padding-right:58px;background:#fff;cursor:text;" onfocus="onMasterItemInput(this.value)" onclick="onMasterItemInput(this.value)" oninput="onMasterItemInput(this.value)" onkeydown="onMasterItemKeyDown(event)"><button type="button" id="masterItemClearBtn" style="display:' . (!empty($i['master_item_id']) ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;padding:4px 8px;z-index:2;" onclick="clearMasterItem()" title="Hapus pilihan">✕</button><span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#94a3b8;font-size:12px;">▾</span><input type="hidden" id="masterItemIdInput" name="master_item_id" value="' . (int)($i['master_item_id'] ?? 0) . '"><div id="masterItemResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div></div><a href="' . route_url('asset_master_items') . '" target="_blank" class="btn" style="padding:0 14px;background:#0284c7;color:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;text-decoration:none;white-space:nowrap;" title="Tambah Master Barang Baru (Buka di Tab Baru)">➕</a></div><small id="masterItemHint" style="display:block;color:#64748b;margin-top:4px">' . (!empty($i['master_item_id']) ? '<span style="color:#166534;font-weight:600;">✓ Master Barang Terpilih (Siap Import dari PC)</span>' : 'Pilih Master Barang terlebih dahulu sebelum Import dari Data PC. Ketik nama untuk mencari.') . '</small></div><label>Mode Aset<select name="asset_mode" id="assetModeSelect">' . $modeOptions . '</select><small id="assetModeHint" style="display:block;color:#64748b;margin-top:4px">' . e($modeHint) . '</small></label></div><h2>2. Identifikasi & Serial Number Unit</h2><div id="identifierFields" class="grid three">' . $fields . '</div><h2>3. Spesifikasi Teknis Unit</h2><div id="specificationFields" class="grid three">' . $specFields . '</div>' . $logHtml . '<h2>4. Detail Barang & Merek</h2><div class="grid three"><label>Brand / Merk<select id="assetBrandId" name="brand_id">' . $brandOptions . '</select></label><label>Nama Brand (Teks)<input id="assetBrandInput" name="brand" value="' . e($i['brand']) . '" placeholder="Auto terisi dari master merk"></label><label>Model / Varian<input id="assetModelInput" name="model" value="' . e($i['model']) . '" placeholder="Contoh: ThinkPad T480 / OptiPlex 3080"></label></div><div class="grid two"><label>Nama Unit Aset (Deskriptif)<input id="assetNameInput" name="asset_name" value="' . e($i['asset_name']) . '" placeholder="Contoh: Laptop ThinkPad T480 IT"></label><label>Keterangan Tambahan<textarea name="notes" style="min-height:42px">' . e($i['notes']) . '</textarea></label></div><h2>5. Lokasi & Tanggung Jawab (Custodian)</h2><div class="grid three"><label>Lokasi Unit Aset *<select name="location_id" id="assetLocationId" required>' . $locationOptions . '</select></label><label>Detail Ruangan / Gedung<input name="location_label" id="assetLocationLabel" value="' . e($i['location_label']) . '" placeholder="Gedung / Lantai / Ruangan"></label><label>Company<select name="company_id">' . company_options($pdo, (int)$i['company_id']) . '</select></label></div><div class="grid two"><label>NIK Pengguna / Custodian<input id="assetCustodianNik" name="custodian_nik" value="' . e($i['custodian_nik'] ?? '') . '" placeholder="NIK karyawan"></label><label>Nama Pengguna / Custodian<input id="assetCustodianName" name="custodian_name" value="' . e($i['custodian_name'] ?? '') . '" placeholder="Nama pemakai / PIC aset"></label></div>' . (function_exists('employee_portal_name_picker_html') ? employee_portal_name_picker_html('assetCustodian', 'assetCustodianName', 'assetCustodianNik') : '') . '<h2>6. Pembelian / Garansi / Status</h2><div class="grid four"><label>Tanggal Perolehan / Beli<input type="date" name="installed_at" value="' . e($i['installed_at']) . '"></label><label>Harga Perolehan (Rp)<input type="number" name="purchase_value" value="' . e($i['purchase_value']) . '"></label><label>Garansi Berakhir<input type="date" name="warranty_until" value="' . e($i['warranty_until']) . '"></label><label>Status Unit *<select name="asset_status_id" required>' . asset_status_options($pdo, (int)$i['asset_status_id']) . '</select></label></div><div class="actions">' . $cancelBtn . '</div></form>' . $pcModalHtml . '</section><script>
+    return '<section class="panel">' . $bundleBanner . '<div class="split" style="align-items:center;margin-bottom:16px;"><div><h1 style="margin:0;">' . ($editing ? 'Edit' : 'Tambah') . ' Unit Aset' . ($parentAsset && !$editing ? ' (Anggota Bundle)' : '') . '</h1>' . $headerBadge . '</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $maintHeaderBtn . '<button type="button" class="btn warning" id="btnImportPc" onclick="openImportPcModal()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-weight:600;" title="Pilih Master Barang terlebih dahulu sebelum Import PC"><span style="font-size:16px;">📥</span> Import dari Data PC</button></div></div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '">' . ($parentId > 0 ? '<input type="hidden" name="parent_asset_item_id" value="' . e($parentId) . '"><input type="hidden" name="bundle_role" value="Unit Anggota">' : '') . '<input type="hidden" name="source_pc_id" id="sourcePcId" value="' . e($effectivePcId) . '"><input type="hidden" name="linked_pc_id" id="linkedPcId" value="' . e($effectivePcId) . '"><div id="upgradeHiddenInputs"></div><h2>1. Klasifikasi Aset & Master Barang</h2><div class="grid three"><label>Komoditas (Grup Aset) *<select id="assetGroup" name="asset_group_id" onchange="onGroupSelectChanged()" required>' . asset_group_options($pdo, (int)$i['asset_group_id'], true, '- Pilih Komoditas (Grup Aset) -') . '</select></label><label>Kategori (Tipe Aset) *<select id="assetType" name="asset_type_id" onchange="reloadAssetForm()" required>' . $types . '</select></label><label>ID Aset (Kode Unit)<input id="assetCode" name="asset_code" value="' . e($code) . '" readonly></label></div><div class="grid two"><div style="position:relative;"><label for="masterItemSearch" style="display:flex;justify-content:space-between;align-items:center;"><span>Pilih / Cari Master Barang <span style="color:#ef4444;" title="Wajib dipilih">*</span></span><a href="' . route_url('asset_master_items') . '" target="_blank" style="font-size:12px;color:#0284c7;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:3px;" title="Buka form Master Barang di tab baru">➕ Tambah Master Barang Baru ↗</a></label><div style="display:flex;gap:6px;align-items:stretch;"><div style="position:relative;flex:1;"><input type="text" id="masterItemSearch" placeholder="' . e($searchPlaceholder) . '" autocomplete="off" value="' . e($masterItemText) . '" style="width:100%;box-sizing:border-box;padding-right:62px;background:#fff;cursor:text;" onfocus="showMasterItemList()" onclick="showMasterItemList()" oninput="onMasterItemInput(this.value)" onkeydown="onMasterItemKeyDown(event)"><button type="button" id="masterItemClearBtn" style="display:' . (!empty($i['master_item_id']) ? 'block' : 'none') . ';position:absolute;right:30px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;padding:4px 6px;z-index:2;line-height:1;" onclick="clearMasterItem()" title="Hapus pilihan">✕</button><button type="button" id="masterItemDropdownBtn" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;padding:4px 6px;z-index:2;line-height:1;" onclick="toggleMasterItemList(event)" title="Buka / Tutup Daftar Master Barang">▾</button><input type="hidden" id="masterItemIdInput" name="master_item_id" value="' . (int)($i['master_item_id'] ?? 0) . '"><div id="masterItemResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:300px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div></div><a href="' . route_url('asset_master_items') . '" target="_blank" class="btn" style="padding:0 14px;background:#0284c7;color:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;text-decoration:none;white-space:nowrap;" title="Tambah Master Barang Baru (Buka di Tab Baru)">➕</a></div><small id="masterItemHint" style="display:block;color:#64748b;margin-top:4px">' . (!empty($i['master_item_id']) ? '<span style="color:#166534;font-weight:600;">✓ Master Barang Terpilih (Siap Import dari PC)</span>' : 'Pilih Master Barang terlebih dahulu sebelum Import dari Data PC. Ketik nama untuk mencari.') . '</small></div><label>Mode Aset<select name="asset_mode" id="assetModeSelect">' . $modeOptions . '</select><small id="assetModeHint" style="display:block;color:#64748b;margin-top:4px">' . e($modeHint) . '</small></label></div><h2>2. Identifikasi & Serial Number Unit</h2><div id="identifierFields" class="grid three">' . $fields . '</div><h2>3. Spesifikasi Teknis Unit</h2><div id="specificationFields" class="grid three">' . $specFields . '</div>' . $logHtml . '<h2>4. Detail Barang & Merek</h2><div class="grid three"><label>Brand / Merk<select id="assetBrandId" name="brand_id">' . $brandOptions . '</select></label><label>Nama Brand (Teks)<input id="assetBrandInput" name="brand" value="' . e($i['brand']) . '" placeholder="Auto terisi dari master merk"></label><label>Model / Varian<input id="assetModelInput" name="model" value="' . e($i['model']) . '" placeholder="Contoh: ThinkPad T480 / OptiPlex 3080"></label></div><div class="grid two"><label>Nama Unit Aset (Deskriptif)<input id="assetNameInput" name="asset_name" value="' . e($i['asset_name']) . '" placeholder="Contoh: Laptop ThinkPad T480 IT"></label><label>Keterangan Tambahan<textarea name="notes" style="min-height:42px">' . e($i['notes']) . '</textarea></label></div><h2>5. Lokasi & Tanggung Jawab (Custodian)</h2><div class="grid three"><label>Lokasi Unit Aset *<select name="location_id" id="assetLocationId" required>' . $locationOptions . '</select></label><label>Detail Ruangan / Gedung<input name="location_label" id="assetLocationLabel" value="' . e($i['location_label']) . '" placeholder="Gedung / Lantai / Ruangan"></label><label>Company<select name="company_id">' . company_options($pdo, (int)$i['company_id']) . '</select></label></div><div class="grid two"><label>NIK Pengguna / Custodian<input id="assetCustodianNik" name="custodian_nik" value="' . e($i['custodian_nik'] ?? '') . '" placeholder="NIK karyawan"></label><label>Nama Pengguna / Custodian<input id="assetCustodianName" name="custodian_name" value="' . e($i['custodian_name'] ?? '') . '" placeholder="Nama pemakai / PIC aset"></label></div>' . (function_exists('employee_portal_name_picker_html') ? employee_portal_name_picker_html('assetCustodian', 'assetCustodianName', 'assetCustodianNik') : '') . '<h2>6. Pembelian / Garansi / Status</h2><div class="grid four"><label>Tanggal Perolehan / Beli<input type="date" name="installed_at" value="' . e($i['installed_at']) . '"></label><label>Harga Perolehan (Rp)<input type="number" name="purchase_value" value="' . e($i['purchase_value']) . '"></label><label>Garansi Berakhir<input type="date" name="warranty_until" value="' . e($i['warranty_until']) . '"></label><label>Status Unit *<select name="asset_status_id" required>' . asset_status_options($pdo, (int)$i['asset_status_id']) . '</select></label></div><div class="actions">' . $cancelBtn . '</div></form>' . $pcModalHtml . '</section><script>
 (function(){
     var sel = document.getElementById("assetModeSelect");
     var hint = document.getElementById("assetModeHint");
@@ -802,8 +801,22 @@ window.updateActiveMasterItem = function(newIdx){
 
 window.onMasterItemKeyDown = function(e){
     var sResults = document.getElementById("masterItemResults");
-    if(!sResults || sResults.style.display === "none") return;
-    if(!window._lastMasterItems || !window._lastMasterItems.length) return;
+    if(!sResults) return;
+
+    if(sResults.style.display === "none"){
+        if(e.key === "ArrowDown" || e.key === "Enter"){
+            e.preventDefault();
+            window.showMasterItemList();
+        }
+        return;
+    }
+
+    if(!window._lastMasterItems || !window._lastMasterItems.length){
+        if(e.key === "Escape"){
+            sResults.style.display = "none";
+        }
+        return;
+    }
 
     if(e.key === "ArrowDown"){
         e.preventDefault();
@@ -811,9 +824,13 @@ window.onMasterItemKeyDown = function(e){
     } else if(e.key === "ArrowUp"){
         e.preventDefault();
         window.updateActiveMasterItem((window._activeMasterItemIndex || 0) - 1);
-    } else if(e.key === "Enter" || e.key === "Tab"){
+    } else if(e.key === "Enter"){
+        e.preventDefault();
         if(window._activeMasterItemIndex >= 0 && window._activeMasterItemIndex < window._lastMasterItems.length){
-            e.preventDefault();
+            window.selectMasterItemByIndex(window._activeMasterItemIndex);
+        }
+    } else if(e.key === "Tab"){
+        if(window._activeMasterItemIndex >= 0 && window._activeMasterItemIndex < window._lastMasterItems.length){
             window.selectMasterItemByIndex(window._activeMasterItemIndex);
         }
     } else if(e.key === "Escape"){
@@ -821,43 +838,95 @@ window.onMasterItemKeyDown = function(e){
     }
 };
 
-window.onMasterItemInput = async function(q){
+window.fetchAndRenderMasterItems = async function(q){
     var sResults = document.getElementById("masterItemResults");
     if(!sResults) return;
     q = (q || "").trim();
-    if(!q){
-        sResults.style.display = "none";
-        return;
-    }
+    
+    var sHidden = document.getElementById("masterItemIdInput");
+    var curSelectedId = parseInt(sHidden ? sHidden.value : 0, 10) || 0;
+
     try {
-        var url = "index.php?route=api_master_items&q=" + encodeURIComponent(q);
+        var url = "index.php?route=api_master_items" + (q !== "" ? "&q=" + encodeURIComponent(q) : "");
         var r = await fetch(url);
         var items = await r.json();
         var addBtnHtml = "<div style=\"padding:10px 14px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;\"><a href=\"index.php?route=asset_master_items\" target=\"_blank\" style=\"color:#0284c7;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px;\">➕ Tambah Master Barang Baru di Tab Baru ↗</a></div>";
+        
+        var headerTitle = q !== "" 
+            ? "🔍 Hasil Pencarian: \"" + escapeHtml(q) + "\" (" + (Array.isArray(items) ? items.length : 0) + " item)" 
+            : "📋 Daftar Master Barang (" + (Array.isArray(items) ? items.length : 0) + " item)";
+        var listHeader = "<div style=\"padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;position:sticky;top:0;z-index:2;\">" + headerTitle + " • Gunakan ↑↓ & Enter</div>";
+
         if(!Array.isArray(items) || items.length === 0){
-            sResults.innerHTML = "<div style=\"padding:12px 14px;color:#94a3b8;font-size:13px;text-align:center;\">Tidak ditemukan barang yang cocok dengan \"<strong>" + escapeHtml(q) + "</strong>\".</div>" + addBtnHtml;
+            sResults.innerHTML = listHeader + "<div style=\"padding:16px 14px;color:#94a3b8;font-size:13px;text-align:center;\">Tidak ada master barang yang cocok" + (q ? " dengan \"<strong>" + escapeHtml(q) + "</strong>\"" : "") + ".</div>" + addBtnHtml;
             sResults.style.display = "block";
             window._lastMasterItems = [];
             window._activeMasterItemIndex = -1;
             return;
         }
-        var html = "";
+
+        var html = listHeader;
         window._lastMasterItems = items;
-        window._activeMasterItemIndex = 0;
+        
+        var matchIdx = 0;
+        if(curSelectedId > 0){
+            var found = items.findIndex(function(it){ return parseInt(it.id, 10) === curSelectedId; });
+            if(found >= 0) matchIdx = found;
+        }
+        window._activeMasterItemIndex = matchIdx;
+
         items.forEach(function(it, idx){
             var codeH = highlightMatch(it.item_code, q);
             var nameH = highlightMatch(it.item_name, q);
             var brandH = it.brand_name ? " <span class=\"badge ok\" style=\"font-size:11px;margin-left:4px;\">" + highlightMatch(it.brand_name, q) + "</span>" : "";
             var modelH = it.model_name ? " <span style=\"color:#64748b;font-size:12px;margin-left:4px;\">(" + highlightMatch(it.model_name, q) + ")</span>" : "";
-            var bg = (idx === 0) ? "background-color:#e0f2fe;border-left:4px solid #0284c7;" : "background-color:#fff;border-left:4px solid transparent;";
-            html += "<div class=\"mi-item\" id=\"mi-opt-" + idx + "\" onmouseover=\"updateActiveMasterItem(" + idx + ")\" onmousedown=\"selectMasterItemByIndex(" + idx + ")\" onclick=\"selectMasterItemByIndex(" + idx + ")\" style=\"padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;" + bg + "\"><div><strong>" + codeH + "</strong> - " + nameH + brandH + modelH + "</div><span style=\"font-size:11px;color:#0284c7;font-weight:600;\">Pilih ↵</span></div>";
+            var isCurrent = (parseInt(it.id, 10) === curSelectedId);
+            var checkBadge = isCurrent ? " <span style=\"font-size:11px;color:#16a34a;font-weight:700;margin-left:6px;\">✓ Terpilih</span>" : "";
+            var isActive = (idx === matchIdx);
+            var bg = isActive ? "background-color:#e0f2fe;border-left:4px solid #0284c7;" : "background-color:#fff;border-left:4px solid transparent;";
+            
+            html += "<div class=\"mi-item\" id=\"mi-opt-" + idx + "\" onmouseover=\"updateActiveMasterItem(" + idx + ")\" onmousedown=\"selectMasterItemByIndex(" + idx + ")\" onclick=\"selectMasterItemByIndex(" + idx + ")\" style=\"padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;" + bg + "\"><div><strong>" + codeH + "</strong> - " + nameH + brandH + modelH + checkBadge + "</div><span style=\"font-size:11px;color:#0284c7;font-weight:600;\">Pilih ↵</span></div>";
         });
         html += addBtnHtml;
         sResults.innerHTML = html;
         sResults.style.display = "block";
+        
+        if(matchIdx > 0){
+            setTimeout(function(){
+                var activeEl = document.getElementById("mi-opt-" + matchIdx);
+                if(activeEl) activeEl.scrollIntoView({block: "nearest"});
+            }, 50);
+        }
     } catch(e) {
         sResults.style.display = "none";
     }
+};
+
+window.showMasterItemList = function(){
+    var sInput = document.getElementById("masterItemSearch");
+    var sHidden = document.getElementById("masterItemIdInput");
+    var q = sInput ? sInput.value : "";
+    if(sHidden && sHidden.value && q.includes(" - ")){
+        window.fetchAndRenderMasterItems("");
+    } else {
+        window.fetchAndRenderMasterItems(q);
+    }
+};
+
+window.toggleMasterItemList = function(e){
+    if(e) e.stopPropagation();
+    var sResults = document.getElementById("masterItemResults");
+    var sInput = document.getElementById("masterItemSearch");
+    if(sResults && sResults.style.display === "block"){
+        sResults.style.display = "none";
+    } else {
+        if(sInput) sInput.focus();
+        window.showMasterItemList();
+    }
+};
+
+window.onMasterItemInput = function(q){
+    window.fetchAndRenderMasterItems(q);
 };
 
 window.selectMasterItemByIndex = function(idx){
@@ -937,16 +1006,19 @@ window.clearMasterItem = function(){
     var sHint = document.getElementById("masterItemHint");
     var sResults = document.getElementById("masterItemResults");
     if(sHidden) sHidden.value = "";
-    if(sInput) sInput.value = "";
+    if(sInput) {
+        sInput.value = "";
+        sInput.focus();
+    }
     if(sClearBtn) sClearBtn.style.display = "none";
-    if(sResults) sResults.style.display = "none";
     if(sHint) sHint.innerHTML = "<span style=\"color:#dc2626;font-weight:600;\">⚠️ Pilih Master Barang terlebih dahulu sebelum Import dari Data PC.</span>";
     window._currentMasterItemSpecs = {};
+    window.showMasterItemList();
 };
 
 document.addEventListener("click", function(e){
     var sResults = document.getElementById("masterItemResults");
-    if(!e.target.closest("#masterItemSearch") && !e.target.closest("#masterItemResults") && !e.target.closest("#masterItemClearBtn")){
+    if(!e.target.closest("#masterItemSearch") && !e.target.closest("#masterItemResults") && !e.target.closest("#masterItemClearBtn") && !e.target.closest("#masterItemDropdownBtn")){
         if(sResults) sResults.style.display = "none";
     }
 });

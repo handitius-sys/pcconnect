@@ -631,7 +631,7 @@ function handle_route_api_master_items(PDO $pdo): void
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
-    $sql .= ' ORDER BY ami.item_name ASC LIMIT 100';
+    $sql .= ' ORDER BY ami.item_name ASC LIMIT 250';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     header('Content-Type: application/json; charset=utf-8');
