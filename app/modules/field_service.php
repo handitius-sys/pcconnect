@@ -252,23 +252,47 @@ function handle_route_mobile_service_scan(PDO $pdo): void
 
     if ($rawInput !== '') {
         $maintId = resolve_maintenance_asset_id_from_raw_input($pdo, $rawInput);
+        $assetItemId = 0;
 
         if (!$maintId || $maintId <= 0) {
-            flash("Unit Aset dengan kode/QR tersebut tidak ditemukan. Pastikan unit telah terdaftar.", 'err');
+            if (ctype_digit($rawInput)) {
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE id = ? LIMIT 1");
+                $stAi->execute([(int)$rawInput]);
+                $assetItemId = (int)($stAi->fetchColumn() ?: 0);
+            }
+            if ($assetItemId <= 0) {
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE asset_code = ? LIMIT 1");
+                $stAi->execute([$rawInput]);
+                $assetItemId = (int)($stAi->fetchColumn() ?: 0);
+            }
+        }
+
+        if ((!$maintId || $maintId <= 0) && (!$assetItemId || $assetItemId <= 0)) {
+            flash("Unit Aset dengan ID atau Kode '{$rawInput}' tidak ditemukan. Pastikan unit telah terdaftar.", 'err');
             redirect_to('mobile_service_scan');
         }
 
         // Cek apakah ada tiket open/in_progress pada unit ini
-        $stmt2 = $pdo->prepare("SELECT id FROM corrective_tickets WHERE maintenance_asset_id = ? AND status IN ('open', 'assigned', 'in_progress', 'pending_part') ORDER BY created_at DESC LIMIT 1");
-        $stmt2->execute([$maintId]);
-        $existingTicketId = (int)($stmt2->fetchColumn() ?: 0);
+        $existingTicketId = 0;
+        if ($maintId > 0) {
+            $stmt2 = $pdo->prepare("SELECT id FROM corrective_tickets WHERE maintenance_asset_id = ? AND status IN ('open', 'assigned', 'in_progress', 'pending_part') ORDER BY created_at DESC LIMIT 1");
+            $stmt2->execute([$maintId]);
+            $existingTicketId = (int)($stmt2->fetchColumn() ?: 0);
+        } elseif ($assetItemId > 0) {
+            $stmt2 = $pdo->prepare("SELECT id FROM corrective_tickets WHERE asset_item_id = ? AND status IN ('open', 'assigned', 'in_progress', 'pending_part') ORDER BY created_at DESC LIMIT 1");
+            $stmt2->execute([$assetItemId]);
+            $existingTicketId = (int)($stmt2->fetchColumn() ?: 0);
+        }
 
         if ($existingTicketId > 0) {
             flash("Unit terverifikasi! Membuka tiket aktif terkait...");
             redirect_to('mobile_service_ticket', ['id' => $existingTicketId, 'scanned' => 1]);
         } else {
             flash("Unit terverifikasi! Silakan catat perbaikan di bawah.");
-            redirect_to('mobile_service_direct', ['maintenance_asset_id' => $maintId]);
+            $params = [];
+            if ($maintId > 0) $params['maintenance_asset_id'] = $maintId;
+            elseif ($assetItemId > 0) $params['asset_item_id'] = $assetItemId;
+            redirect_to('mobile_service_direct', $params);
         }
     }
 
@@ -283,8 +307,8 @@ function handle_route_mobile_service_scan(PDO $pdo): void
 
         <form method="post" id="scanForm" style="margin-top:16px;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <label style="text-align:left;">Atau Ketik Kode Unit Aset:
-                <input name="code" id="codeManual" placeholder="Contoh: IT-CMP-000001" required>
+            <label style="text-align:left;">Atau Masukkan ID / Kode Unit Aset:
+                <input name="code" id="codeManual" placeholder="Contoh: IT-CMP-000001 atau ID Unit" required>
             </label>
             <button class="btn btn-primary" style="margin-top:8px;">Lanjut Eksekusi</button>
         </form>
@@ -323,15 +347,17 @@ function handle_route_mobile_service_scan(PDO $pdo): void
 /**
  * Modul Field Service: Buat Tiket Baru & Direct Action
  * Proses: Membuat tiket perbaikan corrective maintenance baru langsung dari perangkat mobile teknisi,
- *         baik melalui pemilihan unit secara langsung maupun hasil scan QR code unit di lapangan.
+ *         lewat scan QR unit aset atau memasukkan ID / Kode unit aset (tanpa memilih Komoditas/Kategori/Unit dari dropdown).
+ *         Dilengkapi dengan Foto Sebelum Perbaikan dan Foto Sesudah Perbaikan.
  */
 function handle_route_mobile_service_direct(PDO $pdo): void
 {
     $user = require_corrective_technician();
     ensure_corrective_maintenance_schema($pdo);
 
-    $preMntId = (int)($_GET['maintenance_asset_id'] ?? 0);
-    $preAssetId = (int)($_GET['asset_item_id'] ?? 0);
+    $rawInput = trim((string)($_POST['code'] ?? $_GET['code'] ?? $_GET['eqr'] ?? ''));
+    $preMntId = (int)($_POST['maintenance_asset_id'] ?? $_GET['maintenance_asset_id'] ?? 0);
+    $preAssetId = (int)($_POST['asset_item_id'] ?? $_GET['asset_item_id'] ?? 0);
     $prePcId = trim((string)($_GET['pc_id'] ?? ''));
 
     if ($prePcId !== '' && $preMntId <= 0) {
@@ -340,14 +366,53 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         $preMntId = (int)($stmt->fetchColumn() ?: 0);
     }
 
-    $preUnit = null;
-    if ($preMntId > 0) {
-        $preUnit = get_maintenance_asset_unit($pdo, $preMntId);
-        if ($preUnit && !empty($preUnit['asset_item_id'])) {
-            $preAssetId = (int)$preUnit['asset_item_id'];
+    // Resolusi dari rawInput jika ada
+    if ($rawInput !== '') {
+        if (ctype_digit($rawInput) && (int)$rawInput > 0) {
+            $candId = (int)$rawInput;
+            $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE id = ? LIMIT 1");
+            $stAi->execute([$candId]);
+            if ($stAi->fetchColumn()) {
+                $preAssetId = $candId;
+            } else {
+                $stMa = $pdo->prepare("SELECT id FROM maintenance_assets WHERE id = ? LIMIT 1");
+                $stMa->execute([$candId]);
+                if ($stMa->fetchColumn()) {
+                    $preMntId = $candId;
+                }
+            }
         }
-    } elseif ($preAssetId > 0) {
-        $st = $pdo->prepare("SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, at.job_desk_name,
+
+        if (!$preMntId && !$preAssetId) {
+            $resMaintId = resolve_maintenance_asset_id_from_raw_input($pdo, $rawInput);
+            if ($resMaintId && $resMaintId > 0) {
+                $preMntId = $resMaintId;
+            } else {
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE asset_code = ? OR asset_code LIKE ? LIMIT 1");
+                $stAi->execute([$rawInput, $rawInput . '%']);
+                $aiId = (int)($stAi->fetchColumn() ?: 0);
+                if ($aiId > 0) {
+                    $preAssetId = $aiId;
+                }
+            }
+        }
+
+        if (!$preMntId && !$preAssetId) {
+            flash("Unit Aset dengan ID atau Kode '{$rawInput}' tidak ditemukan. Pastikan ID atau kode unit benar.", 'err');
+        }
+    }
+
+    $unit = null;
+    if ($preMntId > 0) {
+        $unit = get_maintenance_asset_unit($pdo, $preMntId);
+        if ($unit && !empty($unit['asset_item_id'])) {
+            $preAssetId = (int)$unit['asset_item_id'];
+        }
+    }
+    if (!$unit && $preAssetId > 0) {
+        $st = $pdo->prepare("SELECT ai.*, ai.id AS asset_item_id, ai.asset_code AS item_asset_code, 
+                                    ai.asset_name AS name, ag.group_name, ag.group_code, 
+                                    at.type_name, at.type_code, at.job_desk_name,
                                     ma.id AS maintenance_asset_id
                              FROM asset_items ai 
                              LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id 
@@ -355,43 +420,73 @@ function handle_route_mobile_service_direct(PDO $pdo): void
                              LEFT JOIN maintenance_assets ma ON ma.asset_item_id = ai.id
                              WHERE ai.id = ?");
         $st->execute([$preAssetId]);
-        $preUnit = $st->fetch(PDO::FETCH_ASSOC);
-        if ($preUnit && !empty($preUnit['maintenance_asset_id'])) {
-            $preMntId = (int)$preUnit['maintenance_asset_id'];
+        $unit = $st->fetch(PDO::FETCH_ASSOC);
+        if ($unit && !empty($unit['maintenance_asset_id'])) {
+            $preMntId = (int)$unit['maintenance_asset_id'];
         }
     }
 
-    $preGroupId = (int)($preUnit['asset_group_id'] ?? 0);
-    $preTypeId = (int)($preUnit['asset_type_id'] ?? 0);
-    $preItemId = (int)($preUnit['asset_item_id'] ?? ($preUnit['id'] ?? 0));
-    $preJobDeskName = (string)($preUnit['job_desk_name'] ?? '');
+    // JIKA UNIT BELUM DITENTUKAN: Tampilkan antarmuka Scan QR atau Masukkan ID / Kode Unit
+    if (!$unit) {
+        render_mobile_header('Pilih Unit Aset', $user);
+        ?>
+        <div class="panel" style="text-align:center;">
+            <h2 style="font-size:16px;color:#0284c7;margin-top:0;">📷 Scan QR Code Unit Aset</h2>
+            <p style="font-size:13px;color:#64748b;margin:0 0 12px;">Arahkan kamera ke stiker QR Code pada unit aset fisik.</p>
 
-    // Load pre-selected dropdown items if preUnit exists
-    $preTypes = [];
-    $preAssets = [];
-    $preActions = [];
-    if ($preGroupId > 0) {
-        $stT = $pdo->prepare("SELECT id, type_code, type_name FROM asset_types WHERE asset_group_id = ? AND is_active=1 ORDER BY type_name");
-        $stT->execute([$preGroupId]);
-        $preTypes = $stT->fetchAll(PDO::FETCH_ASSOC);
+            <div id="reader" style="width:100%;max-width:320px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000;"></div>
+            <p id="camStatus" style="font-size:12px;color:#0284c7;margin-top:8px;">Menyiapkan kamera live scan...</p>
+        </div>
+
+        <div class="panel">
+            <h2 style="font-size:16px;color:#0284c7;margin-top:0;">⌨️ Atau Masukkan ID / Kode Unit Aset</h2>
+            <p style="font-size:12px;color:#64748b;margin:0 0 10px;">Ketik ID angka atau Kode Unit Aset (misal: <code>IT-CMP-000001</code> atau <code>15</code>).</p>
+            <form method="get" action="<?= route_url('mobile_service_direct') ?>" id="scanForm">
+                <input type="hidden" name="route" value="mobile_service_direct">
+                <label style="font-size:13px;font-weight:600;margin-top:0;">ID atau Kode Unit:
+                    <input name="code" id="codeManual" placeholder="Contoh: IT-CMP-000001 atau 12" required autofocus autocomplete="off" style="font-size:15px;font-weight:600;padding:12px;">
+                </label>
+                <button class="btn btn-primary" style="margin-top:12px;font-size:15px;padding:12px;width:100%;font-weight:700;background:#0284c7;border-color:#0369a1;color:#fff;">
+                    🔍 Verifikasi Unit & Lanjutkan →
+                </button>
+            </form>
+        </div>
+
+        <script src="https://unpkg.com/html5-qrcode"></script>
+        <script>
+        (function() {
+            var submitted = false;
+            function onScanSuccess(decodedText) {
+                if (submitted) return;
+                submitted = true;
+                document.getElementById('codeManual').value = decodedText;
+                document.getElementById('camStatus').textContent = "QR Terbaca: " + decodedText + ". Memverifikasi unit...";
+                document.getElementById('scanForm').submit();
+            }
+
+            if (window.Html5Qrcode) {
+                var html5Qr = new Html5Qrcode("reader");
+                html5Qr.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 220, height: 220 } },
+                    onScanSuccess
+                ).catch(function(err) {
+                    document.getElementById('camStatus').textContent = "Kamera live scan tidak dapat diakses langsung. Silakan ketik ID/Kode unit di bawah.";
+                });
+            }
+        })();
+        </script>
+        <?php
+        render_mobile_footer('scan');
+        return;
     }
-    if ($preGroupId > 0 && $preTypeId > 0) {
-        $stA = $pdo->prepare("SELECT id, asset_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status <> 'inactive' ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
-        $stA->execute([$preGroupId, $preTypeId]);
-        $preAssets = $stA->fetchAll(PDO::FETCH_ASSOC);
 
-        if ($preJobDeskName !== '') {
-            $stAct = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? ORDER BY action_name");
-            $stAct->execute([$preJobDeskName]);
-            $preActions = $stAct->fetchAll(PDO::FETCH_ASSOC);
-        }
-    }
-
+    // JIKA UNIT SUDAH DITEMUKAN / DIVERIFIKASI:
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
         $code = generate_next_ticket_code($pdo);
-        $assetItemId = (int)($_POST['asset_item_id'] ?? 0) ?: null;
-        $maintAssetId = (int)($_POST['maintenance_asset_id'] ?? 0) ?: null;
+        $assetItemId = (int)($_POST['asset_item_id'] ?? 0) ?: ($preAssetId ?: null);
+        $maintAssetId = (int)($_POST['maintenance_asset_id'] ?? 0) ?: ($preMntId ?: null);
         $reporterName = trim((string)($_POST['reporter_name'] ?? ''));
         $reporterNik = trim((string)($_POST['reporter_nik'] ?? ''));
         $reporterContact = trim((string)($_POST['reporter_contact'] ?? ''));
@@ -413,61 +508,12 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             redirect_to('mobile_service_direct', $redirectParams);
         }
 
-        // Resolusi sinkronisasi asset_items & maintenance_assets
-        if ($assetItemId && !$maintAssetId) {
-            $stMa = $pdo->prepare("SELECT id FROM maintenance_assets WHERE asset_item_id = ? LIMIT 1");
-            $stMa->execute([$assetItemId]);
-            $maintAssetId = (int)($stMa->fetchColumn() ?: 0) ?: null;
-        }
-        if ($maintAssetId && !$assetItemId) {
-            $mRow = get_maintenance_asset_unit($pdo, $maintAssetId);
-            if ($mRow && !empty($mRow['asset_item_id'])) {
-                $assetItemId = (int)$mRow['asset_item_id'];
-            }
-        }
+        $assetCat = $unit['asset_category'] ?? 'IT';
+        $pcId = $unit['pc_id'] ?? null;
+        $companyId = (int)($unit['company_id'] ?? 0) ?: null;
+        $location = trim((string)($_POST['location_label'] ?? ($unit['location_label'] ?? '')));
 
-        $assetCat = 'IT';
-        $pcId = null;
-        $companyId = null;
-        $location = trim((string)($_POST['location_label'] ?? ''));
-
-        if ($assetItemId) {
-            $aiStmt = $pdo->prepare('SELECT ai.*, ag.group_code, c.company_name FROM asset_items ai LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id LEFT JOIN asset_companies c ON c.id = ai.company_id WHERE ai.id = ? LIMIT 1');
-            $aiStmt->execute([$assetItemId]);
-            $aiRow = $aiStmt->fetch();
-            if ($aiRow) {
-                $grp = strtoupper((string)($aiRow['group_code'] ?? ''));
-                if ($grp === 'VH') {
-                    $assetCat = 'Vehicle';
-                } elseif (in_array($grp, ['FC', 'BLD', 'FCL'], true)) {
-                    $assetCat = 'Facility';
-                } else {
-                    $assetCat = 'IT';
-                }
-                $companyId = (int)($aiRow['company_id'] ?? 0) ?: null;
-                if ($location === '' && !empty($aiRow['location_label'])) {
-                    $location = (string)$aiRow['location_label'];
-                }
-                if (db_table_exists($pdo, 'pcs')) {
-                    $stP = $pdo->prepare('SELECT pc_id FROM pcs WHERE asset_item_id = ? LIMIT 1');
-                    $stP->execute([$assetItemId]);
-                    $pcId = $stP->fetchColumn() ?: null;
-                }
-            }
-        } elseif ($maintAssetId) {
-            $mRow = get_maintenance_asset_unit($pdo, $maintAssetId);
-            if ($mRow) {
-                $assetItemId = $mRow['asset_item_id'] ?: null;
-                $pcId = $mRow['pc_id'] ?: null;
-                $companyId = (int)($mRow['company_id'] ?? 0) ?: null;
-                $assetCat = $mRow['asset_category'];
-                if ($location === '' && !empty($mRow['location_label'])) {
-                    $location = (string)$mRow['location_label'];
-                }
-            }
-        }
-
-        // Upload photo before jika ada
+        // 1. Upload Foto Sebelum Perbaikan
         $photoBefore = null;
         $uploadDir = __DIR__ . '/../../public/uploads/tickets';
         if (!is_dir($uploadDir)) {
@@ -483,7 +529,19 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             }
         }
 
-        // Upload foto / scan kwitansi atau invoice (bisa via file input atau kamera langsung)
+        // 2. Upload Foto Sesudah Perbaikan
+        $photoAfter = null;
+        if (!empty($_FILES['photo_after']['tmp_name']) && is_uploaded_file($_FILES['photo_after']['tmp_name'])) {
+            $ext = strtolower(pathinfo((string)$_FILES['photo_after']['name'], PATHINFO_EXTENSION));
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+                $filename = 'after_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                if (move_uploaded_file($_FILES['photo_after']['tmp_name'], $uploadDir . '/' . $filename)) {
+                    $photoAfter = 'uploads/tickets/' . $filename;
+                }
+            }
+        }
+
+        // 3. Upload Foto / Scan Kwitansi atau Invoice
         $invoicePhoto = save_corrective_invoice_photo($_FILES['invoice_photo'] ?? null, $_POST['invoice_photo_base64'] ?? null);
 
         $handledByType = trim((string)($_POST['handled_by_type'] ?? 'internal'));
@@ -508,14 +566,14 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         $stmt = $pdo->prepare("INSERT INTO corrective_tickets (
             ticket_code, asset_category, asset_item_id, maintenance_asset_id, pc_id, company_id, 
             location_label, vehicle_odometer_km, reporter_name, reporter_nik, reporter_contact, 
-            issue_category, priority, subject, description, photo_before, invoice_photo, status, 
+            issue_category, priority, subject, description, photo_before, photo_after, invoice_photo, status, 
             assigned_technician_name, resolved_at, handled_by_type, handled_by_user_id, handled_by_workshop_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         $stmt->execute([
             $code, $assetCat, $assetItemId, $maintAssetId, $pcId, $companyId,
             $location, $odometer, $reporterName, $reporterNik, $reporterContact,
-            $issueCat, $priority, $subject, $desc, $photoBefore, $invoicePhoto, $status,
+            $issueCat, $priority, $subject, $desc, $photoBefore, $photoAfter, $invoicePhoto, $status,
             $assignedTech, $resolvedAt, $handledByType, $handledByUserId, $handledByWorkshopId
         ]);
         $ticketId = (int)$pdo->lastInsertId();
@@ -539,17 +597,6 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         $partNewName = trim((string)($_POST['part_new_name'] ?? ''));
         $partNewSerial = trim((string)($_POST['part_new_serial'] ?? ''));
         $partCost = (float)($_POST['part_cost'] ?? 0);
-
-        $photoAfter = null;
-        if (!empty($_FILES['photo_after']['tmp_name']) && is_uploaded_file($_FILES['photo_after']['tmp_name'])) {
-            $ext = strtolower(pathinfo((string)$_FILES['photo_after']['name'], PATHINFO_EXTENSION));
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
-                $filename = 'after_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-                if (move_uploaded_file($_FILES['photo_after']['tmp_name'], $uploadDir . '/' . $filename)) {
-                    $photoAfter = 'uploads/tickets/' . $filename;
-                }
-            }
-        }
 
         if ($repairCost > 0 || $solutionDetails !== '' || $partNewName !== '' || $invoicePhoto !== null || $photoAfter !== null || $status === 'resolved') {
             $actionType = trim((string)($_POST['action_type'] ?? 'corrective'));
@@ -577,96 +624,155 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         redirect_to('mobile_service_ticket', ['id' => $ticketId]);
     }
 
-    // Query data dropdown
-    $groupList = $pdo->query("SELECT id, group_code, group_name FROM asset_groups WHERE is_active=1 ORDER BY group_name")->fetchAll();
+    // Ambil data tindakan Job Desk terkait unit ini
+    $jobDeskName = (string)($unit['job_desk_name'] ?? '');
+    $unitActions = [];
+    if ($jobDeskName !== '') {
+        $stAct = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? ORDER BY action_name");
+        $stAct->execute([$jobDeskName]);
+        $unitActions = $stAct->fetchAll(PDO::FETCH_ASSOC);
+    }
+    if (empty($unitActions)) {
+        $unitActions = $pdo->query("SELECT id, action_name AS action_title FROM corrective_action_types ORDER BY action_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     $mechanics = $pdo->query("SELECT id, name FROM users WHERE role='corrective_maintenance' AND is_active=1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
     $workshops = $pdo->query("SELECT id, workshop_name FROM corrective_workshops ORDER BY workshop_name")->fetchAll(PDO::FETCH_ASSOC);
     $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
-    $allActions = $pdo->query("SELECT id, action_name AS action_title FROM corrective_action_types ORDER BY action_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-    render_mobile_header('Buat Tiket Corrective Baru', $user);
+    $groupCode = strtoupper((string)($unit['group_code'] ?? ''));
+    $isVehicle = ($groupCode === 'VH' || stripos((string)($unit['group_name'] ?? ''), 'VEHICLE') !== false);
+
+    render_mobile_header('Buat Tiket Perbaikan', $user);
     ?>
 
-    <?php if ($preUnit): ?>
-        <div class="panel" style="border-left:4px solid #38bdf8; background:#f0f9ff;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                <span class="badge" style="background:#0284c7;color:#fff;">✓ UNIT TERVERIFIKASI</span>
-                <?php if (!empty($preUnit['group_name']) || !empty($preUnit['type_name'])): ?>
-                    <span class="badge" style="background:#fff;color:#0284c7;border:1px solid #0284c7;font-size:11px;">
-                        <?= e($preUnit['group_name'] ?: 'IT') ?> &bull; <?= e($preUnit['type_name'] ?: ($preUnit['asset_category'] ?? 'Comp')) ?>
-                    </span>
-                <?php endif; ?>
-            </div>
-            <h2 style="margin:4px 0 2px;color:#0369a1;font-size:17px;"><?= e($preUnit['item_asset_code'] ?: ($preUnit['asset_code'] ?? 'Unit Aset')) ?></h2>
-            <div style="font-size:13px;font-weight:600;color:#1e293b;"><?= e($preUnit['name'] ?: ($preUnit['asset_name'] ?? '-')) ?></div>
-            <?php if (!empty($preUnit['job_desk_name'])): ?>
-                <div style="font-size:12px;color:#0369a1;margin-top:4px;background:#e0f2fe;padding:3px 8px;border-radius:6px;display:inline-block;font-weight:600;">
-                    📋 Job Desk CM: <?= e($preUnit['job_desk_name']) ?>
-                </div>
-            <?php endif; ?>
-            <div style="font-size:12px;color:#64748b;margin-top:6px;">
-                👤 PIC: <?= e($preUnit['custodian_name'] ?: '-') ?> | 📍 Lokasi: <?= e($preUnit['location_label'] ?: '-') ?>
-            </div>
+    <!-- 1. Identitas Unit Aset Terverifikasi -->
+    <div class="panel" style="border-left:4px solid #0284c7; background:#f0f9ff;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+            <span class="badge" style="background:#0284c7;color:#fff;font-weight:700;font-size:11px;">✓ UNIT TERVERIFIKASI</span>
+            <a href="<?= route_url('mobile_service_direct') ?>" class="btn" style="font-size:11px;padding:4px 8px;background:#fff;border:1px solid #cbd5e1;color:#0284c7;text-decoration:none;border-radius:6px;font-weight:600;">
+                🔄 Ganti Unit
+            </a>
         </div>
-    <?php endif; ?>
+        
+        <div style="font-size:18px;font-weight:800;color:#0369a1;">
+            <?= e($unit['item_asset_code'] ?: ($unit['asset_code'] ?? 'Unit Aset')) ?>
+        </div>
+        <div style="font-size:14px;font-weight:600;color:#1e293b;margin-top:2px;">
+            <?= e($unit['name'] ?: ($unit['asset_name'] ?? '-')) ?>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+            <?php if (!empty($unit['group_name']) || !empty($unit['type_name'])): ?>
+                <span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:12px;font-weight:600;">
+                    🏷️ <?= e($unit['group_name'] ?: 'IT') ?> &bull; <?= e($unit['type_name'] ?: ($unit['asset_category'] ?? 'Comp')) ?>
+                </span>
+            <?php endif; ?>
+            <?php if (!empty($unit['job_desk_name'])): ?>
+                <span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:12px;font-weight:600;">
+                    📋 Job Desk CM: <?= e($unit['job_desk_name']) ?>
+                </span>
+            <?php endif; ?>
+        </div>
+
+        <div style="font-size:12px;color:#64748b;margin-top:8px;border-top:1px dashed #cbd5e1;padding-top:6px;">
+            👤 PIC: <strong><?= e($unit['custodian_name'] ?: '-') ?></strong> | 📍 Lokasi: <strong><?= e($unit['location_label'] ?: '-') ?></strong>
+        </div>
+
+        <?php if ($isVehicle): ?>
+            <div style="margin-top:10px;padding-top:8px;border-top:1px solid #cbd5e1;">
+                <label style="font-size:13px;font-weight:700;color:#0369a1;margin-top:0;">Kilometer Kendaraan (KM)
+                    <input type="number" name="vehicle_odometer_km" placeholder="Contoh: 45200">
+                </label>
+            </div>
+        <?php endif; ?>
+    </div>
 
     <form method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-        <input type="hidden" name="maintenance_asset_id" id="maintAssetIdHidden" value="<?= $preMntId ?>">
+        <input type="hidden" name="maintenance_asset_id" value="<?= (int)($unit['maintenance_asset_id'] ?? $preMntId) ?>">
+        <input type="hidden" name="asset_item_id" value="<?= (int)($unit['asset_item_id'] ?? $preAssetId) ?>">
 
-        <!-- 1. Identitas Unit Aset & Tindakan -->
+        <!-- 2. Foto Sebelum & Sesudah Perbaikan -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">1. Identitas Unit Aset & Tindakan</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">📸 Foto Sebelum & Sesudah Perbaikan</h2>
+            <p class="muted" style="font-size:12px;margin:0 0 12px;">Ambil foto kerusakan awal dan foto hasil setelah perbaikan selesai langsung dengan kamera HP.</p>
+
+            <div style="background:#fff7ed; border:1px solid #fed7aa; padding:12px; border-radius:8px; margin-bottom:12px;">
+                <label style="font-weight:700; color:#c2410c; font-size:13px; margin:0 0 6px; display:block;">
+                    📷 Foto Sebelum Perbaikan (Kondisi Kerusakan)
+                </label>
+                <input type="file" name="photo_before" accept="image/*" capture="environment" onchange="previewImageFile(this, 'previewBeforeImg', 'previewBeforeWrap')">
+                <div id="previewBeforeWrap" style="display:none; margin-top:8px; text-align:center;">
+                    <img id="previewBeforeImg" src="" alt="Preview Foto Sebelum" style="max-height:140px; max-width:100%; border-radius:6px; border:1px solid #cbd5e1; object-fit:contain;">
+                    <div style="font-size:11px; color:#c2410c; margin-top:3px;">Foto Sebelum Terpilih</div>
+                </div>
+            </div>
+
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; padding:12px; border-radius:8px;">
+                <label style="font-weight:700; color:#15803d; font-size:13px; margin:0 0 6px; display:block;">
+                    📷 Foto Sesudah Perbaikan (Bukti Hasil Selesai)
+                </label>
+                <input type="file" name="photo_after" accept="image/*" capture="environment" onchange="previewImageFile(this, 'previewAfterImg', 'previewAfterWrap')">
+                <div id="previewAfterWrap" style="display:none; margin-top:8px; text-align:center;">
+                    <img id="previewAfterImg" src="" alt="Preview Foto Sesudah" style="max-height:140px; max-width:100%; border-radius:6px; border:1px solid #cbd5e1; object-fit:contain;">
+                    <div style="font-size:11px; color:#15803d; margin-top:3px;">Foto Sesudah Terpilih</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Rincian Masalah & Gejala Kerusakan -->
+        <div class="panel">
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">🚨 Rincian Kendala / Kerusakan</h2>
             
-            <label>Komoditas *
-                <select id="dynGroupId" required onchange="onDynGroupChange()">
-                    <option value="">-- Pilih Komoditas --</option>
-                    <?php foreach ($groupList as $g): ?>
-                        <option value="<?= $g['id'] ?>" <?= ($preGroupId === (int)$g['id']) ? 'selected' : '' ?>><?= e($g['group_code'] . ' - ' . $g['group_name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
+            <label>Judul / Subjek Kendala *
+                <input name="subject" required placeholder="Contoh: Layar mati / Ban bocor / AC panas">
             </label>
 
-            <label>Kategori *
-                <select id="dynTypeId" required onchange="onDynTypeChange()">
-                    <?php if ($preGroupId > 0 && !empty($preTypes)): ?>
-                        <option value="">-- Pilih Kategori --</option>
-                        <?php foreach ($preTypes as $pt): ?>
-                            <option value="<?= $pt['id'] ?>" <?= ($preTypeId === (int)$pt['id']) ? 'selected' : '' ?>><?= e(($pt['type_code'] ? $pt['type_code'] . ' - ' : '') . $pt['type_name']) ?></option>
+            <label>Deskripsi Gejala Kerusakan
+                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
+            </label>
+
+            <div class="grid two">
+                <label>Kategori Masalah
+                    <select name="issue_category" id="ticketIssueCat">
+                        <option value="hardware">Kerusakan Hardware / Komponen</option>
+                        <option value="software">Masalah Software / OS / Aplikasi</option>
+                        <option value="network">Jaringan / Koneksi Internet</option>
+                        <option value="printer">Printer / Scanner Error</option>
+                        <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
+                        <option value="electrical">Kelistrikan / Aki / Lampu</option>
+                        <option value="hvac">AC / Pendingin Ruangan</option>
+                        <option value="plumbing">Pipa / Sanitasi Air</option>
+                        <option value="general">Lain-lain / Kerusakan Fisik</option>
+                    </select>
+                </label>
+
+                <label>Tingkat Prioritas *
+                    <select name="priority" required>
+                        <option value="low">Low (Bisa ditunda)</option>
+                        <option value="medium" selected>Medium (Standard)</option>
+                        <option value="high">High (Mendesak / Operasional Terganggu)</option>
+                        <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
+                    </select>
+                </label>
+            </div>
+
+            <div id="locationFieldWrapper" style="margin-top:6px;">
+                <label>Lokasi / Ruangan
+                    <select name="location_label" id="locInput">
+                        <option value="">-- Pilih Lokasi --</option>
+                        <?php foreach ($locationsList as $loc): ?>
+                            <option value="<?= e($loc['location_name']) ?>" <?= (($unit['location_label'] ?? '') === $loc['location_name']) ? 'selected' : '' ?>><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
                         <?php endforeach; ?>
-                    <?php else: ?>
-                        <option value="">-- Pilih Komoditas Dulu --</option>
-                    <?php endif; ?>
-                </select>
-            </label>
-
-            <label>Unit Aset *
-                <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()">
-                    <?php if ($preTypeId > 0 && !empty($preAssets)): ?>
-                        <option value="">-- Pilih Unit Aset --</option>
-                        <?php foreach ($preAssets as $pa): ?>
-                            <?php
-                            $badge = ($pa['asset_mode'] === 'group') ? '[📦 INDUK BUNDLE] ' : (($pa['asset_mode'] === 'child') ? '[🔗 ANGGOTA] ' : '');
-                            $desc = $badge . $pa['asset_code'] . ' - ' . $pa['asset_name'] . ($pa['custodian_name'] ? ' (' . $pa['custodian_name'] . ')' : '');
-                            ?>
-                            <option value="<?= $pa['id'] ?>" data-loc="<?= e($pa['location_label'] ?? '') ?>" data-user="<?= e($pa['custodian_name'] ?? '') ?>" <?= ($preItemId === (int)$pa['id']) ? 'selected' : '' ?>><?= e($desc) ?></option>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <option value="">-- Pilih Kategori Dulu --</option>
-                    <?php endif; ?>
-                </select>
-            </label>
-
-            <div id="vehicleKmWrapper" style="display:none; margin-top:10px;">
-                <label>Kilometer Kendaraan (KM)
-                    <input type="number" name="vehicle_odometer_km" placeholder="Contoh: 45200">
+                    </select>
                 </label>
             </div>
         </div>
 
-        <!-- 2. Penanganan Oleh -->
+        <!-- 4. Penanganan Oleh -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">2. Penanganan Oleh</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">👥 Penanganan Oleh</h2>
             
             <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:12px; border-radius:8px;">
                 <div style="display:flex; gap:16px; margin-bottom:10px;">
@@ -704,20 +810,17 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             </div>
         </div>
 
-        <!-- 3. Daftar Tindakan CM Per Kategori -->
+        <!-- 5. Tindakan Job Desk CM -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">3. Daftar Tindakan Job Desk CM</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">📋 Tindakan Job Desk CM</h2>
             
             <div id="actionListWrapper" style="background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #cbd5e1;">
-                <h3 style="margin-top:0;font-size:13px;color:#0369a1;">Tindakan Perbaikan: <span id="jdNameSpan" style="color:#0ea5e9;"><?= e($preJobDeskName ?: 'Semua Opsi (Pilih Kategori)') ?></span></h3>
+                <h3 style="margin-top:0;font-size:13px;color:#0369a1;">Pilihan Tindakan: <span style="color:#0ea5e9;"><?= e($jobDeskName ?: 'Job Desk CM Kategori Ini') ?></span></h3>
                 <div id="dynamicActionRows">
                     <div class="action-row" style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
                         <select name="requested_actions[]" style="flex:1;">
                             <option value="">-- Pilih Tindakan --</option>
-                            <?php 
-                            $activeActionList = !empty($preActions) ? $preActions : $allActions;
-                            foreach ($activeActionList as $a): 
-                            ?>
+                            <?php foreach ($unitActions as $a): ?>
                                 <option value="<?= (int)$a['id'] ?>"><?= e($a['action_title']) ?></option>
                             <?php endforeach; ?>
                         </select>
@@ -728,9 +831,9 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             </div>
         </div>
 
-        <!-- 4. Biaya Service, Catatan Sparepart & Kwitansi / Invoice -->
+        <!-- 6. Biaya Service, Catatan Sparepart & Kwitansi / Invoice -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">4. Biaya Service, Sparepart & Kwitansi</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">💰 Biaya Service, Sparepart & Kwitansi</h2>
             
             <div class="grid two" style="margin-bottom:10px;">
                 <label>Biaya Jasa (Rp)
@@ -750,7 +853,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
                 </label>
             </div>
 
-            <label>Catatan Kerja / Solusi
+            <label>Catatan Kerja / Solusi Teknis
                 <textarea name="solution_details" style="min-height:70px;" placeholder="Langkah perbaikan yang dilakukan atau catatan khusus..."></textarea>
             </label>
 
@@ -790,17 +893,17 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             </div>
         </div>
 
-        <!-- 5. Informasi Pelapor -->
+        <!-- 7. Informasi Pelapor -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">5. Informasi Pelapor</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">👤 Informasi Pelapor</h2>
             
             <label>Nama Pelapor *
-                <input name="reporter_name" id="reporterName" value="<?= e($preUnit['custodian_name'] ?? $user['name'] ?? '') ?>" required placeholder="Nama pemakai / PIC">
+                <input name="reporter_name" id="reporterName" value="<?= e($unit['custodian_name'] ?? $user['name'] ?? '') ?>" required placeholder="Nama pemakai / PIC">
             </label>
             
             <div class="grid two">
                 <label>NIK Pelapor
-                    <input name="reporter_nik" id="reporterNik" value="<?= e($preUnit['custodian_nik'] ?? '') ?>" placeholder="NIK karyawan">
+                    <input name="reporter_nik" id="reporterNik" value="<?= e($unit['custodian_nik'] ?? '') ?>" placeholder="NIK karyawan">
                 </label>
                 <label>No. HP / WhatsApp
                     <input name="reporter_contact" placeholder="0812xxxxxx">
@@ -809,60 +912,9 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             <?= function_exists('employee_portal_name_picker_html') ? employee_portal_name_picker_html('ticketReporter', 'reporterName', 'reporterNik') : '' ?>
         </div>
 
-        <!-- 6. Rincian Masalah & Foto Bukti -->
+        <!-- 8. Status Tiket & Hasil Eksekusi Lapangan -->
         <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">6. Rincian Masalah & Foto Bukti</h2>
-            
-            <div id="locationFieldWrapper" style="margin-bottom:12px;">
-                <label>Lokasi / Ruangan (Khusus Internal)
-                    <select name="location_label" id="locInput">
-                        <option value="">-- Pilih Lokasi --</option>
-                        <?php foreach ($locationsList as $loc): ?>
-                            <option value="<?= e($loc['location_name']) ?>" <?= (($preUnit['location_label'] ?? '') === $loc['location_name']) ? 'selected' : '' ?>><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-            </div>
-
-            <label>Kategori Masalah
-                <select name="issue_category" id="ticketIssueCat">
-                    <option value="hardware">Kerusakan Hardware / Komponen</option>
-                    <option value="software">Masalah Software / OS / Aplikasi</option>
-                    <option value="network">Jaringan / Koneksi Internet</option>
-                    <option value="printer">Printer / Scanner Error</option>
-                    <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
-                    <option value="electrical">Kelistrikan / Aki / Lampu</option>
-                    <option value="hvac">AC / Pendingin Ruangan</option>
-                    <option value="plumbing">Pipa / Sanitasi Air</option>
-                    <option value="general">Lain-lain / Kerusakan Fisik</option>
-                </select>
-            </label>
-
-            <label>Tingkat Prioritas *
-                <select name="priority" required>
-                    <option value="low">Low (Bisa ditunda)</option>
-                    <option value="medium" selected>Medium (Standard)</option>
-                    <option value="high">High (Mendesak / Mengganggu Operasional)</option>
-                    <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
-                </select>
-            </label>
-
-            <label>Foto Kerusakan Awal
-                <input type="file" name="photo_before" accept="image/*" capture="environment">
-            </label>
-
-            <label>Judul / Subjek Kendala *
-                <input name="subject" required placeholder="Contoh: Layar mati / Ban bocor / AC panas">
-            </label>
-
-            <label>Deskripsi Gejala Kerusakan
-                <textarea name="description" placeholder="Jelaskan kronologi atau kondisi saat masalah terjadi..."></textarea>
-            </label>
-        </div>
-
-        <!-- 7. Status Tiket & Hasil Eksekusi Lapangan -->
-        <div class="panel">
-            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">7. Status Tiket & Hasil Pekerjaan</h2>
+            <h2 style="font-size:16px;color:#0369a1;margin-top:0;">⚙️ Status Tiket & Eksekusi</h2>
             
             <label>Status Tiket
                 <select name="status">
@@ -870,10 +922,6 @@ function handle_route_mobile_service_direct(PDO $pdo): void
                     <option value="in_progress">⏳ In Progress (Sedang Dikerjakan Langsung)</option>
                     <option value="resolved">✓ Resolved (Perbaikan Selesai di Lokasi)</option>
                 </select>
-            </label>
-
-            <label>Foto Bukti Selesai Perbaikan (Jika Sudah Diperbaiki)
-                <input type="file" name="photo_after" accept="image/*" capture="environment">
             </label>
 
             <button class="btn btn-primary" style="margin-top:16px;font-size:16px;padding:14px;background:#16a34a;border-color:#15803d;color:#fff;font-weight:700;width:100%;box-shadow:0 2px 4px rgba(0,0,0,0.1);">
@@ -902,128 +950,19 @@ function handle_route_mobile_service_direct(PDO $pdo): void
     }
     toggleHandledBy();
 
-    async function onDynGroupChange() {
-        var gid = document.getElementById('dynGroupId').value;
-        var tSel = document.getElementById('dynTypeId');
-        var aSel = document.getElementById('maintAssetSelect');
-        var jdSpan = document.getElementById('jdNameSpan');
-        
-        tSel.innerHTML = '<option value="">-- Loading Kategori... --</option>';
-        aSel.innerHTML = '<option value="">-- Pilih Kategori Dulu --</option>';
-        if (jdSpan) jdSpan.textContent = 'Semua Opsi (Pilih Kategori)';
-
-        if (!gid) {
-            tSel.innerHTML = '<option value="">-- Pilih Komoditas Dulu --</option>';
+    function previewImageFile(input, imgId, wrapId) {
+        var wrap = document.getElementById(wrapId);
+        var img = document.getElementById(imgId);
+        if (!input.files || !input.files[0]) {
+            if (wrap) wrap.style.display = 'none';
             return;
         }
-
-        try {
-            let res = await fetch('index.php?route=api_corrective_data&action=get_types&group_id=' + gid);
-            let types = await res.json();
-            
-            tSel.innerHTML = '<option value="">-- Pilih Kategori --</option>';
-            if (Array.isArray(types) && types.length > 0) {
-                types.forEach(function(t) {
-                    let opt = document.createElement('option');
-                    opt.value = t.id;
-                    opt.textContent = (t.type_code ? t.type_code + ' - ' : '') + t.type_name;
-                    tSel.appendChild(opt);
-                });
-            } else {
-                tSel.innerHTML = '<option value="">-- Tidak Ada Kategori --</option>';
-            }
-        } catch (e) {
-            console.error(e);
-            tSel.innerHTML = '<option value="">-- Gagal Memuat Kategori --</option>';
-        }
-    }
-
-    async function onDynTypeChange() {
-        var gid = document.getElementById('dynGroupId').value;
-        var tid = document.getElementById('dynTypeId').value;
-        var aSel = document.getElementById('maintAssetSelect');
-        var jdSpan = document.getElementById('jdNameSpan');
-
-        aSel.innerHTML = '<option value="">-- Loading Unit Aset... --</option>';
-
-        if (!gid || !tid) {
-            aSel.innerHTML = '<option value="">-- Pilih Kategori Dulu --</option>';
-            return;
-        }
-
-        try {
-            let res = await fetch('index.php?route=api_corrective_data&action=get_assets&group_id=' + gid + '&type_id=' + tid);
-            let assets = await res.json();
-
-            aSel.innerHTML = '<option value="">-- Pilih Unit Aset --</option>';
-            if (Array.isArray(assets) && assets.length > 0) {
-                assets.forEach(function(m) {
-                    let badge = (m.asset_mode === 'group') ? '[📦 INDUK BUNDLE] ' : ((m.asset_mode === 'child') ? '[🔗 ANGGOTA] ' : '');
-                    let desc = badge + m.asset_code + ' - ' + m.asset_name + (m.custodian_name ? ' (' + m.custodian_name + ')' : '');
-                    let opt = document.createElement('option');
-                    opt.value = m.id;
-                    opt.setAttribute('data-loc', m.location_label || '');
-                    opt.setAttribute('data-user', m.custodian_name || '');
-                    opt.textContent = desc;
-                    aSel.appendChild(opt);
-                });
-            } else {
-                aSel.innerHTML = '<option value="">-- Tidak ada aset pada kategori ini --</option>';
-            }
-
-            let resAct = await fetch('index.php?route=api_corrective_data&action=get_actions&group_id=' + gid + '&type_id=' + tid);
-            let actionsData = await resAct.json();
-            
-            if (actionsData && actionsData.actions && actionsData.actions.length > 0) {
-                if (jdSpan) jdSpan.textContent = actionsData.desk_name || 'Tindakan Kategori Ini';
-                
-                window.currentActionOptions = '<option value="">-- Pilih Tindakan --</option>';
-                actionsData.actions.forEach(function(a) {
-                    window.currentActionOptions += '<option value="'+a.id+'">'+a.action_title+'</option>';
-                });
-                
-                var selects = document.querySelectorAll('#dynamicActionRows select[name="requested_actions[]"]');
-                selects.forEach(function(sel) {
-                    var currentVal = sel.value;
-                    sel.innerHTML = window.currentActionOptions;
-                    var opt = sel.querySelector('option[value="'+currentVal+'"]');
-                    if(opt) {
-                        sel.value = currentVal;
-                    } else {
-                        sel.value = '';
-                    }
-                });
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    function onMaintAssetChange() {
-        var sel = document.getElementById('maintAssetSelect');
-        var opt = sel ? sel.options[sel.selectedIndex] : null;
-        var loc = opt ? opt.getAttribute('data-loc') : '';
-        var user = opt ? opt.getAttribute('data-user') : '';
-        var kmWrap = document.getElementById('vehicleKmWrapper');
-        var locInput = document.getElementById('locInput');
-        var repName = document.getElementById('reporterName');
-
-        if (loc && locInput && !locInput.value) {
-            locInput.value = loc;
-        }
-        if (user && repName && (!repName.value || repName.value === '<?= e($user['name']) ?>')) {
-            repName.value = user;
-        }
-
-        var dynGroupSel = document.getElementById('dynGroupId');
-        var groupText = (dynGroupSel && dynGroupSel.options[dynGroupSel.selectedIndex]) ? dynGroupSel.options[dynGroupSel.selectedIndex].text.toUpperCase() : '';
-        if (kmWrap) {
-            if (groupText.includes('VH -') || groupText.includes('VEHICLE')) {
-                kmWrap.style.display = 'block';
-            } else {
-                kmWrap.style.display = 'none';
-            }
-        }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            if (img) img.src = e.target.result;
+            if (wrap) wrap.style.display = 'block';
+        };
+        reader.readAsDataURL(input.files[0]);
     }
 
     window.currentActionOptions = document.querySelector('#dynamicActionRows select') ? document.querySelector('#dynamicActionRows select').innerHTML : '';
@@ -1063,15 +1002,10 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         div.appendChild(btn);
         container.appendChild(div);
     }
-
-    // Panggil saat pertama kali jika sudah ada unit terpilih
-    if (document.getElementById('dynGroupId')) {
-        onMaintAssetChange();
-    }
     </script>
     <?php
     render_invoice_camera_modal_and_script();
-    render_mobile_footer('new_ticket');
+    render_mobile_footer('ticket');
 }
 
 /**
@@ -1200,7 +1134,17 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
             <div style="font-size:12px;color:#64748b;margin-top:4px;"><?= nl2br(e($ticket['description'] ?: '-')) ?></div>
             <?php if ($ticket['photo_before']): ?>
                 <div style="margin-top:8px;">
-                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank" style="color:#0284c7;font-size:12px;">📷 Lihat Foto Kerusakan Awal</a>
+                    <a href="<?= e($ticket['photo_before']) ?>" target="_blank" style="color:#0284c7;font-size:12px;">📷 Lihat Foto Kerusakan Awal (Sebelum)</a>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($ticket['photo_after'])): ?>
+                <div style="margin-top:6px;">
+                    <a href="<?= e($ticket['photo_after']) ?>" target="_blank" style="color:#16a34a;font-size:12px;">📷 Lihat Foto Hasil Perbaikan (Sesudah)</a>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($ticket['invoice_photo'])): ?>
+                <div style="margin-top:6px;">
+                    <a href="<?= e($ticket['invoice_photo']) ?>" target="_blank" style="color:#d97706;font-size:12px;">🧾 Lihat Foto Kwitansi / Nota</a>
                 </div>
             <?php endif; ?>
         </div>

@@ -1315,6 +1315,7 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
         try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_user_id BIGINT NULL"); } catch (Throwable $e) {}
         try { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN handled_by_workshop_id BIGINT NULL"); } catch (Throwable $e) {}
         try { if (!db_column_exists($pdo, 'corrective_tickets', 'invoice_photo')) { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN invoice_photo VARCHAR(255) NULL AFTER photo_before"); } } catch (Throwable $e) {}
+        try { if (!db_column_exists($pdo, 'corrective_tickets', 'photo_after')) { $pdo->exec("ALTER TABLE corrective_tickets ADD COLUMN photo_after VARCHAR(255) NULL AFTER photo_before"); } } catch (Throwable $e) {}
 
         $pdo->exec("CREATE TABLE IF NOT EXISTS corrective_repairs (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
