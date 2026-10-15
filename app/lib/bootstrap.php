@@ -1288,6 +1288,59 @@ function add_timeline(PDO $pdo, int $scheduleId, string $eventType, string $note
     $stmt->execute([$scheduleId, $eventType, $note, $actorUserId]);
 }
 
+/**
+ * Otomatis membatalkan schedule preventive maintenance yang telah melewati batas tenggang waktu (expired date).
+ * Default tenggang waktu adalah 3 hari sejak scheduled_date.
+ */
+function cancel_expired_maintenance_schedules(PDO $pdo): int
+{
+    if (!db_table_exists($pdo, 'maintenance_schedules')) {
+        return 0;
+    }
+    try {
+        $hasExpiredDate = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+        $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+
+        $whereClause = $hasExpiredDate
+            ? "((expired_date IS NOT NULL AND expired_date < CURDATE()) OR (expired_date IS NULL AND DATE_ADD(scheduled_date, INTERVAL 3 DAY) < CURDATE()))"
+            : "DATE_ADD(scheduled_date, INTERVAL 3 DAY) < CURDATE()";
+
+        $sql = "SELECT id, scheduled_date" . ($hasExpiredDate ? ", expired_date" : "") . " 
+                FROM maintenance_schedules 
+                WHERE status NOT IN ('completed', 'cancelled') 
+                  AND $whereClause";
+        $stmt = $pdo->query($sql);
+        $expiredSchedules = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        if (empty($expiredSchedules)) {
+            return 0;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $cancelledCount = 0;
+        foreach ($expiredSchedules as $sch) {
+            $id = (int)$sch['id'];
+            $expDate = !empty($sch['expired_date']) ? (string)$sch['expired_date'] : date('Y-m-d', strtotime($sch['scheduled_date'] . ' +3 days'));
+            $reason = 'Batal otomatis: Lewat dari tenggang waktu';
+
+            if ($hasCancelReason) {
+                $upd = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled', cancellation_reason = ?, locked_at = COALESCE(locked_at, ?) WHERE id = ?");
+                $upd->execute([$reason, $now, $id]);
+            } else {
+                $upd = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled', locked_at = COALESCE(locked_at, ?) WHERE id = ?");
+                $upd->execute([$now, $id]);
+            }
+
+            if (db_table_exists($pdo, 'maintenance_timeline')) {
+                add_timeline($pdo, $id, 'schedule_expired_cancelled', 'Schedule otomatis dibatalkan karena telah melewati batas tenggang waktu / expired date (' . $expDate . ').', null);
+            }
+            $cancelledCount++;
+        }
+        return $cancelledCount;
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
 function upload_dir(): string
 {
     $dir = dirname(__DIR__, 2) . '/uploads/maintenance';

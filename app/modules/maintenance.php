@@ -880,8 +880,8 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
     }
     $whereSql = 'WHERE ' . implode(' AND ', $where);
     $sql = $printerReady
-        ? "SELECT s.id schedule_id, s.asset_type, COALESCE(s.pc_id,s.printer_id) asset_id, s.status raw_status, s.scheduled_date, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) asset_name, COALESCE(p.computer_name, pr.location) asset_detail, COALESCE(p.latitude, pr.latitude) asset_latitude, COALESCE(p.longitude, pr.longitude) asset_longitude, COALESCE(p.location_radius_m, pr.location_radius_m) asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql"
-        : "SELECT s.id schedule_id, 'pc' asset_type, s.pc_id asset_id, s.status raw_status, s.scheduled_date, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name asset_name, p.computer_name asset_detail, p.latitude asset_latitude, p.longitude asset_longitude, p.location_radius_m asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql";
+        ? "SELECT s.id schedule_id, s.asset_type, COALESCE(s.pc_id,s.printer_id) asset_id, s.status raw_status, s.scheduled_date, s.expired_date, s.cancellation_reason, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) asset_name, COALESCE(p.computer_name, pr.location) asset_detail, COALESCE(p.latitude, pr.latitude) asset_latitude, COALESCE(p.longitude, pr.longitude) asset_longitude, COALESCE(p.location_radius_m, pr.location_radius_m) asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql"
+        : "SELECT s.id schedule_id, 'pc' asset_type, s.pc_id asset_id, s.status raw_status, s.scheduled_date, s.expired_date, s.cancellation_reason, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name asset_name, p.computer_name asset_detail, p.latitude asset_latitude, p.longitude asset_longitude, p.location_radius_m asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql";
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -891,14 +891,17 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
         $scheduled = DateTimeImmutable::createFromFormat('Y-m-d', (string)$row['scheduled_date']) ?: $today;
         $daysLate = (int)$scheduled->diff($today)->format('%r%a');
         $isCompleted = (string)$row['raw_status'] === 'completed';
-        $statusGroup = $isCompleted ? 'completed' : ($daysLate > 7 ? 'expired' : 'pending');
+        $isCancelled = (string)$row['raw_status'] === 'cancelled';
+        $statusGroup = $isCompleted ? 'completed' : ($isCancelled ? 'cancelled' : ($daysLate > 7 ? 'expired' : 'pending'));
         if ($statusFilter !== '' && $statusFilter !== $statusGroup) {
             continue;
         }
         $beforeCount = count(json_decode((string)($row['before_photos'] ?? '[]'), true) ?: []);
         $afterCount = count(json_decode((string)($row['after_photos'] ?? '[]'), true) ?: []);
         $flags = [];
-        if ($statusGroup === 'expired') {
+        if ($isCancelled) {
+            $flags[] = 'Batal: ' . ($row['cancellation_reason'] ?: 'Lewat tenggang waktu');
+        } elseif ($statusGroup === 'expired') {
             $flags[] = 'Lewat ' . $daysLate . ' hari';
         }
         if ($isCompleted && ($beforeCount <= 0 || $afterCount <= 0)) {
@@ -929,7 +932,7 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
             }
         }
         $row['status_group'] = $statusGroup;
-        $row['status_label'] = $statusGroup === 'completed' ? 'Sudah Maintenance' : ($statusGroup === 'expired' ? 'Expired > 7 Hari' : 'Pending');
+        $row['status_label'] = $isCompleted ? 'Sudah Maintenance' : ($isCancelled ? 'Batal (Tenggang Waktu)' : ($statusGroup === 'expired' ? 'Expired > 7 Hari' : 'Pending'));
         $row['audit_flags'] = implode('; ', $flags);
         $rows[] = $row;
     }
@@ -943,6 +946,7 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
 function handle_route_maintenance(PDO $pdo): void
 {
     $user = require_regulation('maintenance', 'view');
+    cancel_expired_maintenance_schedules($pdo);
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string)($_POST['action'] ?? '');
@@ -958,8 +962,17 @@ function handle_route_maintenance(PDO $pdo): void
         if ($action === 'cancel_schedule') {
             $id = (int)($_POST['id'] ?? 0);
             if ($id > 0) {
-                $stmt = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled' WHERE id = ?");
-                $stmt->execute([$id]);
+                $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+                if ($hasCancelReason) {
+                    $stmt = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled', cancellation_reason = 'Dibatalkan manual oleh user', locked_at = COALESCE(locked_at, NOW()) WHERE id = ?");
+                    $stmt->execute([$id]);
+                } else {
+                    $stmt = $pdo->prepare("UPDATE maintenance_schedules SET status = 'cancelled', locked_at = COALESCE(locked_at, NOW()) WHERE id = ?");
+                    $stmt->execute([$id]);
+                }
+                if (db_table_exists($pdo, 'maintenance_timeline')) {
+                    add_timeline($pdo, $id, 'schedule_cancelled', 'Jadwal maintenance dibatalkan secara manual oleh user.', (int)$user['id']);
+                }
                 flash('Jadwal maintenance berhasil dibatalkan.');
             }
             redirect_to('maintenance');
@@ -995,7 +1008,7 @@ function handle_route_maintenance(PDO $pdo): void
     }
     $mobilePmBtn = '<a class="btn good" href="' . route_url('mobile_dashboard') . '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">📱 Mobile Preventive Maintenance</a>';
     $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">Tambah Schedule</a>' : '';
-    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
+    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal Rencana / Expired</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
     $scheduleIds = array_filter(array_map('intval', array_column($rows, 'id')));
     $reportsBySchedule = [];
     if ($scheduleIds) {
@@ -1014,14 +1027,32 @@ function handle_route_maintenance(PDO $pdo): void
         $beforeCount = count(json_decode((string)($photoReport['before_photos'] ?? '[]'), true) ?: []);
         $processCount = count(json_decode((string)($photoReport['process_photos'] ?? '[]'), true) ?: []);
         $afterCount = count(json_decode((string)($photoReport['after_photos'] ?? '[]'), true) ?: []);
+        
+        $expDate = !empty($row['expired_date']) ? $row['expired_date'] : date('Y-m-d', strtotime($row['scheduled_date'] . ' +3 days'));
+        $isCancelled = $row['status'] === 'cancelled';
+        $isExpiredOverdue = ($row['status'] !== 'completed' && $expDate < date('Y-m-d'));
+        $expColor = ($isCancelled || $isExpiredOverdue) ? 'color:#dc2626;font-weight:600;' : 'color:#64748b;';
+        $dateCell = '<div><strong>' . e($row['scheduled_date']) . '</strong><div style="font-size:11px; margin-top:2px; ' . $expColor . '">Batas: ' . e($expDate) . '</div></div>';
+
+        if ($isCancelled) {
+            $statusBadge = '<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-weight:700;">Batal</span>';
+            if (!empty($row['cancellation_reason'])) {
+                $statusBadge .= '<div class="muted" style="font-size:10px;color:#b91c1c;margin-top:3px;max-width:140px;line-height:1.2;">' . e($row['cancellation_reason']) . '</div>';
+            }
+        } elseif ($row['status'] === 'completed') {
+            $statusBadge = '<span class="badge ok">completed</span>';
+        } else {
+            $statusBadge = '<span class="badge">' . e($row['status']) . '</span>';
+        }
+
         $actions = '';
         if (can_manage_maintenance($user) && $row['status'] === 'completed') {
             $actions .= '<a class="btn" href="' . route_url('report_print', ['id' => $row['id']]) . '">Report</a> ';
+        } elseif ($isCancelled) {
+            $actions .= '<a class="btn" href="' . route_url('report_print', ['id' => $row['id']]) . '">Detail</a> ';
         }
-        if ($row['status'] !== 'completed') {
+        if ($row['status'] !== 'completed' && !$isCancelled) {
             $actions .= '<a title="Edit Task & Waktu" href="' . route_url('schedule_form', ['edit_id' => $row['id']]) . '" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; margin-right:4px;"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>';
-        }
-        if ($row['status'] !== 'completed' && $row['status'] !== 'cancelled') {
             $actions .= '<form method="post" action="' . route_url('maintenance') . '" style="display:inline;" onsubmit="return confirm(\'Batalkan jadwal maintenance ini?\');">'
                 . csrf_field()
                 . '<input type="hidden" name="action" value="cancel_schedule">'
@@ -1031,7 +1062,7 @@ function handle_route_maintenance(PDO $pdo): void
         }
         $groupBadge = $row['asset_group_code'] ? ($row['asset_group_code'] . ' - ' . $row['asset_group_name']) : ($row['asset_group_name'] ?: 'IT Asset');
         $bundleBadge = ($row['asset_mode'] ?? '') === 'group' ? '<br><span class="badge" style="background:#1e3a8a;color:#fff;font-size:11px;">📦 Induk Bundle</span>' : '';
-        echo '<tr><td>' . e($row['scheduled_date']) . '</td><td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . '<br><span class="badge">' . e($row['asset_type'] ?? 'pc') . '</span></td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td><td><span class="badge">' . e($groupBadge) . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td><span class="badge">' . e($row['status']) . '</span></td><td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td><td>' . $actions . '</td></tr>';
+        echo '<tr><td>' . $dateCell . '</td><td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . '<br><span class="badge">' . e($row['asset_type'] ?? 'pc') . '</span></td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td><td><span class="badge">' . e($groupBadge) . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . $statusBadge . '</td><td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td><td>' . $actions . '</td></tr>';
     }
     echo '</table></section>';
     render_footer();
@@ -1225,16 +1256,21 @@ function handle_route_schedule_form(PDO $pdo): void
             $assetGroupId = (int)$pdo->query("SELECT id FROM asset_groups WHERE group_code='IT' LIMIT 1")->fetchColumn() ?: null;
         }
 
+        $expiredDate = normalize_date_input((string)($_POST['expired_date'] ?? ''));
+        if ($expiredDate === '') {
+            $expiredDate = date('Y-m-d', strtotime($scheduledDate . ' +3 days'));
+        }
+
         try {
             if ($editId > 0) {
-                $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, notes=? WHERE id=?');
-                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? ''), $editId]);
+                $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, expired_date=?, notes=? WHERE id=?');
+                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? ''), $editId]);
                 $scheduleId = $editId;
                 $pdo->prepare('DELETE FROM schedule_jobs WHERE schedule_id=?')->execute([$scheduleId]);
                 flash('Schedule maintenance berhasil diupdate.');
             } else {
-                $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? '')]);
+                $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, expired_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? '')]);
                 $scheduleId = (int)$pdo->lastInsertId();
                 flash('Schedule maintenance berhasil dibuat.');
             }
@@ -1320,9 +1356,10 @@ function handle_route_schedule_form(PDO $pdo): void
             . '</div>';
 
         // TEKNISI & WAKTU PELAKSANAAN
+        $existingExpDate = !empty($existingSchedule['expired_date']) ? $existingSchedule['expired_date'] : date('Y-m-d', strtotime($existingSchedule['scheduled_date'] . ' +3 days'));
         echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
             . '<div style="font-weight: 700; font-size: 15px; color: #334155; margin-bottom: 12px;">1. Teknisi & Jadwal Waktu Pelaksanaan</div>'
-            . '<div class="grid two">'
+            . '<div class="grid three">'
             . '<label>Teknisi yang Bertugas *'
             . '<select name="technician_id" required>'
             . '<option value="">-- Pilih Teknisi --</option>';
@@ -1330,15 +1367,33 @@ function handle_route_schedule_form(PDO $pdo): void
             $sel = ((int)$existingSchedule['technician_id'] === (int)$tech['id']) ? ' selected' : '';
             echo '<option value="' . e($tech['id']) . '"' . $sel . '>' . e($tech['name']) . '</option>';
         }
-        echo '</datalist></label>'
-            . '<label>Tanggal Rencana Maintenance (Waktu) *'
-            . '<input type="date" name="scheduled_date" required value="' . e($existingSchedule['scheduled_date']) . '">'
+        echo '</select></label>'
+            . '<label>Tanggal Rencana Maintenance *'
+            . '<input type="date" id="editScheduledDate" name="scheduled_date" required value="' . e($existingSchedule['scheduled_date']) . '" onchange="syncEditExpiredDate(this.value)">'
+            . '</label>'
+            . '<label>Batas Expired (Tenggang Batal) *'
+            . '<input type="date" id="editExpiredDate" name="expired_date" required value="' . e($existingExpDate) . '">'
+            . '<span class="muted" style="font-size:11px; display:block; margin-top:3px;">Default +3 hari. Lewat dari tanggal ini, schedule otomatis batal.</span>'
             . '</label>'
             . '</div>'
             . '<label style="margin-top: 12px;">Catatan / Instruksi Khusus (Opsional)'
             . '<textarea name="notes" placeholder="Catatan instruksi tambahan..." rows="2">' . e($existingSchedule['notes'] ?? '') . '</textarea>'
             . '</label>'
-            . '</div>';
+            . '</div>'
+            . '<script>
+function syncEditExpiredDate(val) {
+    if (!val) return;
+    var d = new Date(val);
+    if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 3);
+        var yyyy = d.getFullYear();
+        var mm = String(d.getMonth() + 1).padStart(2, "0");
+        var dd = String(d.getDate()).padStart(2, "0");
+        var expInput = document.getElementById("editExpiredDate");
+        if (expInput) expInput.value = yyyy + "-" + mm + "-" + dd;
+    }
+}
+</script>';
 
         // CHECKLIST PEKERJAAN (TASKS)
         echo '<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
@@ -1618,11 +1673,14 @@ function handle_route_schedule_form(PDO $pdo): void
         . '</div>';
 
     // BAGIAN 3: PENUGASAN TEKNISI, TANGGAL & CATATAN
+    $selDate = $existingSchedule ? $existingSchedule['scheduled_date'] : date('Y-m-d');
+    $selExpDate = $existingSchedule ? ($existingSchedule['expired_date'] ?: date('Y-m-d', strtotime($existingSchedule['scheduled_date'] . ' +3 days'))) : date('Y-m-d', strtotime('+3 days'));
+    $selNotes = $existingSchedule ? $existingSchedule['notes'] : '';
     echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
         . '<div style="font-weight: 700; font-size: 15px; color: #334155; margin-bottom: 12px;">'
         . '<span>📅 3. Penugasan Teknisi & Jadwal Pelaksanaan</span>'
         . '</div>'
-        . '<div class="grid two">'
+        . '<div class="grid three">'
         . '<label>Teknisi yang Bertugas *'
         . '<select name="technician_id" required>'
         . '<option value="">-- Pilih Teknisi --</option>';
@@ -1631,11 +1689,13 @@ function handle_route_schedule_form(PDO $pdo): void
         $sel = ($selTechId === (int)$tech['id']) ? ' selected' : '';
         echo '<option value="' . e($tech['id']) . '"' . $sel . '>' . e($tech['name']) . '</option>';
     }
-    $selDate = $existingSchedule ? $existingSchedule['scheduled_date'] : date('Y-m-d');
-    $selNotes = $existingSchedule ? $existingSchedule['notes'] : '';
     echo '</select></label>'
         . '<label>Tanggal Rencana Maintenance *'
-        . '<input type="date" name="scheduled_date" required value="' . e($selDate) . '">'
+        . '<input type="date" id="createScheduledDate" name="scheduled_date" required value="' . e($selDate) . '" onchange="syncCreateExpiredDate(this.value)">'
+        . '</label>'
+        . '<label>Batas Expired (Tenggang Batal) *'
+        . '<input type="date" id="createExpiredDate" name="expired_date" required value="' . e($selExpDate) . '">'
+        . '<span class="muted" style="font-size:11px; display:block; margin-top:3px;">Default +3 hari. Lewat dari tanggal ini, schedule otomatis batal.</span>'
         . '</label>'
         . '</div>'
         . '<label style="margin-top: 12px;">Catatan / Instruksi Khusus (Opsional)'
@@ -1650,6 +1710,18 @@ function handle_route_schedule_form(PDO $pdo): void
         . '</section>';
 
     echo '<script>
+window.syncCreateExpiredDate = function(val) {
+    if (!val) return;
+    var d = new Date(val);
+    if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 3);
+        var yyyy = d.getFullYear();
+        var mm = String(d.getMonth() + 1).padStart(2, "0");
+        var dd = String(d.getDate()).padStart(2, "0");
+        var expInput = document.getElementById("createExpiredDate");
+        if (expInput) expInput.value = yyyy + "-" + mm + "-" + dd;
+    }
+};
 (function(){
     var groupSelect = document.getElementById("schedGroupSelect");
     var typeSelect = document.getElementById("schedTypeSelect");
@@ -1944,6 +2016,7 @@ function handle_route_schedule_form(PDO $pdo): void
 function handle_route_maintenance_do(PDO $pdo): void
 {
     $user = require_login();
+    cancel_expired_maintenance_schedules($pdo);
     $id = (int)($_GET['id'] ?? 0);
     $printerReady = printer_schema_ready($pdo);
     $stmt = $pdo->prepare('SELECT s.*, 
@@ -1962,6 +2035,10 @@ function handle_route_maintenance_do(PDO $pdo): void
     if (!$schedule) {
         http_response_code(404);
         exit('Schedule tidak ditemukan.');
+    }
+    if ($schedule['status'] === 'cancelled') {
+        flash('Jadwal maintenance ini telah dibatalkan' . (!empty($schedule['cancellation_reason']) ? ' (' . $schedule['cancellation_reason'] . ')' : '') . '.', 'err');
+        redirect_to('maintenance');
     }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($schedule['status'] === 'completed') {
@@ -3048,6 +3125,7 @@ function handle_route_maintenance_categories(PDO $pdo): void
 function handle_route_reports(PDO $pdo): void
 {
     $user = require_login();
+    cancel_expired_maintenance_schedules($pdo);
     render_header('Report Maintenance', $user);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
@@ -3056,8 +3134,8 @@ function handle_route_reports(PDO $pdo): void
     $pcFilter = trim($_GET['pc_id'] ?? '');
     $techFilter = (int)($_GET['technician_id'] ?? 0);
     $sql = $printerReady
-        ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.status schedule_status, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
-        : "SELECT r.*, s.id schedule_id, s.pc_id pc_id, 'pc' asset_type, s.scheduled_date, s.status schedule_status, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
+        ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+        : "SELECT r.*, s.id schedule_id, s.pc_id pc_id, 'pc' asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
     $params = [];
     if ($pcFilter !== '') {
         $sql .= ($printerReady && substr($pcFilter, 0, 3) === 'PRN') ? ' AND s.printer_id = ?' : ' AND s.pc_id = ?';
@@ -3102,7 +3180,24 @@ function handle_route_reports(PDO $pdo): void
     echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><table><tr><th>Tanggal</th><th>PcID</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th>Aksi</th></tr>';
     foreach ($stmt as $report) {
         $summary = maintenance_report_summary($pdo, $report);
-        echo '<tr><td>' . e($report['created_at'] ?? $report['scheduled_date'] ?? $report['schedule_created_at']) . '</td><td>' . e($report['pc_id']) . '</td><td>' . e($report['owner_name']) . '</td><td>' . e($report['technician'] ?: '-') . '</td><td><table><tr><th>Pekerjaan</th><th>Status</th><th>Keterangan</th></tr>';
+        $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
+        $expDate = !empty($report['expired_date']) ? $report['expired_date'] : date('Y-m-d', strtotime(($report['scheduled_date'] ?? date('Y-m-d')) . ' +3 days'));
+
+        $dateDisplay = e($report['created_at'] ?? $report['scheduled_date'] ?? $report['schedule_created_at']);
+        if ($isCancelled) {
+            $dateDisplay .= '<br><span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-size:10px;">Batal (Tenggang)</span>';
+        }
+
+        $cancelledBanner = '';
+        if ($isCancelled) {
+            $reasonText = !empty($report['cancellation_reason']) ? $report['cancellation_reason'] : 'Lewat dari tenggang waktu';
+            $cancelledBanner = '<div style="background:#fee2e2; border:1px solid #fecaca; border-radius:6px; padding:6px 10px; margin-bottom:8px; color:#991b1b; font-size:12px;">'
+                . '<strong>⛔ Status: Batal (' . e($reasonText) . ')</strong>'
+                . '<div style="font-size:11px; margin-top:2px; color:#b91c1c;">Batas Expired: ' . e($expDate) . '</div>'
+                . '</div>';
+        }
+
+        echo '<tr><td>' . $dateDisplay . '</td><td>' . e($report['pc_id']) . '</td><td>' . e($report['owner_name']) . '</td><td>' . e($report['technician'] ?: '-') . '</td><td>' . $cancelledBanner . '<table><tr><th>Pekerjaan</th><th>Status</th><th>Keterangan</th></tr>';
         if ($summary['checklist_rows']) {
             foreach ($summary['checklist_rows'] as $job) {
                 echo '<tr><td>' . e($job['title']) . '</td><td>' . e($job['status']) . '</td><td>' . e($job['note'] ?: '-') . '</td></tr>';
@@ -3128,6 +3223,7 @@ function handle_route_reports(PDO $pdo): void
 function handle_route_maintenance_status_report(PDO $pdo): void
 {
     $user = require_login();
+    cancel_expired_maintenance_schedules($pdo);
     render_header('Status Maintenance Aset', $user);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
@@ -3137,7 +3233,7 @@ function handle_route_maintenance_status_report(PDO $pdo): void
     $statusFilter = trim((string)($_GET['status_group'] ?? ''));
     $techFilter = (int)($_GET['technician_id'] ?? 0);
     $rows = maintenance_status_rows($pdo, $printerReady, $assetTypeFilter, $statusFilter, $techFilter, $user);
-    $counts = ['completed' => 0, 'pending' => 0, 'expired' => 0, 'total' => count($rows)];
+    $counts = ['completed' => 0, 'pending' => 0, 'expired' => 0, 'cancelled' => 0, 'total' => count($rows)];
     foreach ($rows as $row) {
         $counts[$row['status_group']] = ($counts[$row['status_group']] ?? 0) + 1;
     }
@@ -3152,16 +3248,16 @@ function handle_route_maintenance_status_report(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a></div></div></section>';
-    echo '<section class="panel"><div class="grid four"><div class="stat"><strong>' . e($counts['total']) . '</strong><span>Total</span></div><div class="stat"><strong>' . e($counts['completed']) . '</strong><span>Sudah Maintenance</span></div><div class="stat"><strong>' . e($counts['pending']) . '</strong><span>Pending</span></div><div class="stat"><strong>' . e($counts['expired']) . '</strong><span>Expired &gt; 7 Hari</span></div></div></section>';
-    echo '<section class="panel"><form method="get"><input type="hidden" name="route" value="maintenance_status_report"><div class="grid four"><label>Tipe Aset<select name="asset_type"><option value="">Semua</option><option value="pc"' . ($assetTypeFilter === 'pc' ? ' selected' : '') . '>PC</option><option value="printer"' . ($assetTypeFilter === 'printer' ? ' selected' : '') . '>Printer</option></select></label><label>Status<select name="status_group"><option value="">Semua</option><option value="completed"' . ($statusFilter === 'completed' ? ' selected' : '') . '>Sudah Maintenance</option><option value="pending"' . ($statusFilter === 'pending' ? ' selected' : '') . '>Pending</option><option value="expired"' . ($statusFilter === 'expired' ? ' selected' : '') . '>Expired &gt; 7 Hari</option></select></label><label>Teknisi<select name="technician_id"><option value="0">Semua Teknisi</option>';
+    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a></div></div></section>';
+    echo '<section class="panel"><div class="grid five"><div class="stat"><strong>' . e($counts['total']) . '</strong><span>Total</span></div><div class="stat"><strong>' . e($counts['completed']) . '</strong><span>Sudah Maintenance</span></div><div class="stat"><strong>' . e($counts['pending']) . '</strong><span>Pending</span></div><div class="stat"><strong>' . e($counts['cancelled']) . '</strong><span>Batal (Tenggang Waktu)</span></div><div class="stat"><strong>' . e($counts['expired']) . '</strong><span>Expired &gt; 7 Hari</span></div></div></section>';
+    echo '<section class="panel"><form method="get"><input type="hidden" name="route" value="maintenance_status_report"><div class="grid four"><label>Tipe Aset<select name="asset_type"><option value="">Semua</option><option value="pc"' . ($assetTypeFilter === 'pc' ? ' selected' : '') . '>PC</option><option value="printer"' . ($assetTypeFilter === 'printer' ? ' selected' : '') . '>Printer</option></select></label><label>Status<select name="status_group"><option value="">Semua</option><option value="completed"' . ($statusFilter === 'completed' ? ' selected' : '') . '>Sudah Maintenance</option><option value="pending"' . ($statusFilter === 'pending' ? ' selected' : '') . '>Pending</option><option value="cancelled"' . ($statusFilter === 'cancelled' ? ' selected' : '') . '>Batal (Tenggang Waktu)</option><option value="expired"' . ($statusFilter === 'expired' ? ' selected' : '') . '>Expired &gt; 7 Hari</option></select></label><label>Teknisi<select name="technician_id"><option value="0">Semua Teknisi</option>';
     foreach ($techs as $tech) {
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
     echo '</select></label><label>&nbsp;<button class="btn primary">Filter</button></label></div></form></section>';
     echo '<section class="panel"><table><tr><th>Tipe</th><th>Asset ID</th><th>Owner / Printer</th><th>Teknisi</th><th>Tanggal</th><th>Status</th><th>Audit Foto</th><th>Aksi</th></tr>';
     foreach ($rows as $row) {
-        $badgeClass = $row['status_group'] === 'expired' ? ' danger' : ($row['status_group'] === 'completed' ? ' ok' : '');
+        $badgeClass = $row['status_group'] === 'cancelled' ? ' danger' : ($row['status_group'] === 'expired' ? ' danger' : ($row['status_group'] === 'completed' ? ' ok' : ''));
         echo '<tr><td>' . e($row['asset_type']) . '</td><td><strong>' . e($row['asset_id']) . '</strong></td><td>' . e($row['asset_name']) . '<br><span class="muted">' . e($row['asset_detail'] ?: '-') . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . e($row['scheduled_date']) . '</td><td><span class="badge' . $badgeClass . '">' . e($row['status_label']) . '</span><br><span class="muted">' . e($row['raw_status']) . '</span></td><td>' . e($row['audit_flags'] ?: 'OK') . '</td><td><a class="btn" href="' . route_url('maintenance_do', ['id' => $row['schedule_id']]) . '">Buka</a> <a class="btn" href="' . route_url('report_print', ['id' => $row['schedule_id']]) . '">Detail</a></td></tr>';
     }
     echo '</table></section>';
@@ -3193,13 +3289,20 @@ function report_print(PDO $pdo): void
     $summary = $report ? maintenance_report_summary($pdo, $report) : [];
     render_header('Maintenance Report', $user);
     echo '<section class="panel no-print"><div class="split"><h1>Maintenance Report</h1><button class="btn primary" onclick="window.print()">Print / Save PDF</button></div></section>';
+    if ($schedule['status'] === 'cancelled') {
+        echo '<section class="panel" style="background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; margin-bottom:16px;">'
+            . '<h3 style="margin:0 0 6px 0; color:#7f1d1d;">⚠️ JADWAL MAINTENANCE TELAH DIBATALKAN</h3>'
+            . '<p style="margin:0; font-size:13px;">' . e($schedule['cancellation_reason'] ?: 'Jadwal dibatalkan karena telah melewati batas tenggang waktu (expired date).') . '</p>'
+            . '</section>';
+    }
     echo '<section class="panel"><h1>Maintenance Report ' . e($schedule['asset_id']) . '</h1><table>';
     foreach ([
         'Owner' => $schedule['owner_name'],
         'Asset Type' => $schedule['asset_type'] ?? 'pc',
         'Computer/Location' => $schedule['computer_name'],
         'Teknisi' => $schedule['technician'],
-        'Tanggal' => $schedule['scheduled_date'],
+        'Tanggal Rencana' => $schedule['scheduled_date'],
+        'Batas Expired' => $schedule['expired_date'] ?: date('Y-m-d', strtotime($schedule['scheduled_date'] . ' +3 days')),
         'Arrival' => $schedule['arrival_at'],
         'Completed' => $schedule['completed_at'],
         'Waktu Real Pengerjaan' => $summary['real_duration_text'] ?? '-',
@@ -3207,6 +3310,7 @@ function report_print(PDO $pdo): void
         'Audit Foto' => $summary ? ($summary['photo_evidence_score'] . '/100 - ' . $summary['challenge_audit_status'] . ' - ' . $summary['challenge_audit_text']) : 'Belum ada report',
         'Dynamic Challenge & QR (AI)' => !empty($summary['ai_challenge_audit']['note']) ? $summary['ai_challenge_audit']['note'] : ($summary['photo_challenge_code'] ? 'Kode ' . $summary['photo_challenge_code'] . ' (Validasi visual manual)' : '-'),
         'Status' => $schedule['status'],
+        'Alasan Batal' => $schedule['cancellation_reason'] ?: ($schedule['status'] === 'cancelled' ? 'Lewat dari tenggang waktu' : '-'),
         'Hash' => $report['report_hash'] ?? '-',
     ] as $k => $v) {
         echo '<tr><th>' . e($k) . '</th><td>' . e($v ?: '-') . '</td></tr>';
@@ -3292,8 +3396,8 @@ function export_excel(PDO $pdo, string $type): never
         $pcFilter = trim((string)($_GET['pc_id'] ?? ''));
         $techFilter = (int)($_GET['technician_id'] ?? 0);
         $sql = $printerReady
-            ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.status schedule_status, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
-            : "SELECT r.*, s.id schedule_id, s.pc_id, 'pc' asset_type, s.scheduled_date, s.status schedule_status, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, p.owner_name, u.name technician FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
+            ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+            : "SELECT r.*, s.id schedule_id, s.pc_id, 'pc' asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, p.owner_name, u.name technician FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
         $params = [];
         if ($pcFilter !== '') {
             $sql .= ($printerReady && substr($pcFilter, 0, 3) === 'PRN') ? ' AND s.printer_id = ?' : ' AND s.pc_id = ?';
@@ -3313,14 +3417,17 @@ function export_excel(PDO $pdo, string $type): never
         $rows = [];
         foreach ($stmt->fetchAll() as $report) {
             $summary = maintenance_report_summary($pdo, $report);
+            $expDate = !empty($report['expired_date']) ? $report['expired_date'] : date('Y-m-d', strtotime(($report['scheduled_date'] ?? date('Y-m-d')) . ' +3 days'));
             $rows[] = [
                 $report['created_at'] ?? $report['scheduled_date'],
                 $report['scheduled_date'],
+                $expDate,
                 $report['pc_id'],
                 $report['owner_name'],
                 $report['asset_type'] ?? 'pc',
                 $report['technician'],
                 $report['schedule_status'],
+                $report['cancellation_reason'] ?: ($report['schedule_status'] === 'cancelled' ? 'Lewat dari tenggang waktu' : '-'),
                 checklist_summary_text($summary),
                 $summary['photo_evidence_score'] . '/100',
                 $summary['challenge_audit_status'],
@@ -3333,17 +3440,18 @@ function export_excel(PDO $pdo, string $type): never
                 maintenance_summary_text($summary),
             ];
         }
-        output_tsv(['Tanggal Report', 'Tanggal Schedule', 'Asset ID', 'Owner/Printer', 'Tipe Aset', 'Teknisi', 'Status Schedule', 'Checklist Pekerjaan / Status / Keterangan', 'Audit Foto Score', 'Audit Foto Status', 'Warning Audit Foto', 'Foto', 'Scan QR', 'Kondisi', 'Catatan Kondisi', 'Catatan Teknisi', 'Summary Lengkap'], $rows);
+        output_tsv(['Tanggal Report', 'Tanggal Schedule', 'Batas Expired', 'Asset ID', 'Owner/Printer', 'Tipe Aset', 'Teknisi', 'Status Schedule', 'Alasan Batal', 'Checklist Pekerjaan / Status / Keterangan', 'Audit Foto Score', 'Audit Foto Status', 'Warning Audit Foto', 'Foto', 'Scan QR', 'Kondisi', 'Catatan Kondisi', 'Catatan Teknisi', 'Summary Lengkap'], $rows);
         exit;
     }
 
     if ($type === 'maintenance') {
         $rows = $pdo->query("SELECT s.scheduled_date, 
+            s.expired_date,
             COALESCE(s.pc_id, s.printer_id, ma.maintenance_asset_code) asset_id, 
             s.asset_type, 
             COALESCE(ag.group_name, 'IT Asset') asset_group,
             COALESCE(p.owner_name, pr.printer_name, ma.owner_name) owner_name, 
-            u.name technician, s.status, s.notes 
+            u.name technician, s.status, s.cancellation_reason, s.notes 
         FROM maintenance_schedules s 
         LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id
         LEFT JOIN asset_groups ag ON ag.id = COALESCE(s.asset_group_id, ma.asset_group_id)
@@ -3351,7 +3459,22 @@ function export_excel(PDO $pdo, string $type): never
         LEFT JOIN printers pr ON pr.prn_id COLLATE utf8mb4_unicode_ci = s.printer_id COLLATE utf8mb4_unicode_ci 
         LEFT JOIN users u ON u.id = s.technician_id 
         ORDER BY s.scheduled_date DESC")->fetchAll();
-        output_tsv(['Tanggal', 'Asset ID', 'Tipe Aset', 'Asset Group', 'Owner/Lokasi', 'Teknisi', 'Status', 'Catatan'], $rows);
+        $formattedRows = [];
+        foreach ($rows as $r) {
+            $formattedRows[] = [
+                $r['scheduled_date'],
+                !empty($r['expired_date']) ? $r['expired_date'] : date('Y-m-d', strtotime($r['scheduled_date'] . ' +3 days')),
+                $r['asset_id'],
+                $r['asset_type'],
+                $r['asset_group'],
+                $r['owner_name'],
+                $r['technician'],
+                $r['status'],
+                $r['cancellation_reason'] ?: ($r['status'] === 'cancelled' ? 'Lewat dari tenggang waktu' : '-'),
+                $r['notes'],
+            ];
+        }
+        output_tsv(['Tanggal Rencana', 'Batas Expired', 'Asset ID', 'Tipe Aset', 'Asset Group', 'Owner/Lokasi', 'Teknisi', 'Status', 'Alasan Batal', 'Catatan'], $formattedRows);
         exit;
     }
 

@@ -744,6 +744,7 @@ function handle_route_dashboard(PDO $pdo): void
     if ($user['role'] === 'technician') {
         redirect_to('mobile_dashboard');
     }
+    cancel_expired_maintenance_schedules($pdo);
     render_header('Dashboard', $user);
     $colorIdx = 0;
     $renderCard = function($number, $label, $iconPath) use (&$colorIdx) {
@@ -820,7 +821,7 @@ function handle_route_dashboard(PDO $pdo): void
         : 0;
 
     $pmOverdueCount = db_table_exists($pdo, 'maintenance_schedules')
-        ? (int)$pdo->query("SELECT COUNT(*) FROM maintenance_schedules WHERE scheduled_date < CURDATE() AND status != 'completed'")->fetchColumn()
+        ? (int)$pdo->query("SELECT COUNT(*) FROM maintenance_schedules WHERE scheduled_date < CURDATE() AND status NOT IN ('completed', 'cancelled')")->fetchColumn()
         : 0;
 
     $cmOpenCount = db_table_exists($pdo, 'corrective_tickets')

@@ -162,7 +162,9 @@ function ensure_maintenance_work_schema(PDO $pdo): void
             printer_id VARCHAR(60) NULL,
             technician_id INT NULL,
             scheduled_date DATE NOT NULL,
+            expired_date DATE NULL,
             status ENUM('scheduled','validated','in_progress','completed','reopened','cancelled') NOT NULL DEFAULT 'scheduled',
+            cancellation_reason VARCHAR(255) NULL,
             notes TEXT NULL,
             arrival_at DATETIME NULL,
             arrival_ip VARCHAR(80) NULL,
@@ -186,6 +188,15 @@ function ensure_maintenance_work_schema(PDO $pdo): void
             try {
                 $pdo->exec('ALTER TABLE maintenance_schedules ADD INDEX idx_schedules_asset_group (asset_group_id)');
             } catch (Throwable $ignored) {}
+        }
+        if (!db_column_exists($pdo, 'maintenance_schedules', 'expired_date')) {
+            $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN expired_date DATE NULL AFTER scheduled_date');
+            try {
+                $pdo->exec('UPDATE maintenance_schedules SET expired_date = DATE_ADD(scheduled_date, INTERVAL 3 DAY) WHERE expired_date IS NULL');
+            } catch (Throwable $ignored) {}
+        }
+        if (!db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason')) {
+            $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN cancellation_reason VARCHAR(255) NULL AFTER status');
         }
         try {
             $pdo->exec("ALTER TABLE maintenance_schedules MODIFY asset_type VARCHAR(60) NOT NULL DEFAULT 'pc'");
@@ -1100,7 +1111,7 @@ function ensure_performance_indexes(PDO $pdo): void
 
 function ensure_app_schema(PDO $pdo, bool $force = false): void
 {
-    $lockFile = sys_get_temp_dir() . '/asetconnect_schema_v22.lock';
+    $lockFile = sys_get_temp_dir() . '/asetconnect_schema_v23.lock';
     if (!$force && empty($_GET['force_schema'])) {
         if (file_exists($lockFile) && db_table_exists($pdo, 'pcs') && db_table_exists($pdo, 'role_regulations')) {
             return;

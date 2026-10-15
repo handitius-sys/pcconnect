@@ -110,10 +110,17 @@ function smart_maintenance_card(array $schedule): string
 function mobile_dashboard(PDO $pdo): void
 {
     $user = require_role(['admin', 'technician']);
+    cancel_expired_maintenance_schedules($pdo);
     expire_stale_mobile_work_or_logout($pdo, $user);
     sync_completed_mobile_schedules($pdo, (int)$user['id']);
     render_mobile_header('Dashboard Teknisi', $user);
-    $stmt = $pdo->prepare("SELECT COUNT(*) total, SUM(status='completed') done, SUM(status<>'completed' AND arrival_at IS NOT NULL AND EXISTS (SELECT 1 FROM maintenance_reports r WHERE r.schedule_id=maintenance_schedules.id)) waiting_end_scan, SUM(status<>'completed' AND arrival_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM maintenance_reports r WHERE r.schedule_id=maintenance_schedules.id)) progress, SUM(status<>'completed' AND arrival_at IS NULL) pending FROM maintenance_schedules WHERE technician_id=? AND scheduled_date<=CURDATE()");
+    $stmt = $pdo->prepare("SELECT COUNT(*) total, 
+        SUM(status='completed') done, 
+        SUM(status NOT IN ('completed', 'cancelled') AND arrival_at IS NOT NULL AND EXISTS (SELECT 1 FROM maintenance_reports r WHERE r.schedule_id=maintenance_schedules.id)) waiting_end_scan, 
+        SUM(status NOT IN ('completed', 'cancelled') AND arrival_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM maintenance_reports r WHERE r.schedule_id=maintenance_schedules.id)) progress, 
+        SUM(status NOT IN ('completed', 'cancelled') AND arrival_at IS NULL) pending 
+        FROM maintenance_schedules 
+        WHERE technician_id=? AND scheduled_date<=CURDATE() AND status NOT IN ('cancelled')");
     $stmt->execute([$user['id']]);
     $stats = $stmt->fetch();
     $openTotal = (int)($stats['progress'] ?? 0) + (int)($stats['waiting_end_scan'] ?? 0) + (int)($stats['pending'] ?? 0);
@@ -158,6 +165,7 @@ function mobile_dashboard(PDO $pdo): void
 function mobile_schedule(PDO $pdo): void
 {
     $user = require_role(['admin', 'technician']);
+    cancel_expired_maintenance_schedules($pdo);
     expire_stale_mobile_work_or_logout($pdo, $user);
     sync_completed_mobile_schedules($pdo, (int)$user['id']);
     render_mobile_header('Schedule', $user);
@@ -173,7 +181,7 @@ function mobile_schedule(PDO $pdo): void
         LEFT JOIN asset_items ai ON ai.id = COALESCE(s.asset_item_id, ma.asset_item_id)
         LEFT JOIN pcs p ON (p.pc_id = s.pc_id OR (s.pc_id IS NULL AND p.asset_item_id = s.asset_item_id))
         LEFT JOIN printers pr ON (pr.prn_id = s.printer_id OR (s.printer_id IS NULL AND pr.asset_item_id = s.asset_item_id))
-        WHERE s.technician_id=? AND s.status<>'completed' 
+        WHERE s.technician_id=? AND s.status NOT IN ('completed', 'cancelled') 
         ORDER BY s.scheduled_date ASC, s.id ASC");
     $stmt->execute([$user['id']]);
     echo '<section class="panel"><h1>Schedule Saya</h1><p class="muted">Pilih unit aset, lalu scan QR sebelum mulai pekerjaan. Untuk paket bundling cukup scan QR Induk.</p></section>';
@@ -268,6 +276,7 @@ function mobile_scan(PDO $pdo): void
         redirect_to('login', ['mode' => 'mobile']);
     }
     $user = require_role(['admin', 'technician']);
+    cancel_expired_maintenance_schedules($pdo);
     expire_stale_mobile_work_or_logout($pdo, $user, $scheduleId > 0 ? $scheduleId : null);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [$assetType, $assetId, $assetInfo] = find_asset_by_code($pdo, $code);
@@ -299,6 +308,11 @@ function mobile_scan(PDO $pdo): void
 
             if (!$scheduleCandidate) {
                 flash($user['role'] === 'admin' ? 'Schedule terbuka tidak ditemukan.' : 'Schedule tidak ada atau bukan penugasan Anda.', 'err');
+                redirect_to('mobile_schedule');
+            }
+
+            if ($scheduleCandidate['status'] === 'cancelled') {
+                flash('Jadwal maintenance ini telah dibatalkan' . (!empty($scheduleCandidate['cancellation_reason']) ? ' (' . $scheduleCandidate['cancellation_reason'] . ')' : '') . '.', 'err');
                 redirect_to('mobile_schedule');
             }
 
@@ -359,7 +373,7 @@ function mobile_scan(PDO $pdo): void
                         FROM maintenance_schedules s 
                         LEFT JOIN asset_items ai ON ai.id = s.asset_item_id
                         LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id 
-                        WHERE s.status <> 'completed'";
+                        WHERE s.status NOT IN ('completed', 'cancelled')";
             $findParams = [];
             if ($user['role'] !== 'admin') {
                 $findSql .= " AND s.technician_id = ?";
@@ -498,6 +512,7 @@ function mobile_job(PDO $pdo): void
     ensure_base_schema_from_sql($pdo);
     ensure_photo_challenge_schema($pdo);
     ensure_maintenance_work_schema($pdo);
+    cancel_expired_maintenance_schedules($pdo);
     expire_stale_mobile_work_or_logout($pdo, $user, $id > 0 ? $id : null);
     $jobSql = 'SELECT s.*, 
         COALESCE(ai.asset_code, s.pc_id, s.printer_id, CONCAT("Unit #", s.id)) AS asset_id, 
@@ -523,6 +538,10 @@ function mobile_job(PDO $pdo): void
     if (!$schedule) {
         http_response_code(404);
         exit('Schedule tidak ditemukan.');
+    }
+    if ($schedule['status'] === 'cancelled') {
+        flash('Jadwal maintenance ini telah dibatalkan' . (!empty($schedule['cancellation_reason']) ? ' (' . $schedule['cancellation_reason'] . ')' : '') . '.', 'err');
+        redirect_to('mobile_schedule');
     }
     if (empty($schedule['arrival_at'])) {
         flash('Scan QR asset terlebih dahulu sebelum memulai pekerjaan.', 'err');
