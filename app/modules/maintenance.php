@@ -864,6 +864,12 @@ function maintenance_summary_text(array $summary): string
 
 function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetTypeFilter, string $statusFilter, int $techFilter, array $user): array
 {
+    ensure_maintenance_work_schema($pdo);
+    $hasExpiredDate = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+    $expSql = $hasExpiredDate ? "s.expired_date" : "DATE_ADD(s.scheduled_date, INTERVAL 3 DAY) AS expired_date";
+    $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+    $cancelSql = $hasCancelReason ? "s.cancellation_reason" : "NULL AS cancellation_reason";
+
     $params = [];
     $where = ['1=1'];
     if ($assetTypeFilter !== '') {
@@ -880,8 +886,8 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
     }
     $whereSql = 'WHERE ' . implode(' AND ', $where);
     $sql = $printerReady
-        ? "SELECT s.id schedule_id, s.asset_type, COALESCE(s.pc_id,s.printer_id) asset_id, s.status raw_status, s.scheduled_date, s.expired_date, s.cancellation_reason, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) asset_name, COALESCE(p.computer_name, pr.location) asset_detail, COALESCE(p.latitude, pr.latitude) asset_latitude, COALESCE(p.longitude, pr.longitude) asset_longitude, COALESCE(p.location_radius_m, pr.location_radius_m) asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql"
-        : "SELECT s.id schedule_id, 'pc' asset_type, s.pc_id asset_id, s.status raw_status, s.scheduled_date, s.expired_date, s.cancellation_reason, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name asset_name, p.computer_name asset_detail, p.latitude asset_latitude, p.longitude asset_longitude, p.location_radius_m asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql";
+        ? "SELECT s.id schedule_id, s.asset_type, COALESCE(s.pc_id,s.printer_id) asset_id, s.status raw_status, s.scheduled_date, {$expSql}, {$cancelSql}, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) asset_name, COALESCE(p.computer_name, pr.location) asset_detail, COALESCE(p.latitude, pr.latitude) asset_latitude, COALESCE(p.longitude, pr.longitude) asset_longitude, COALESCE(p.location_radius_m, pr.location_radius_m) asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql"
+        : "SELECT s.id schedule_id, 'pc' asset_type, s.pc_id asset_id, s.status raw_status, s.scheduled_date, {$expSql}, {$cancelSql}, s.arrival_at, s.arrival_lat, s.arrival_lng, s.completed_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name asset_name, p.computer_name asset_detail, p.latitude asset_latitude, p.longitude asset_longitude, p.location_radius_m asset_radius_m, r.before_photos, r.process_photos, r.after_photos, r.photo_challenge_code report_challenge_code, r.photo_audit_meta, r.created_at report_created_at FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) $whereSql";
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -1200,6 +1206,7 @@ function handle_route_maintenance_cleanup(PDO $pdo): void
 function handle_route_schedule_form(PDO $pdo): void
 {
     $user = require_regulation('maintenance', 'create');
+    ensure_maintenance_work_schema($pdo);
     $selectedGroupId = (int)(($_POST['asset_group_id'] ?? $_GET['asset_group_id'] ?? 0));
     $editId = (int)($_POST['edit_id'] ?? $_GET['edit_id'] ?? 0);
     
@@ -1261,16 +1268,34 @@ function handle_route_schedule_form(PDO $pdo): void
             $expiredDate = date('Y-m-d', strtotime($scheduledDate . ' +3 days'));
         }
 
+        $hasExpCol = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+        if (!$hasExpCol) {
+            try {
+                $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN expired_date DATE NULL AFTER scheduled_date');
+                $hasExpCol = db_column_exists($pdo, 'maintenance_schedules', 'expired_date', true);
+            } catch (Throwable $e) {}
+        }
+
         try {
             if ($editId > 0) {
-                $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, expired_date=?, notes=? WHERE id=?');
-                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? ''), $editId]);
+                if ($hasExpCol) {
+                    $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, expired_date=?, notes=? WHERE id=?');
+                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? ''), $editId]);
+                } else {
+                    $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, notes=? WHERE id=?');
+                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? ''), $editId]);
+                }
                 $scheduleId = $editId;
                 $pdo->prepare('DELETE FROM schedule_jobs WHERE schedule_id=?')->execute([$scheduleId]);
                 flash('Schedule maintenance berhasil diupdate.');
             } else {
-                $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, expired_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? '')]);
+                if ($hasExpCol) {
+                    $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, expired_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? '')]);
+                } else {
+                    $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? '')]);
+                }
                 $scheduleId = (int)$pdo->lastInsertId();
                 flash('Schedule maintenance berhasil dibuat.');
             }
@@ -3125,17 +3150,23 @@ function handle_route_maintenance_categories(PDO $pdo): void
 function handle_route_reports(PDO $pdo): void
 {
     $user = require_login();
+    ensure_maintenance_work_schema($pdo);
     cancel_expired_maintenance_schedules($pdo);
     render_header('Report Maintenance', $user);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
         echo printer_schema_warning();
     }
+    $hasExpiredDate = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+    $expSql = $hasExpiredDate ? "s.expired_date" : "DATE_ADD(s.scheduled_date, INTERVAL 3 DAY) AS expired_date";
+    $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+    $cancelSql = $hasCancelReason ? "s.cancellation_reason" : "NULL AS cancellation_reason";
+
     $pcFilter = trim($_GET['pc_id'] ?? '');
     $techFilter = (int)($_GET['technician_id'] ?? 0);
     $sql = $printerReady
-        ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
-        : "SELECT r.*, s.id schedule_id, s.pc_id pc_id, 'pc' asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
+        ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+        : "SELECT r.*, s.id schedule_id, s.pc_id pc_id, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
     $params = [];
     if ($pcFilter !== '') {
         $sql .= ($printerReady && substr($pcFilter, 0, 3) === 'PRN') ? ' AND s.printer_id = ?' : ' AND s.pc_id = ?';
@@ -3392,12 +3423,18 @@ function export_excel(PDO $pdo, string $type): never
     echo "\xEF\xBB\xBF";
 
     if ($type === 'reports') {
+        ensure_maintenance_work_schema($pdo);
+        $hasExpiredDate = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+        $expSql = $hasExpiredDate ? "s.expired_date" : "DATE_ADD(s.scheduled_date, INTERVAL 3 DAY) AS expired_date";
+        $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+        $cancelSql = $hasCancelReason ? "s.cancellation_reason" : "NULL AS cancellation_reason";
+
         $printerReady = printer_schema_ready($pdo);
         $pcFilter = trim((string)($_GET['pc_id'] ?? ''));
         $techFilter = (int)($_GET['technician_id'] ?? 0);
         $sql = $printerReady
-            ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
-            : "SELECT r.*, s.id schedule_id, s.pc_id, 'pc' asset_type, s.scheduled_date, s.expired_date, s.status schedule_status, s.cancellation_reason, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, p.owner_name, u.name technician FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
+            ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+            : "SELECT r.*, s.id schedule_id, s.pc_id, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, p.owner_name, u.name technician FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
         $params = [];
         if ($pcFilter !== '') {
             $sql .= ($printerReady && substr($pcFilter, 0, 3) === 'PRN') ? ' AND s.printer_id = ?' : ' AND s.pc_id = ?';
@@ -3445,13 +3482,19 @@ function export_excel(PDO $pdo, string $type): never
     }
 
     if ($type === 'maintenance') {
+        ensure_maintenance_work_schema($pdo);
+        $hasExpiredDate = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
+        $expSql = $hasExpiredDate ? "s.expired_date" : "DATE_ADD(s.scheduled_date, INTERVAL 3 DAY) AS expired_date";
+        $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
+        $cancelSql = $hasCancelReason ? "s.cancellation_reason" : "NULL AS cancellation_reason";
+
         $rows = $pdo->query("SELECT s.scheduled_date, 
-            s.expired_date,
+            {$expSql},
             COALESCE(s.pc_id, s.printer_id, ma.maintenance_asset_code) asset_id, 
             s.asset_type, 
             COALESCE(ag.group_name, 'IT Asset') asset_group,
             COALESCE(p.owner_name, pr.printer_name, ma.owner_name) owner_name, 
-            u.name technician, s.status, s.cancellation_reason, s.notes 
+            u.name technician, s.status, {$cancelSql}, s.notes 
         FROM maintenance_schedules s 
         LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id
         LEFT JOIN asset_groups ag ON ag.id = COALESCE(s.asset_group_id, ma.asset_group_id)

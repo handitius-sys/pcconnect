@@ -22,12 +22,12 @@ if (!function_exists('db_table_exists')) {
 }
 
 if (!function_exists('db_column_exists')) {
-    function db_column_exists(PDO $pdo, string $table, string $column): bool
+    function db_column_exists(PDO $pdo, string $table, string $column, bool $refresh = false): bool
     {
         static $columns = [];
         $tableLower = strtolower($table);
         $colLower = strtolower($column);
-        if (!isset($columns[$tableLower])) {
+        if ($refresh || !isset($columns[$tableLower])) {
             if (!db_table_exists($pdo, $table)) {
                 $columns[$tableLower] = [];
                 return false;
@@ -183,21 +183,26 @@ function ensure_maintenance_work_schema(PDO $pdo): void
             INDEX idx_schedules_asset_group (asset_group_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-        if (!db_column_exists($pdo, 'maintenance_schedules', 'asset_group_id')) {
-            $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN asset_group_id INT NULL AFTER maintenance_asset_id');
-            try {
-                $pdo->exec('ALTER TABLE maintenance_schedules ADD INDEX idx_schedules_asset_group (asset_group_id)');
-            } catch (Throwable $ignored) {}
-        }
-        if (!db_column_exists($pdo, 'maintenance_schedules', 'expired_date')) {
+        try {
+            if (!db_column_exists($pdo, 'maintenance_schedules', 'asset_group_id', true)) {
+                $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN asset_group_id INT NULL AFTER maintenance_asset_id');
+                db_column_exists($pdo, 'maintenance_schedules', 'asset_group_id', true);
+            }
+        } catch (Throwable $ignored) {}
+        try {
+            $pdo->exec('ALTER TABLE maintenance_schedules ADD INDEX idx_schedules_asset_group (asset_group_id)');
+        } catch (Throwable $ignored) {}
+        try {
             $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN expired_date DATE NULL AFTER scheduled_date');
-            try {
-                $pdo->exec('UPDATE maintenance_schedules SET expired_date = DATE_ADD(scheduled_date, INTERVAL 3 DAY) WHERE expired_date IS NULL');
-            } catch (Throwable $ignored) {}
-        }
-        if (!db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason')) {
+            db_column_exists($pdo, 'maintenance_schedules', 'expired_date', true);
+        } catch (Throwable $ignored) {}
+        try {
+            $pdo->exec('UPDATE maintenance_schedules SET expired_date = DATE_ADD(scheduled_date, INTERVAL 3 DAY) WHERE expired_date IS NULL');
+        } catch (Throwable $ignored) {}
+        try {
             $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN cancellation_reason VARCHAR(255) NULL AFTER status');
-        }
+            db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason', true);
+        } catch (Throwable $ignored) {}
         try {
             $pdo->exec("ALTER TABLE maintenance_schedules MODIFY asset_type VARCHAR(60) NOT NULL DEFAULT 'pc'");
         } catch (Throwable $ignored) {}
@@ -1111,7 +1116,7 @@ function ensure_performance_indexes(PDO $pdo): void
 
 function ensure_app_schema(PDO $pdo, bool $force = false): void
 {
-    $lockFile = sys_get_temp_dir() . '/asetconnect_schema_v23.lock';
+    $lockFile = sys_get_temp_dir() . '/asetconnect_schema_v25.lock';
     if (!$force && empty($_GET['force_schema'])) {
         if (file_exists($lockFile) && db_table_exists($pdo, 'pcs') && db_table_exists($pdo, 'role_regulations')) {
             return;
@@ -1119,6 +1124,7 @@ function ensure_app_schema(PDO $pdo, bool $force = false): void
     }
 
     ensure_base_schema_from_sql($pdo);
+    ensure_maintenance_work_schema($pdo);
     ensure_user_roles_schema($pdo);
     ensure_printer_schema($pdo);
     ensure_pc_location_schema($pdo);

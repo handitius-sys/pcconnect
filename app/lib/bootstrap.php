@@ -1035,12 +1035,12 @@ if (!function_exists('db_table_exists')) {
 }
 
 if (!function_exists('db_column_exists')) {
-    function db_column_exists(PDO $pdo, string $table, string $column): bool
+    function db_column_exists(PDO $pdo, string $table, string $column, bool $refresh = false): bool
     {
         static $columns = [];
         $tableLower = strtolower($table);
         $colLower = strtolower($column);
-        if (!isset($columns[$tableLower])) {
+        if ($refresh || !isset($columns[$tableLower])) {
             if (!db_table_exists($pdo, $table)) {
                 $columns[$tableLower] = [];
                 return false;
