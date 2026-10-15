@@ -1273,7 +1273,7 @@ function handle_route_ticket_form(PDO $pdo): void
                               FROM asset_items ai
                               LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
                               LEFT JOIN asset_types at ON at.id = ai.asset_type_id
-                              WHERE ai.status <> 'inactive'
+                              WHERE ai.status NOT IN ('inactive', 'deleted')
                               ORDER BY (ai.asset_mode = 'group') DESC, ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
 
     render_header('Buat Tiket Corrective Baru', $user);
@@ -3212,7 +3212,7 @@ function handle_route_api_corrective_data(PDO $pdo): void
     if ($action === 'get_assets') {
         $groupId = (int)($_GET['group_id'] ?? 0);
         $typeId = (int)($_GET['type_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status <> 'inactive' ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
+        $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status NOT IN ('inactive', 'deleted') ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
         $stmt->execute([$groupId, $typeId]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;

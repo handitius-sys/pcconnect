@@ -526,6 +526,8 @@ function handle_route_api_eligible_maintenance_asset_items(PDO $pdo): void
         $params[] = $typeId;
     }
 
+    $where[] = "LOWER(ai.status) NOT IN ('inactive', 'deleted')";
+
     // Hanya Unit Aset Standalone atau Bundle Parent (Child tidak boleh masuk Maintenance Asset)
     $where[] = "(ai.asset_mode IS NULL OR ai.asset_mode <> 'child')";
     $where[] = "NOT EXISTS (SELECT 1 FROM asset_item_members aim WHERE aim.child_asset_item_id = ai.id AND aim.detached_at IS NULL)";
@@ -729,9 +731,10 @@ function handle_route_api_trace_identifier(PDO $pdo): void
             LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id
             LEFT JOIN asset_companies c ON c.id = ai.company_id
             LEFT JOIN maintenance_assets ma ON ma.asset_item_id = ai.id
-            WHERE aid.identifier_value LIKE ?
+            WHERE (aid.identifier_value LIKE ?
                OR ai.serial_number LIKE ?
-               OR ai.asset_code LIKE ?
+               OR ai.asset_code LIKE ?)
+              AND LOWER(ai.status) <> 'deleted'
             ORDER BY ai.asset_code ASC
             LIMIT 50";
 
@@ -1172,7 +1175,7 @@ function handle_route_api_assets_by_type(PDO $pdo): void
 {
     require_login();
     $typeId = (int)($_GET['type_id'] ?? 0);
-    $stmt = $pdo->prepare('SELECT id, asset_code, asset_name FROM asset_items WHERE asset_type_id = ? ORDER BY asset_code');
+    $stmt = $pdo->prepare("SELECT id, asset_code, asset_name FROM asset_items WHERE asset_type_id = ? AND LOWER(status) <> 'deleted' ORDER BY asset_code");
     $stmt->execute([$typeId]);
     $assets = $stmt->fetchAll(PDO::FETCH_ASSOC);
     api_json($assets);

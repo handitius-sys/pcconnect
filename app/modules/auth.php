@@ -773,7 +773,7 @@ function handle_route_dashboard(PDO $pdo): void
     };
 
     if (db_table_exists($pdo, 'asset_items')) {
-        $totalAssets = (int)$pdo->query("SELECT COUNT(*) FROM asset_items")->fetchColumn();
+        $totalAssets = (int)$pdo->query("SELECT COUNT(*) FROM asset_items WHERE LOWER(status) <> 'deleted'")->fetchColumn();
 
         $activeAssets = (int)$pdo->query("
             SELECT COUNT(*) FROM asset_items ai 

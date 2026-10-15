@@ -21,7 +21,7 @@ function handle_route_labels(PDO $pdo): void
             LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
             LEFT JOIN asset_types at ON at.id = ai.asset_type_id
             LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-            WHERE ai.status <> 'inactive'";
+            WHERE ai.status NOT IN ('inactive', 'deleted')";
     
     $params = [];
     if ($type !== 'all' && $type !== '') {
@@ -214,13 +214,13 @@ function handle_route_qr_png(PDO $pdo): void
 
     // 1. Cari di asset_items sebagai Single Source of Truth
     if (db_table_exists($pdo, 'asset_items')) {
-        $stmt = $pdo->prepare('SELECT ai.*, ag.group_name, at.type_name, c.company_name, loc.location_name
+        $stmt = $pdo->prepare("SELECT ai.*, ag.group_name, at.type_name, c.company_name, loc.location_name
                                FROM asset_items ai
                                LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
                                LEFT JOIN asset_types at ON at.id = ai.asset_type_id
                                LEFT JOIN asset_companies c ON c.id = ai.company_id
                                LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                               WHERE ai.asset_code = ? OR ai.asset_code = ? LIMIT 1');
+                               WHERE (ai.asset_code = ? OR ai.asset_code = ?) AND ai.status <> 'deleted' LIMIT 1");
         $stmt->execute([$assetCode, $baseCode]);
         $ai = $stmt->fetch();
     }

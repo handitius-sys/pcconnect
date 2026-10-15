@@ -178,6 +178,7 @@ function asset_items_table(PDO $pdo, array $rows): string
     $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama / Merek <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Tanggal Input <span class="sort-ind">⇅</span></th>';
     $html .= '<th style="text-align:center;width:96px;">Aksi</th>';
     $html .= '</tr></thead><tbody>';
 
@@ -225,13 +226,28 @@ function asset_items_table(PDO $pdo, array $rows): string
             ? $row['type_name'] 
             : (!empty($row['asset_type']) ? $row['asset_type'] : (!empty($row['asset_category']) ? $row['asset_category'] : '-'));
 
+        $isDeleted = strtolower((string)($row['status'] ?? '')) === 'deleted';
+        $statusBadge = $isDeleted 
+            ? '<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-weight:700;">deleted</span>' 
+            : '<span class="badge">' . e($row['status']) . '</span>';
+
+        $createdAtFormatted = !empty($row['created_at']) 
+            ? '<span style="font-weight:600;color:#334155;">' . date('d/m/Y', strtotime($row['created_at'])) . '</span><br><span class="muted" style="font-size:11px;">' . date('H:i', strtotime($row['created_at'])) . '</span>' 
+            : '<span class="muted">-</span>';
+
         // Exclusive compact action icons
         $itemActions = '';
-        if (has_regulation('asset_items', 'edit')) {
-            $itemActions .= '<a class="btn-icon edit" href="' . route_url('asset_item_form', ['id' => $row['id']]) . '" title="Edit Unit Aset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a> ';
-        }
-        if (has_regulation('asset_items', 'delete')) {
-            $itemActions .= '<form method="post" action="' . route_url('asset_items') . '" style="display:inline-block;margin:0;" onsubmit="return confirm(\'Hapus unit aset ' . addslashes((string)$row['asset_code']) . '?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_item"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button type="submit" class="btn-icon delete" title="Hapus Unit Aset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>';
+        if ($isDeleted) {
+            if (has_regulation('asset_items', 'delete')) {
+                $itemActions .= '<form method="post" action="' . route_url('asset_items') . '" style="display:inline-block;margin:0;" onsubmit="return confirm(\'Pulihkan unit aset ' . addslashes((string)$row['asset_code']) . ' kembali ke status active?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="restore_item"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button type="submit" class="btn-icon" style="background:#dcfce7;color:#166534;" title="Pulihkan Unit Aset (Restore)">♻️</button></form>';
+            }
+        } else {
+            if (has_regulation('asset_items', 'edit')) {
+                $itemActions .= '<a class="btn-icon edit" href="' . route_url('asset_item_form', ['id' => $row['id']]) . '" title="Edit Unit Aset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a> ';
+            }
+            if (has_regulation('asset_items', 'delete')) {
+                $itemActions .= '<form method="post" action="' . route_url('asset_items') . '" style="display:inline-block;margin:0;" onsubmit="return confirm(\'Hapus unit aset ' . addslashes((string)$row['asset_code']) . ' (status akan diubah menjadi deleted)?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_item"><input type="hidden" name="id" value="' . (int)$row['id'] . '"><button type="submit" class="btn-icon delete" title="Hapus Unit Aset (Ubah Status ke Deleted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>';
+            }
         }
 
         $html .= '<tr>';
@@ -241,7 +257,8 @@ function asset_items_table(PDO $pdo, array $rows): string
         $html .= '<td><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' . e($displayCategory) . '</span></td>';
         $html .= '<td>' . $mode . '</td>';
         $html .= '<td>' . e($row['asset_name']) . '<br><span class="muted">' . e(trim(($row['brand'] ?? '') . ' ' . ($row['model'] ?? ''))) . '</span></td>';
-        $html .= '<td><span class="badge">' . e($row['status']) . '</span></td>';
+        $html .= '<td>' . $statusBadge . '</td>';
+        $html .= '<td style="white-space:nowrap;">' . $createdAtFormatted . '</td>';
         $html .= '<td style="text-align:center;"><div style="display:inline-flex;gap:5px;align-items:center;justify-content:center;">' . $itemActions . '</div></td>';
         $html .= '</tr>';
     }
@@ -2743,7 +2760,7 @@ function asset_status_options(PDO $pdo, int $selected = 0): string
     if (!db_table_exists($pdo, 'asset_statuses')) {
         return $h;
     }
-    foreach ($pdo->query('SELECT * FROM asset_statuses WHERE is_active=1 ORDER BY status_name') as $r) {
+    foreach ($pdo->query("SELECT * FROM asset_statuses WHERE is_active=1 AND status_code <> 'DELETED' ORDER BY status_name") as $r) {
         $h .= '<option value="' . $r['id'] . '"' . ((int)$r['id'] === $selected ? ' selected' : '') . '>' . e($r['status_name']) . '</option>';
     }
     return $h;
@@ -4329,7 +4346,7 @@ function handle_route_asset_dashboard(PDO $pdo): void
     echo asset_nav_html();
     $stats = [
         'company' => (int)$pdo->query('SELECT COUNT(*) FROM asset_companies')->fetchColumn(),
-        'item' => (int)$pdo->query('SELECT COUNT(*) FROM asset_items')->fetchColumn(),
+        'item' => (int)$pdo->query("SELECT COUNT(*) FROM asset_items WHERE LOWER(status) <> 'deleted'")->fetchColumn(),
         'maintenance' => (int)$pdo->query('SELECT COUNT(*) FROM maintenance_assets')->fetchColumn(),
         'repair' => (int)$pdo->query('SELECT COUNT(*) FROM asset_repairs')->fetchColumn(),
     ];
@@ -4644,8 +4661,8 @@ function handle_route_asset_master_items(PDO $pdo): void
     }
 
     $sql = "SELECT ami.*, ag.group_name, ag.group_code, at.type_name, at.type_code, ab.brand_name,
-            (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id) AS total_units,
-            (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id AND ai.status = 'active') AS active_units
+            (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id AND LOWER(ai.status) <> 'deleted') AS total_units,
+            (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id AND LOWER(ai.status) = 'active') AS active_units
             FROM asset_master_items ami
             LEFT JOIN asset_groups ag ON ag.id = ami.asset_group_id
             LEFT JOIN asset_types at ON at.id = ami.asset_type_id
@@ -5160,14 +5177,18 @@ function handle_route_asset_items(PDO $pdo): void
             } else {
                 try {
                     $pdo->beginTransaction();
-                    if (db_table_exists($pdo, 'asset_identifiers')) {
-                        $pdo->prepare('DELETE FROM asset_identifiers WHERE asset_item_id = ?')->execute([$delId]);
-                    }
-                    if (db_table_exists($pdo, 'asset_specifications')) {
-                        $pdo->prepare('DELETE FROM asset_specifications WHERE asset_item_id = ?')->execute([$delId]);
+                    $delStatusId = 0;
+                    if (db_table_exists($pdo, 'asset_statuses')) {
+                        $sSt = $pdo->query("SELECT id FROM asset_statuses WHERE status_code = 'DELETED' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+                        if ($sSt) {
+                            $delStatusId = (int)$sSt['id'];
+                        } else {
+                            $pdo->exec("INSERT IGNORE INTO asset_statuses (status_code, status_name, is_active) VALUES ('DELETED', 'Deleted', 0)");
+                            $delStatusId = (int)$pdo->lastInsertId();
+                        }
                     }
                     if (db_table_exists($pdo, 'asset_item_members')) {
-                        $pdo->prepare('DELETE FROM asset_item_members WHERE parent_asset_item_id = ? OR child_asset_item_id = ?')->execute([$delId, $delId]);
+                        $pdo->prepare('UPDATE asset_item_members SET detached_at = CURRENT_DATE WHERE (parent_asset_item_id = ? OR child_asset_item_id = ?) AND detached_at IS NULL')->execute([$delId, $delId]);
                     }
                     if (db_table_exists($pdo, 'pcs')) {
                         $pdo->prepare('UPDATE pcs SET asset_item_id = NULL WHERE asset_item_id = ?')->execute([$delId]);
@@ -5175,15 +5196,27 @@ function handle_route_asset_items(PDO $pdo): void
                     if (db_table_exists($pdo, 'printers')) {
                         $pdo->prepare('UPDATE printers SET asset_item_id = NULL WHERE asset_item_id = ?')->execute([$delId]);
                     }
-                    $pdo->prepare('DELETE FROM asset_items WHERE id = ?')->execute([$delId]);
+                    $updSql = 'UPDATE asset_items SET status = "deleted"' . ($delStatusId > 0 ? ', asset_status_id = ' . $delStatusId : '') . ', updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+                    $pdo->prepare($updSql)->execute([$delId]);
                     $pdo->commit();
-                    flash('Unit aset ' . e($it['asset_code']) . ' berhasil dihapus.');
+                    flash('Unit aset ' . e($it['asset_code']) . ' berhasil dihapus (status diubah menjadi deleted).');
                 } catch (Throwable $e) {
                     $pdo->rollBack();
                     flash('Gagal menghapus unit aset: ' . $e->getMessage(), 'err');
                 }
             }
             redirect_to('asset_items');
+        } elseif ($action === 'restore_item') {
+            require_regulation('asset_items', 'delete');
+            $delId = (int)($_POST['id'] ?? 0);
+            try {
+                $activeStatusId = (int)($pdo->query("SELECT id FROM asset_statuses WHERE status_code = 'ACTIVE' LIMIT 1")->fetchColumn() ?: 1);
+                $pdo->prepare("UPDATE asset_items SET status = 'active', asset_status_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$activeStatusId, $delId]);
+                flash('Unit aset berhasil dipulihkan dari status deleted.');
+            } catch (Throwable $e) {
+                flash('Gagal memulihkan unit aset: ' . $e->getMessage(), 'err');
+            }
+            redirect_to('asset_items', ['backdoor' => 1]);
         }
     }
     
@@ -5197,8 +5230,17 @@ function handle_route_asset_items(PDO $pdo): void
     $companyId = (int)($_GET['company_id'] ?? 0);
     $locationId = (int)($_GET['location_id'] ?? 0);
 
+    $showBackdoor = !empty($_GET['backdoor']) || !empty($_GET['show_deleted']) || (isset($_GET['status']) && strtolower((string)$_GET['status']) === 'deleted');
+
     $where = ["1=1"];
     $params = [];
+
+    if ($showBackdoor) {
+        $where[] = "LOWER(ai.status) = 'deleted'";
+    } else {
+        $where[] = "LOWER(ai.status) <> 'deleted'";
+    }
+
     if ($masterItemId > 0) {
         $where[] = "ai.master_item_id = ?";
         $params[] = $masterItemId;
@@ -5251,6 +5293,28 @@ function handle_route_asset_items(PDO $pdo): void
         $params[] = $locationId;
     }
 
+    $allowedSortFields = [
+        'created_at' => 'ai.created_at',
+        'asset_code' => 'ai.asset_code',
+        'company'    => 'c.company_name',
+        'custodian'  => 'ai.custodian_name',
+        'type_name'  => 'type_name',
+        'category'   => 'type_name',
+        'mode'       => 'ai.asset_mode',
+        'asset_name' => 'ai.asset_name',
+        'status'     => 'ai.status',
+    ];
+    $sortBy = trim((string)($_GET['sort_by'] ?? 'created_at'));
+    if (!isset($allowedSortFields[$sortBy])) {
+        $sortBy = 'created_at';
+    }
+    $sortDir = strtoupper(trim((string)($_GET['sort_dir'] ?? 'ASC')));
+    if ($sortDir !== 'DESC') {
+        $sortDir = 'ASC';
+    }
+
+    $orderByClause = $allowedSortFields[$sortBy] . ' ' . $sortDir . ', ai.id ' . $sortDir;
+
     $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code,
             COALESCE(t.type_name, ai.asset_type, '-') AS type_name
             FROM asset_items ai 
@@ -5258,7 +5322,7 @@ function handle_route_asset_items(PDO $pdo): void
             LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id 
             LEFT JOIN asset_types t ON t.id = ai.asset_type_id
             WHERE " . implode(" AND ", $where) . " 
-            ORDER BY ai.updated_at DESC";
+            ORDER BY {$orderByClause}";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -5267,7 +5331,9 @@ function handle_route_asset_items(PDO $pdo): void
     echo asset_nav_html();
 
     $filterTitle = 'Unit Aset';
-    if ($masterItemId > 0) {
+    if ($showBackdoor) {
+        $filterTitle = 'Unit Aset (Backdoor History - Deleted)';
+    } elseif ($masterItemId > 0) {
         $mInfo = $pdo->query("SELECT item_code, item_name FROM asset_master_items WHERE id = {$masterItemId}")->fetch(PDO::FETCH_ASSOC);
         if ($mInfo) {
             $filterTitle .= ' - Katalog: ' . htmlspecialchars($mInfo['item_code'] . ' (' . $mInfo['item_name'] . ')');
@@ -5276,21 +5342,59 @@ function handle_route_asset_items(PDO $pdo): void
 
     $addBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn primary" href="' . route_url('asset_item_form', $masterItemId ? ['master_item_id' => $masterItemId] : []) . '">+ Tambah Unit Aset</a>' : '';
 
-    echo '<section class="panel">';
-    echo '<div class="split"><h1>' . $filterTitle . '</h1><div class="actions">' . $addBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'asset_items']) . '">Export Excel</a></div></div>';
+    $backdoorBtn = is_full_admin($user) 
+        ? ($showBackdoor 
+            ? '<a class="btn" href="' . route_url('asset_items') . '">← List Normal</a>' 
+            : '<a class="btn" style="color:#64748b;" href="' . route_url('asset_items', ['backdoor' => 1]) . '" title="Lihat daftar history unit aset berstatus deleted">History Deleted (Backdoor)</a>')
+        : '';
 
-    // Filters: Hanya Komoditas, Kategori, Company, Lokasi
-    echo '<form method="get" class="actions" style="margin:16px 0 8px 0;flex-wrap:wrap;gap:8px;">';
+    echo '<section class="panel">';
+    
+    if ($showBackdoor) {
+        echo '<div style="background:#fee2e2;border:1px solid #fecaca;padding:12px 18px;border-radius:8px;margin-bottom:16px;color:#991b1b;display:flex;align-items:center;justify-content:space-between;gap:12px;">'
+            . '<div><strong>🕵️ Backdoor History Mode (Unit Aset Deleted):</strong> Menampilkan unit aset yang telah berstatus <code>deleted</code>. Unit-unit ini disembunyikan dari seluruh daftar operasional.</div>'
+            . '<a href="' . route_url('asset_items') . '" class="btn" style="white-space:nowrap;font-size:12px;">← Kembali ke List Normal</a>'
+            . '</div>';
+    }
+
+    echo '<div class="split"><h1>' . $filterTitle . '</h1><div class="actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $backdoorBtn . $addBtn . '<a class="btn" href="' . route_url('export_excel', array_merge(['type' => 'asset_items'], $showBackdoor ? ['status' => 'deleted'] : [])) . '">Export Excel</a></div></div>';
+
+    // Filters: Komoditas, Kategori, Company, Lokasi, Sort By, Sort Dir
+    echo '<form method="get" class="actions" style="margin:16px 0 8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
     echo '<input type="hidden" name="route" value="asset_items">';
     if ($masterItemId > 0) {
         echo '<input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
+    }
+    if ($showBackdoor) {
+        echo '<input type="hidden" name="backdoor" value="1">';
     }
     echo '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>';
     echo '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>';
     echo '<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>';
     echo '<select name="location_id" onchange="this.form.submit()">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>';
-    if ($masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId) {
-        echo '<a class="btn" href="' . route_url('asset_items') . '">Reset Filter</a>';
+
+    // Sort By & Urutan (Ascending / Descending)
+    echo '<div style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:#f8fafc;padding:4px 8px;border-radius:6px;border:1px solid #e2e8f0;flex-wrap:wrap;">';
+    echo '<span style="font-size:12px;font-weight:600;color:#64748b;">Sort:</span>';
+    echo '<select name="sort_by" onchange="this.form.submit()" style="padding:4px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">';
+    echo '<option value="created_at"' . ($sortBy === 'created_at' ? ' selected' : '') . '>Tanggal Input (Default)</option>';
+    echo '<option value="asset_code"' . ($sortBy === 'asset_code' ? ' selected' : '') . '>Asset Code</option>';
+    echo '<option value="company"' . ($sortBy === 'company' ? ' selected' : '') . '>Company</option>';
+    echo '<option value="custodian"' . ($sortBy === 'custodian' ? ' selected' : '') . '>Pengguna / Custodian</option>';
+    echo '<option value="type_name"' . ($sortBy === 'type_name' ? ' selected' : '') . '>Kategori</option>';
+    echo '<option value="mode"' . ($sortBy === 'mode' ? ' selected' : '') . '>Mode Asset</option>';
+    echo '<option value="asset_name"' . ($sortBy === 'asset_name' ? ' selected' : '') . '>Nama / Merek</option>';
+    echo '<option value="status"' . ($sortBy === 'status' ? ' selected' : '') . '>Status</option>';
+    echo '</select>';
+
+    echo '<select name="sort_dir" onchange="this.form.submit()" style="padding:4px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">';
+    echo '<option value="ASC"' . ($sortDir === 'ASC' ? ' selected' : '') . '>Ascending (Lama ke Baru / A-Z)</option>';
+    echo '<option value="DESC"' . ($sortDir === 'DESC' ? ' selected' : '') . '>Descending (Baru ke Lama / Z-A)</option>';
+    echo '</select>';
+    echo '</div>';
+
+    if ($masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId || $sortBy !== 'created_at' || $sortDir !== 'ASC' || $showBackdoor) {
+        echo '<a class="btn" href="' . route_url('asset_items') . '">Reset Filter & Sort</a>';
     }
     echo '</form>';
 
@@ -5332,6 +5436,10 @@ function handle_route_asset_item_form(PDO $pdo): void
         if (!$found) {
             http_response_code(404);
             exit('Unit Aset tidak ditemukan.');
+        }
+        if (($found['status'] ?? '') === 'deleted' && empty($_GET['backdoor'])) {
+            http_response_code(404);
+            exit('Unit Aset ini telah berstatus deleted (tidak aktif).');
         }
         $item = array_merge($item, $found);
     } elseif (!empty($_GET['master_item_id'])) {
@@ -5912,6 +6020,8 @@ function handle_route_report_asset_items(PDO $pdo): void
     if ($status !== '') {
         $where[] = "ai.status = ?";
         $params[] = $status;
+    } else {
+        $where[] = "LOWER(ai.status) <> 'deleted'";
     }
     if ($q !== '') {
         $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR COALESCE(ab.brand_name, ai.brand) LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR COALESCE(al.location_name, ai.location_label) LIKE ?)";

@@ -679,7 +679,7 @@ function ensure_asset_master_schema(PDO $pdo): void
             $s = $pdo->prepare('INSERT IGNORE INTO asset_groups(group_code,group_name) VALUES (?,?)');
             $s->execute([$code,$name]);
         }
-        foreach ([['ACTIVE','Active'],['REPAIR','In Repair'],['MAINT','Under Maintenance'],['IDLE','Idle'],['TRANSFER','Transferred'],['DISPOSED','Disposed'],['LOST','Lost'],['SOLD','Sold'],['RETIRED','Retired'],['BORROWED','Dipinjam']] as [$code,$name]) {
+        foreach ([['ACTIVE','Active'],['REPAIR','In Repair'],['MAINT','Under Maintenance'],['IDLE','Idle'],['TRANSFER','Transferred'],['DISPOSED','Disposed'],['LOST','Lost'],['SOLD','Sold'],['RETIRED','Retired'],['BORROWED','Dipinjam'],['DELETED','Deleted']] as [$code,$name]) {
             $s = $pdo->prepare('INSERT IGNORE INTO asset_statuses(status_code,status_name) VALUES (?,?)');
             $s->execute([$code,$name]);
         }

@@ -370,7 +370,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
     if ($rawInput !== '') {
         if (ctype_digit($rawInput) && (int)$rawInput > 0) {
             $candId = (int)$rawInput;
-            $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE id = ? LIMIT 1");
+            $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE id = ? AND status <> 'deleted' LIMIT 1");
             $stAi->execute([$candId]);
             if ($stAi->fetchColumn()) {
                 $preAssetId = $candId;
@@ -388,7 +388,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             if ($resMaintId && $resMaintId > 0) {
                 $preMntId = $resMaintId;
             } else {
-                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE asset_code = ? OR asset_code LIKE ? LIMIT 1");
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE (asset_code = ? OR asset_code LIKE ?) AND status <> 'deleted' LIMIT 1");
                 $stAi->execute([$rawInput, $rawInput . '%']);
                 $aiId = (int)($stAi->fetchColumn() ?: 0);
                 if ($aiId > 0) {

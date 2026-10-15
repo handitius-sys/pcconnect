@@ -47,7 +47,7 @@ function get_user_linked_assets(PDO $pdo, string $nik, string $name): array
         $sql = "SELECT ai.id, ai.asset_code, ai.asset_name, ai.asset_type, ai.brand, ai.model, ai.status, ai.location_label, c.company_name 
                 FROM asset_items ai 
                 LEFT JOIN asset_companies c ON c.id = ai.company_id 
-                WHERE " . implode(' OR ', $where) . " 
+                WHERE (" . implode(' OR ', $where) . ") AND LOWER(ai.status) <> 'deleted' 
                 ORDER BY ai.asset_code ASC";
         $s = $pdo->prepare($sql);
         $s->execute($p);

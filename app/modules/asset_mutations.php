@@ -328,7 +328,8 @@ function handle_route_asset_mutations(PDO $pdo): void
                 LEFT JOIN asset_companies c ON a.company_id = c.id
                 LEFT JOIN asset_locations loc ON a.location_id = loc.id
                 WHERE a.asset_group_id = ?
-                AND (" . implode(" OR ", $typeClauses) . ")";
+                AND (" . implode(" OR ", $typeClauses) . ")
+                AND LOWER(a.status) <> 'deleted'";
         
         if ($q !== '') {
             $sql .= " AND (a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";

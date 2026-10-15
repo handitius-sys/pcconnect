@@ -1494,7 +1494,7 @@ function syncEditExpiredDate(val) {
               LEFT JOIN asset_types at ON at.id = ai.asset_type_id
               LEFT JOIN asset_companies c ON c.id = ai.company_id
               LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-              WHERE ai.status != 'inactive'
+              WHERE ai.status NOT IN ('inactive', 'deleted')
               ORDER BY (ai.asset_mode = 'group') DESC, COALESCE(ag.group_name, 'IT Asset'), at.type_name, ai.asset_code";
     $maintenanceAssets = $pdo->query($sqlAi)->fetchAll(PDO::FETCH_ASSOC);
 
@@ -3615,7 +3615,12 @@ function export_excel(PDO $pdo, string $type): never
         }
         if ($companyId > 0) { $where[] = "ai.company_id = ?"; $params[] = $companyId; }
         if ($locationId > 0) { $where[] = "ai.location_id = ?"; $params[] = $locationId; }
-        if ($status !== '') { $where[] = "ai.status = ?"; $params[] = $status; }
+        if ($status !== '') { 
+            $where[] = "ai.status = ?"; 
+            $params[] = $status; 
+        } else {
+            $where[] = "LOWER(ai.status) <> 'deleted'";
+        }
         if ($q !== '') {
             $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR ai.brand_name LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR ai.owner_name LIKE ?)";
             $kw = '%' . $q . '%';
