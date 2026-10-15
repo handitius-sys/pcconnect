@@ -2310,13 +2310,13 @@ function handle_route_corrective_job_desks(PDO $pdo): void
         }
     }
 
-    // FORM TAMBAH / EDIT JOB DESK CORRECTIVE MAINTENANCE
+    // FORM TAMBAH / EDIT JOB DESK CM PER KATEGORI
     $canCreateDesk = has_regulation('corrective_job_desks', 'create');
     $canEditDesk = has_regulation('corrective_job_desks', 'edit');
     $canDeleteDesk = has_regulation('corrective_job_desks', 'delete');
     $showDeskForm = ($isEditing && $canEditDesk) || (!$isEditing && $canCreateDesk);
 
-    $formTitle = $isEditing ? ('Edit Job Desk Corrective Maintenance #' . $editDeskId) : 'Tambah Job Desk Corrective Maintenance';
+    $formTitle = $isEditing ? ('Edit Job Desk CM Per Kategori #' . $editDeskId) : 'Tambah Job Desk CM Per Kategori';
     $formAction = $isEditing ? 'edit_desk' : 'add_desk';
 
     echo '<section class="' . ($showDeskForm ? 'grid two' : '') . '">';
@@ -2365,9 +2365,9 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             . '</div>';
     }
 
-    // TABEL DAFTAR JOB DESK CORRECTIVE MAINTENANCE
+    // TABEL DAFTAR JOB DESK CM PER KATEGORI
     echo '<div class="panel">'
-        . '<div class="split"><h2>Daftar Job Desk Corrective Maintenance</h2></div>'
+        . '<div class="split"><h2>Daftar Job Desk CM Per Kategori</h2></div>'
         . '<p class="muted" style="margin-top:-6px;margin-bottom:12px;">Pilih Job Desk untuk mengisi atau mengelola daftar tindakan / pekerjaan perbaikannya.</p>';
 
     if (!$deskRows) {
