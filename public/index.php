@@ -147,6 +147,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
     $modulesToLoad = [
         'app/lib/qr.php',
         'app/modules/asset.php',
+        'app/modules/pc.php',
         'app/modules/corrective.php',
         'app/modules/field_service.php',
     ];
@@ -476,6 +477,7 @@ switch ($route) {
         handle_route_mobile_service_scan($pdo);
         break;
     case 'mobile_service_direct':
+    case 'mobile_service_new_ticket':
         handle_route_mobile_service_direct($pdo);
         break;
     case 'mobile_service_tasks':
