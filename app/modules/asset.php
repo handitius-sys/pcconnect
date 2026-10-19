@@ -4373,6 +4373,168 @@ function handle_route_asset_management_cleanup(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * Modul: Audit & Pembersihan Data Orphan Sistem (All System)
+ * Route: system_orphan_cleanup
+ * Akses: Khusus Role Admin
+ *
+ * Proses:
+ * 1. Menjalankan audit menyeluruh terhadap semua potensi relasi orphan di database:
+ *    - Maintenance Assets tanpa unit aset / PC / printer
+ *    - PC atau Printer dengan link unit aset yang hilang / deleted
+ *    - Jadwal maintenance yang kehilangan maintenance asset
+ *    - Bridge relasi maintenance item & bundle member yang invalid
+ *    - Tiket perbaikan (corrective) dengan pointer aset invalid
+ *    - Master reference invalid (company/location pada asset_items)
+ * 2. Menyajikan ringkasan visual (kartu status, jumlah data, indikator kebersihan).
+ * 3. Jika tombol 'Jalankan Pembersihan' ditekan (POST), mengeksekusi system_cleanup_all_orphans($pdo, false)
+ *    dan memberikan laporan ringkas berapa relasi yang telah dirapikan.
+ */
+function handle_route_system_orphan_cleanup(PDO $pdo): void
+{
+    $user = require_role(['admin']);
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        verify_csrf();
+        $action = trim((string)($_POST['action'] ?? ''));
+        if ($action === 'cleanup_all') {
+            $res = system_cleanup_all_orphans($pdo, false);
+            $totalFixed = ($res['orphan_maintenance_assets'] ?? 0)
+                + ($res['orphan_pcs_repaired'] ?? 0)
+                + ($res['orphan_printers_repaired'] ?? 0)
+                + ($res['orphan_schedules_fixed'] ?? 0)
+                + ($res['orphan_mai_deleted'] ?? 0)
+                + ($res['orphan_bundle_members_deleted'] ?? 0)
+                + ($res['orphan_loan_items_deleted'] ?? 0)
+                + ($res['orphan_mutations_cleaned'] ?? 0)
+                + ($res['orphan_corrective_fixed'] ?? 0)
+                + ($res['orphan_master_refs_fixed'] ?? 0);
+
+            if ($totalFixed > 0) {
+                flash("Pembersihan selesai! Berhasil merapikan {$totalFixed} relasi data orphan di seluruh sistem.", 'good');
+            } else {
+                flash("Seluruh sistem sudah bersih dan rapi! Tidak ditemukan relasi orphan baru.", 'good');
+            }
+            redirect_to('system_orphan_cleanup');
+        }
+    }
+
+    $audit = system_cleanup_all_orphans($pdo, true);
+    $totalOrphans = ($audit['orphan_maintenance_assets'] ?? 0)
+        + ($audit['orphan_pcs_repaired'] ?? 0)
+        + ($audit['orphan_printers_repaired'] ?? 0)
+        + ($audit['orphan_schedules_fixed'] ?? 0)
+        + ($audit['orphan_mai_deleted'] ?? 0)
+        + ($audit['orphan_bundle_members_deleted'] ?? 0)
+        + ($audit['orphan_loan_items_deleted'] ?? 0)
+        + ($audit['orphan_mutations_cleaned'] ?? 0)
+        + ($audit['orphan_corrective_fixed'] ?? 0)
+        + ($audit['orphan_master_refs_fixed'] ?? 0);
+
+    $totalAssetItems = (int)$pdo->query("SELECT COUNT(*) FROM asset_items")->fetchColumn();
+    $deletedAssetItems = (int)$pdo->query("SELECT COUNT(*) FROM asset_items WHERE LOWER(status) = 'deleted'")->fetchColumn();
+    $activeAssetItems = $totalAssetItems - $deletedAssetItems;
+    $totalPcs = (int)$pdo->query("SELECT COUNT(*) FROM pcs")->fetchColumn();
+    $totalPrinters = db_table_exists($pdo, 'printers') ? (int)$pdo->query("SELECT COUNT(*) FROM printers")->fetchColumn() : 0;
+
+    render_header('Audit & Pembersihan Orphan Sistem', $user);
+
+    echo '<section class="panel">';
+    echo '  <div class="split" style="align-items:center;margin-bottom:16px;">';
+    echo '    <div>';
+    echo '      <h1 style="margin:0;display:flex;align-items:center;gap:8px;">🧹 Pembersihan Orphan Seluruh Sistem</h1>';
+    echo '      <p class="muted" style="margin:4px 0 0 0;">Audit dan pembersihan integritas relasi data (orphan) di seluruh modul AsetConnect: Unit Aset, PC, Printer, Maintenance, Tiket Perbaikan, Peminjaman, dan Mutasi.</p>';
+    echo '    </div>';
+    echo '    <div class="actions">';
+    echo '      <a class="btn" href="' . route_url('asset_items') . '">📦 Unit Aset</a>';
+    echo '      <a class="btn" href="' . route_url('maintenance') . '">🛠️ Maintenance</a>';
+    echo '    </div>';
+    echo '  </div>';
+
+    // Kartu Statistik Ringkasan
+    echo '  <div class="grid four" style="margin-bottom:24px;">';
+    echo '    <div class="stat" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;">';
+    echo '      <div style="font-size:24px;font-weight:700;color:#0f172a;">' . $activeAssetItems . ' <span style="font-size:12px;font-weight:normal;color:#64748b;">(+' . $deletedAssetItems . ' history)</span></div>';
+    echo '      <span style="font-size:12.5px;color:#475569;">Total Unit Aset</span>';
+    echo '    </div>';
+    echo '    <div class="stat" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;">';
+    echo '      <div style="font-size:24px;font-weight:700;color:#0284c7;">' . $totalPcs . ' PC / ' . $totalPrinters . ' Prn</div>';
+    echo '      <span style="font-size:12.5px;color:#475569;">Perangkat Fisik Terdata</span>';
+    echo '    </div>';
+    echo '    <div class="stat" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;">';
+    echo '      <div style="font-size:24px;font-weight:700;color:' . ($totalOrphans > 0 ? '#b91c1c' : '#15803d') . ';">' . $totalOrphans . '</div>';
+    echo '      <span style="font-size:12.5px;color:#475569;">Data Orphan Terdeteksi</span>';
+    echo '    </div>';
+    echo '    <div class="stat" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;">';
+    echo '      <div style="font-size:20px;font-weight:700;color:' . ($totalOrphans === 0 ? '#15803d' : '#d97706') . ';">' . ($totalOrphans === 0 ? '✓ Bersih & Rapi' : '⚠️ Perlu Dibereskan') . '</div>';
+    echo '      <span style="font-size:12.5px;color:#475569;">Status Integritas Data</span>';
+    echo '    </div>';
+    echo '  </div>';
+
+    // Rincian Tabel Audit Integritas
+    echo '  <h3 style="margin:0 0 12px 0;font-size:15px;color:#0f172a;">Rincian Status Audit Relasi Antar Tabel</h3>';
+    echo '  <div style="overflow-x:auto;margin-bottom:24px;">';
+    echo '  <table class="table" style="width:100%;font-size:13px;">';
+    echo '    <thead><tr style="background:#f1f5f9;text-align:left;">';
+    echo '      <th>No</th>';
+    echo '      <th>Kategori Pemeriksaan</th>';
+    echo '      <th>Tabel Terkait</th>';
+    echo '      <th>Deskripsi Relasi</th>';
+    echo '      <th style="text-align:center;">Jumlah Orphan</th>';
+    echo '      <th style="text-align:center;">Status</th>';
+    echo '    </tr></thead><tbody>';
+
+    $checks = [
+        ['title' => 'Maintenance Assets Orphan', 'tables' => 'maintenance_assets', 'desc' => 'Record maintenance_assets yang tidak memiliki PC, Printer, atau Unit Aset yang valid', 'count' => (int)($audit['orphan_maintenance_assets'] ?? 0)],
+        ['title' => 'Link Unit Aset pada PC', 'tables' => 'pcs -> asset_items', 'desc' => 'PC yang asset_item_id-nya merujuk ke aset yang telah dihapus atau tidak ditemukan', 'count' => (int)($audit['orphan_pcs_repaired'] ?? 0)],
+        ['title' => 'Link Unit Aset pada Printer', 'tables' => 'printers -> asset_items', 'desc' => 'Printer yang asset_item_id-nya merujuk ke aset yang telah dihapus atau tidak ditemukan', 'count' => (int)($audit['orphan_printers_repaired'] ?? 0)],
+        ['title' => 'Jadwal Preventive Maintenance', 'tables' => 'maintenance_schedules', 'desc' => 'Jadwal yang maintenance_asset_id-nya tidak ditemukan pada tabel maintenance_assets', 'count' => (int)($audit['orphan_schedules_fixed'] ?? 0)],
+        ['title' => 'Jembatan Maintenance Items', 'tables' => 'maintenance_asset_items', 'desc' => 'Record relasi jembatan yang kehilangan maintenance_asset atau asset_item', 'count' => (int)($audit['orphan_mai_deleted'] ?? 0)],
+        ['title' => 'Relasi Anggota Bundle Aset', 'tables' => 'asset_item_members', 'desc' => 'Record anggota bundle yang kehilangan parent_asset_item atau child_asset_item', 'count' => (int)($audit['orphan_bundle_members_deleted'] ?? 0)],
+        ['title' => 'Pointer Aset pada Tiket Perbaikan', 'tables' => 'corrective_maintenance', 'desc' => 'Tiket perbaikan yang kehilangan referensi unit aset (tiket tetap disimpan, link di-null-kan)', 'count' => (int)($audit['orphan_corrective_fixed'] ?? 0)],
+        ['title' => 'Referensi Master Company / Lokasi', 'tables' => 'asset_items', 'desc' => 'Unit aset yang merujuk ke Company atau Lokasi yang sudah tidak ada di database', 'count' => (int)($audit['orphan_master_refs_fixed'] ?? 0)],
+    ];
+
+    $no = 1;
+    foreach ($checks as $item) {
+        $c = $item['count'];
+        $badge = $c === 0 ? '<span class="badge ok" style="background:#dcfce7;color:#15803d;font-weight:600;">0 (Bersih)</span>' : '<span class="badge err" style="background:#fee2e2;color:#b91c1c;font-weight:700;">' . $c . ' Ditemukan</span>';
+        $statusText = $c === 0 ? '<span style="color:#15803d;font-weight:600;">✓ Normal</span>' : '<span style="color:#b91c1c;font-weight:700;">⚠️ Perlu Dibersihkan</span>';
+        echo '    <tr>';
+        echo '      <td style="text-align:center;width:40px;">' . $no++ . '</td>';
+        echo '      <td><strong>' . e($item['title']) . '</strong></td>';
+        echo '      <td><code>' . e($item['tables']) . '</code></td>';
+        echo '      <td style="color:#475569;">' . e($item['desc']) . '</td>';
+        echo '      <td style="text-align:center;">' . $badge . '</td>';
+        echo '      <td style="text-align:center;">' . $statusText . '</td>';
+        echo '    </tr>';
+    }
+
+    echo '    </tbody></table>';
+    echo '  </div>';
+
+    // Tombol Tindakan
+    echo '  <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">';
+    echo '    <div>';
+    echo '      <div style="font-weight:700;color:#0f172a;font-size:14px;">Tindakan Pembersihan & Rekonsiliasi Otomatis</div>';
+    echo '      <div style="color:#64748b;font-size:12.5px;">Pembersihan orphan ini aman dan <strong>TIDAK akan menghapus data riwayat unit aset</strong>, melainkan merapikan pointer relasi yang terputus.</div>';
+    echo '    </div>';
+    echo '    <form method="post" style="margin:0;">';
+    echo '      <input type="hidden" name="csrf" value="' . csrf_token() . '">';
+    echo '      <input type="hidden" name="action" value="cleanup_all">';
+    if ($totalOrphans > 0) {
+        echo '      <button type="submit" class="btn primary" style="background:#0284c7;font-weight:700;padding:10px 20px;" onclick="return confirm(\'Jalankan pembersihan dan perbaikan seluruh relasi orphan sekarang?\');">🧹 Bersihkan & Rapikan Relasi Orphan Sekarang</button>';
+    } else {
+        echo '      <button type="submit" class="btn" style="padding:10px 18px;">🔄 Jalankan Ulang Audit Integritas</button>';
+    }
+    echo '    </form>';
+    echo '  </div>';
+
+    echo '</section>';
+
+    render_footer();
+}
+
 function handle_route_asset_companies(PDO $pdo): void
 {
     $user = require_login();
@@ -4542,6 +4704,28 @@ function handle_route_asset_categories(PDO $pdo): void
     render_footer();
 }
 
+/**
+ * ============================================================================
+ * FITUR: MASTER BARANG (KATALOG SKU & SPESIFIKASI STANDAR)
+ * ============================================================================
+ * Fungsi ini mengelola katalog Master Barang yang menjadi cetak biru (blueprint)
+ * spesifikasi untuk seluruh Unit Aset fisik di sistem AsetConnect.
+ *
+ * Alur Proses & Aturan Bisnis:
+ * 1. AUTO GENERATE KODE BARANG / SKU:
+ *    - Setiap penambahan barang baru, sistem secara otomatis menghasilkan SKU unik
+ *      melalui fungsi generate_master_item_code(PDO, groupId, typeId, brandId).
+ *    - Input form Kode Barang dibuat 'readonly' dan dilabeli 'Auto Generated' agar
+ *      konsistensi format penomoran SKU perusahaan tetap terstandarisasi.
+ *    - Pada saat pengeditan (edit mode), sistem mempertahankan kode barang asli.
+ * 2. INTEGRITAS DATA & CEK RELASI ASET FISIK:
+ *    - Barang yang sudah memiliki unit fisik terdaftar (asset_items.master_item_id)
+ *      DILARANG dihapus untuk mencegah terjadinya data orphan.
+ * 3. IMPORT DATA TELEMETRI PC:
+ *    - Mendukung import spesifikasi hardware secara langsung dari data PC yang terhubung.
+ * 4. SPESIFIKASI DINAMIS:
+ *    - Kolom spesifikasi otomatis menyesuaikan komoditas dan kategori yang dipilih.
+ */
 function handle_route_asset_master_items(PDO $pdo): void
 {
     $user = require_regulation('asset_master_items', 'view');
@@ -5204,6 +5388,25 @@ function handle_route_asset_master_items(PDO $pdo): void
 }
 
 
+/**
+ * ============================================================================
+ * MODUL DAFTAR & PENGELOLAAN UNIT ASET FISIK (ASSET ITEMS)
+ * ============================================================================
+ * Route: asset_items
+ * Akses: Sesuai Matrix Regulasi 'asset_items' (view, create, edit, delete)
+ * 
+ * Fitur & Alur Pemrosesan:
+ * 1. PENCARIAN & FILTER (List & Search):
+ *    - Mendukung pencarian kata kunci multi-kolom (Kode Unit, Nama, SN, Lokasi, Pengguna, NIK).
+ *    - Filter terstruktur per Komoditas (Grup), Kategori (Tipe), Company, dan Lokasi.
+ * 2. SOFT DELETE & BACKDOOR HISTORY:
+ *    - Aksi Hapus (delete_item) TIDAK menghapus baris dari database fisik, melainkan mengubah statusnya menjadi 'deleted'.
+ *    - Data yang berstatus 'deleted' otomatis disaring dan disembunyikan dari seluruh daftar aktif, peminjaman, mutasi, dan maintenance.
+ *    - Hanya dapat diakses dan dipulihkan (restore) melalui halaman khusus Backdoor History (?backdoor=1).
+ * 3. PENGURUTAN (SORT BY):
+ *    - Pengurutan default adalah berdasarkan tanggal input / pembuatan (ai.created_at ASC).
+ *    - Pengguna dapat memilih field pengurutan (Kode, Nama, Tanggal, Pengguna, Company) dan arah (Ascending / Descending).
+ */
 function handle_route_asset_items(PDO $pdo): void
 {
     $user = require_login();

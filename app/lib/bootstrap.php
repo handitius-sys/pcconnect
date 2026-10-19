@@ -698,7 +698,7 @@ function render_header(string $title, ?array $user = null): void
 
         // 5. Setup Accordion
         if ($isAdmin || has_regulation('users', 'view', $user) || has_regulation('labels', 'view', $user)) {
-            $setupRoutes = ['labels', 'users', 'setup_regulations', 'employee_source'];
+            $setupRoutes = ['labels', 'users', 'setup_regulations', 'employee_source', 'system_orphan_cleanup'];
             $isSetupOpen = in_array($curRoute, $setupRoutes, true);
             echo '<details class="nav-accordion"' . ($isSetupOpen ? ' open' : '') . '>';
             echo '  <summary class="nav-item" title="Pengaturan & Setup"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Pengaturan & Setup</span><span class="nav-chevron">▶</span></summary>';
@@ -712,6 +712,7 @@ function render_header(string $title, ?array $user = null): void
             if ($isAdmin) {
                 echo '<a class="nav-item' . ($curRoute === 'setup_regulations' ? ' active' : '') . '" href="' . route_url('setup_regulations') . '"><span class="nav-icon">' . $svgShield . '</span><span class="nav-label">Regulasi Hak Akses</span></a>';
                 echo '<a class="nav-item' . ($curRoute === 'employee_source' ? ' active' : '') . '" href="' . route_url('employee_source') . '"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Employee Source</span></a>';
+                echo '<a class="nav-item' . ($curRoute === 'system_orphan_cleanup' ? ' active' : '') . '" href="' . route_url('system_orphan_cleanup') . '"><span class="nav-icon" style="font-size:14px;">🧹</span><span class="nav-label">Pembersihan Orphan</span></a>';
             }
             echo '  </div>';
             echo '</details>';
@@ -2324,6 +2325,33 @@ if (!function_exists('corrective_action_type_label')) {
     }
 }
 
+/**
+ * ============================================================================
+ * GENERATOR KODE MASTER BARANG / SKU OTOMATIS (AUTO-GENERATED CODE)
+ * ============================================================================
+ * Fungsi: generate_master_item_code(PDO $pdo, int $groupId, int $typeId, int $brandId = 0): string
+ * 
+ * Menghasilkan kode SKU / Kode Master Barang yang unik dan terstandar secara otomatis.
+ * Format Pola: {KODE_KOMODITAS}-{KODE_KATEGORI}-{KODE_BRAND}-{NOMOR_URUT_3_DIGIT}
+ * Contoh Hasil:
+ * - IT-NBK-ASUS-001
+ * - IT-CMP-DELL-002
+ * - GA-KND-TOYO-001
+ * 
+ * Logika Pemrosesan:
+ * 1. Mengambil kode grup (group_code) dari tabel asset_groups berdasarkan $groupId.
+ * 2. Mengambil kode kategori (type_code) dari tabel asset_types berdasarkan $typeId.
+ * 3. Mengambil kode brand (brand_code) dari tabel asset_brands berdasarkan $brandId (fallback 'GEN').
+ * 4. Mencari seluruh kode barang yang memiliki prefix sama di tabel asset_master_items.
+ * 5. Mengambil nomor urut maksimum ($maxSeq) dari akhiran angka, lalu menambahkan 1.
+ * 6. Melakukan verifikasi benturan (collision check) untuk menjamin kode benar-benar belum pernah dipakai.
+ *
+ * @param PDO $pdo Objek koneksi database aktif
+ * @param int $groupId ID Komoditas (Asset Group)
+ * @param int $typeId ID Kategori Aset (Asset Type)
+ * @param int $brandId ID Brand / Merek Aset (Opsional, default: 0)
+ * @return string Kode SKU unik baru yang siap disimpan
+ */
 if (!function_exists('generate_master_item_code')) {
     function generate_master_item_code(PDO $pdo, int $groupId, int $typeId, int $brandId = 0): string
     {

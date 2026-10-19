@@ -246,7 +246,12 @@ function handle_route_asset_mutations(PDO $pdo): void
         }
     } catch (Throwable $ignored) {}
 
-    // Ambil data unit aset untuk Combo Box Pencarian & Pemilihan Unit Mutasi
+    // =========================================================================
+    // FITUR: PREPARASI DATA COMBO BOX UNIT ASET MUTASI
+    // =========================================================================
+    // Mengambil dataset unit aset aktif (tidak deleted/inactive) untuk disuplai
+    // ke komponen Combo Box interaktif. Mendukung filtering otomatis jika user
+    // telah memilih Komoditas dan Kategori tertentu.
     $comboAssets = [];
     try {
         $cSql = "SELECT a.id, a.asset_code, a.brand, a.model, a.serial_number,
@@ -699,6 +704,16 @@ function handle_route_asset_mutations(PDO $pdo): void
         if (input) input.focus();
     }
 
+    // =========================================================================
+    // JAVASCRIPT: LOGIKA COMBO BOX PENCARIAN & PEMILIHAN UNIT MUTASI ASET
+    // =========================================================================
+    /**
+     * Menampilkan daftar dropdown pencarian unit aset secara real-time.
+     * Pencarian mendukung multi-kolom: Kode Unit, Nama Aset, Brand, Model,
+     * Serial Number, Pengguna (Custodian Name & NIK), Company, dan Lokasi.
+     *
+     * @param {string} q Kata kunci pencarian
+     */
     function showMutationDropdown(q) {
         var dd = document.getElementById("mutationDropdownResults");
         var clearBtn = document.getElementById("mutationClearBtn");
@@ -805,6 +820,9 @@ function handle_route_asset_mutations(PDO $pdo): void
         dd.style.display = "block";
     }
 
+    /**
+     * Menyorot baris item dalam dropdown saat dihover kursor atau dinavigasi via panah keyboard.
+     */
     function highlightComboItem(idx) {
         activeComboIndex = idx;
         var rows = document.querySelectorAll("#mutationDropdownResults .combo-item-row");
@@ -819,6 +837,11 @@ function handle_route_asset_mutations(PDO $pdo): void
         });
     }
 
+    /**
+     * Memilih unit aset dari daftar dropdown.
+     * Mengisi nilai input pencarian, otomatis menyelaraskan dropdown filter Komoditas
+     * dan Kategori sesuai item terpilih, kemudian mengirimkan form untuk menampilkan data.
+     */
     function selectMutationAsset(item) {
         var input = document.getElementById("mutationAssetSearch");
         if (input) input.value = item.asset_code;
@@ -839,6 +862,12 @@ function handle_route_asset_mutations(PDO $pdo): void
         }
     }
 
+    /**
+     * Penanganan navigasi keyboard pada Combo Box:
+     * - ArrowDown / ArrowUp: Memindahkan seleksi item atas/bawah
+     * - Enter: Memilih item yang sedang aktif/disorot
+     * - Escape: Menutup daftar dropdown pencarian
+     */
     function onMutationKeyDown(e) {
         var dd = document.getElementById("mutationDropdownResults");
         var isVisible = dd && dd.style.display === "block";

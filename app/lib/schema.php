@@ -1023,6 +1023,156 @@ function cleanup_unsynced_pc_maintenance_assets(PDO $pdo): int
     }
 }
 
+/**
+ * ============================================================================
+ * SISTEM INTEGRITAS & PEMBERSIHAN ORPHAN DATA (ALL SYSTEM)
+ * ============================================================================
+ * Fungsi: system_cleanup_all_orphans(PDO $pdo, bool $dryRun = false): array
+ * 
+ * Bertugas mengaudit dan membersihkan relasi data yang 'menggantung' (orphan)
+ * di seluruh modul aplikasi AsetConnect, meliputi:
+ * 1. Maintenance Assets yang kehilangan referensi ke Asset Item / PC / Printer.
+ * 2. PC / Printer yang terhubung ke Unit Aset yang sudah dihapus / tidak valid.
+ * 3. Jadwal Preventive Maintenance yang kehilangan Maintenance Asset terkait.
+ * 4. Relasi bridge maintenance_asset_items yang invalid.
+ * 5. Relasi bundle asset_item_members yang parent atau child-nya tidak ditemukan.
+ * 6. Tiket Corrective Maintenance yang kehilangan referensi Unit Aset.
+ * 7. Referensi foreign key company_id & location_id pada asset_items yang tidak valid.
+ *
+ * Kebijakan Keamanan:
+ * - Data riwayat (history) dan unit aset riil TIDAK dihapus.
+ * - Yang diperbaiki hanyalah pointer / relasi yang rusak (diputus/di-null-kan secara aman).
+ * - Mendukung mode $dryRun = true untuk audit tanpa modifikasi database.
+ */
+function system_cleanup_all_orphans(PDO $pdo, bool $dryRun = false): array
+{
+    $report = [
+        'dry_run' => $dryRun,
+        'orphan_maintenance_assets' => 0,
+        'orphan_pcs_repaired' => 0,
+        'orphan_printers_repaired' => 0,
+        'orphan_schedules_fixed' => 0,
+        'orphan_mai_deleted' => 0,
+        'orphan_bundle_members_deleted' => 0,
+        'orphan_loan_items_deleted' => 0,
+        'orphan_mutations_cleaned' => 0,
+        'orphan_corrective_fixed' => 0,
+        'orphan_master_refs_fixed' => 0,
+        'timestamp' => date('Y-m-d H:i:s'),
+    ];
+
+    try {
+        // 1. Audit & bersihkan maintenance_assets yang tidak memiliki induk yang valid
+        if (db_table_exists($pdo, 'maintenance_assets')) {
+            $stmt = $pdo->query("
+                SELECT ma.id FROM maintenance_assets ma
+                WHERE (ma.asset_item_id IS NOT NULL AND ma.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = ma.asset_item_id AND LOWER(a.status) <> 'deleted'))
+                   OR (ma.pc_id IS NOT NULL AND ma.pc_id <> '' AND (ma.printer_id IS NULL OR ma.printer_id = '') AND NOT EXISTS (SELECT 1 FROM pcs p WHERE p.pc_id COLLATE utf8mb4_unicode_ci = ma.pc_id COLLATE utf8mb4_unicode_ci))
+                   OR (ma.printer_id IS NOT NULL AND ma.printer_id <> '' AND NOT EXISTS (SELECT 1 FROM printers pr WHERE pr.prn_id COLLATE utf8mb4_unicode_ci = ma.printer_id COLLATE utf8mb4_unicode_ci))
+            ");
+            $orphanMaIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+            $report['orphan_maintenance_assets'] = count($orphanMaIds);
+
+            if (!$dryRun && !empty($orphanMaIds)) {
+                $in = implode(',', $orphanMaIds);
+                if (db_table_exists($pdo, 'maintenance_schedules') && db_column_exists($pdo, 'maintenance_schedules', 'maintenance_asset_id')) {
+                    $pdo->exec("UPDATE maintenance_schedules SET maintenance_asset_id = NULL WHERE maintenance_asset_id IN ($in)");
+                }
+                if (db_table_exists($pdo, 'maintenance_asset_items')) {
+                    $pdo->exec("DELETE FROM maintenance_asset_items WHERE maintenance_asset_id IN ($in)");
+                }
+                $pdo->exec("DELETE FROM maintenance_assets WHERE id IN ($in)");
+            }
+        }
+
+        // 2. Audit & perbaiki pointer asset_item_id / maintenance_asset_id pada tabel pcs
+        if (db_table_exists($pdo, 'pcs')) {
+            $sqlCheckPc = "SELECT COUNT(*) FROM pcs p WHERE (p.asset_item_id IS NOT NULL AND p.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = p.asset_item_id AND LOWER(a.status) <> 'deleted')) OR (p.maintenance_asset_id IS NOT NULL AND p.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = p.maintenance_asset_id))";
+            $report['orphan_pcs_repaired'] = (int)$pdo->query($sqlCheckPc)->fetchColumn();
+            if (!$dryRun && $report['orphan_pcs_repaired'] > 0) {
+                $pdo->exec("UPDATE pcs p SET p.asset_item_id = NULL WHERE p.asset_item_id IS NOT NULL AND p.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = p.asset_item_id AND LOWER(a.status) <> 'deleted')");
+                $pdo->exec("UPDATE pcs p SET p.maintenance_asset_id = NULL WHERE p.maintenance_asset_id IS NOT NULL AND p.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = p.maintenance_asset_id)");
+            }
+        }
+
+        // 3. Audit & perbaiki pointer asset_item_id / maintenance_asset_id pada tabel printers
+        if (db_table_exists($pdo, 'printers')) {
+            $sqlCheckPrn = "SELECT COUNT(*) FROM printers pr WHERE (pr.asset_item_id IS NOT NULL AND pr.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = pr.asset_item_id AND LOWER(a.status) <> 'deleted')) OR (pr.maintenance_asset_id IS NOT NULL AND pr.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = pr.maintenance_asset_id))";
+            $report['orphan_printers_repaired'] = (int)$pdo->query($sqlCheckPrn)->fetchColumn();
+            if (!$dryRun && $report['orphan_printers_repaired'] > 0) {
+                $pdo->exec("UPDATE printers pr SET pr.asset_item_id = NULL WHERE pr.asset_item_id IS NOT NULL AND pr.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = pr.asset_item_id AND LOWER(a.status) <> 'deleted')");
+                $pdo->exec("UPDATE printers pr SET pr.maintenance_asset_id = NULL WHERE pr.maintenance_asset_id IS NOT NULL AND pr.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = pr.maintenance_asset_id)");
+            }
+        }
+
+        // 4. Audit & perbaiki pointer maintenance_asset_id pada jadwal maintenance_schedules
+        if (db_table_exists($pdo, 'maintenance_schedules')) {
+            $hasMaCol = db_column_exists($pdo, 'maintenance_schedules', 'maintenance_asset_id');
+            if ($hasMaCol) {
+                $sqlCheckSched = "SELECT COUNT(*) FROM maintenance_schedules s WHERE s.maintenance_asset_id IS NOT NULL AND s.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = s.maintenance_asset_id)";
+                $report['orphan_schedules_fixed'] = (int)$pdo->query($sqlCheckSched)->fetchColumn();
+                if (!$dryRun && $report['orphan_schedules_fixed'] > 0) {
+                    $pdo->exec("UPDATE maintenance_schedules s SET s.maintenance_asset_id = NULL WHERE s.maintenance_asset_id IS NOT NULL AND s.maintenance_asset_id > 0 AND NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = s.maintenance_asset_id)");
+                }
+            }
+        }
+
+        // 5. Audit & bersihkan jembatan maintenance_asset_items yang invalid
+        if (db_table_exists($pdo, 'maintenance_asset_items')) {
+            $sqlCheckMai = "SELECT COUNT(*) FROM maintenance_asset_items mai WHERE NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = mai.maintenance_asset_id) OR NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = mai.asset_item_id)";
+            $report['orphan_mai_deleted'] = (int)$pdo->query($sqlCheckMai)->fetchColumn();
+            if (!$dryRun && $report['orphan_mai_deleted'] > 0) {
+                $pdo->exec("DELETE mai FROM maintenance_asset_items mai WHERE NOT EXISTS (SELECT 1 FROM maintenance_assets ma WHERE ma.id = mai.maintenance_asset_id) OR NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = mai.asset_item_id)");
+            }
+        }
+
+        // 6. Audit & bersihkan relasi bundle asset_item_members yang parent/child-nya tidak valid
+        if (db_table_exists($pdo, 'asset_item_members')) {
+            $sqlCheckMem = "SELECT COUNT(*) FROM asset_item_members aim WHERE NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = aim.parent_asset_item_id) OR NOT EXISTS (SELECT 1 FROM asset_items a2 WHERE a2.id = aim.child_asset_item_id)";
+            $report['orphan_bundle_members_deleted'] = (int)$pdo->query($sqlCheckMem)->fetchColumn();
+            if (!$dryRun && $report['orphan_bundle_members_deleted'] > 0) {
+                $pdo->exec("DELETE aim FROM asset_item_members aim WHERE NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = aim.parent_asset_item_id) OR NOT EXISTS (SELECT 1 FROM asset_items a2 WHERE a2.id = aim.child_asset_item_id)");
+            }
+        }
+
+        // 7. Audit & amankan tiket corrective maintenance (riwayat tiket tetap disimpan, hanya pointer asset dilepas jika invalid)
+        if (db_table_exists($pdo, 'corrective_maintenance')) {
+            if (db_column_exists($pdo, 'corrective_maintenance', 'asset_item_id')) {
+                $sqlCheckCorr = "SELECT COUNT(*) FROM corrective_maintenance c WHERE c.asset_item_id IS NOT NULL AND c.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = c.asset_item_id)";
+                $report['orphan_corrective_fixed'] = (int)$pdo->query($sqlCheckCorr)->fetchColumn();
+                if (!$dryRun && $report['orphan_corrective_fixed'] > 0) {
+                    $pdo->exec("UPDATE corrective_maintenance c SET c.asset_item_id = NULL WHERE c.asset_item_id IS NOT NULL AND c.asset_item_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_items a WHERE a.id = c.asset_item_id)");
+                }
+            }
+        }
+
+        // 8. Audit & amankan referensi master data pada asset_items (company_id & location_id)
+        if (db_table_exists($pdo, 'asset_items')) {
+            $fixedRefs = 0;
+            if (db_table_exists($pdo, 'asset_companies') && db_column_exists($pdo, 'asset_items', 'company_id')) {
+                $cntComp = (int)$pdo->query("SELECT COUNT(*) FROM asset_items a WHERE a.company_id IS NOT NULL AND a.company_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_companies c WHERE c.id = a.company_id)")->fetchColumn();
+                $fixedRefs += $cntComp;
+                if (!$dryRun && $cntComp > 0) {
+                    $pdo->exec("UPDATE asset_items a SET a.company_id = NULL WHERE a.company_id IS NOT NULL AND a.company_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_companies c WHERE c.id = a.company_id)");
+                }
+            }
+            if (db_table_exists($pdo, 'asset_locations') && db_column_exists($pdo, 'asset_items', 'location_id')) {
+                $cntLoc = (int)$pdo->query("SELECT COUNT(*) FROM asset_items a WHERE a.location_id IS NOT NULL AND a.location_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_locations loc WHERE loc.id = a.location_id)")->fetchColumn();
+                $fixedRefs += $cntLoc;
+                if (!$dryRun && $cntLoc > 0) {
+                    $pdo->exec("UPDATE asset_items a SET a.location_id = NULL WHERE a.location_id IS NOT NULL AND a.location_id > 0 AND NOT EXISTS (SELECT 1 FROM asset_locations loc WHERE loc.id = a.location_id)");
+                }
+            }
+            $report['orphan_master_refs_fixed'] = $fixedRefs;
+        }
+
+    } catch (Throwable $e) {
+        $report['error'] = $e->getMessage();
+    }
+
+    return $report;
+}
+
 function ensure_photo_challenge_schema(PDO $pdo): void
 {
     try {
@@ -1140,6 +1290,7 @@ function ensure_app_schema(PDO $pdo, bool $force = false): void
     ensure_maintenance_asset_schema($pdo);
     cleanup_unsynced_pc_maintenance_assets($pdo);
     cleanup_and_repair_pc_asset_conflicts($pdo);
+    system_cleanup_all_orphans($pdo, false);
     ensure_corrective_maintenance_schema($pdo);
     ensure_asset_loan_schema($pdo);
     ensure_unified_asset_schema($pdo);

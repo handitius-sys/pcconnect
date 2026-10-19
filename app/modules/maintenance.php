@@ -2,6 +2,23 @@
 
 declare(strict_types=1);
 
+/**
+ * ============================================================================
+ * MODUL PREVENTIVE MAINTENANCE (PEMELIHARAAN BERKALA)
+ * ============================================================================
+ * File: app/modules/maintenance.php
+ * 
+ * Mengelola seluruh alur pemeliharaan preventif perangkat IT dan unit aset:
+ * 1. Jadwal Preventive Maintenance (handle_route_maintenance & handle_route_schedule_form):
+ *    - Penjadwalan tugas untuk teknisi per unit aset (PC, Printer, Laptop, Server, dll).
+ *    - Batas Kedaluwarsa (expired_date, default H+3): Jadwal otomatis dibatalkan jika lewat batas waktu.
+ * 2. Eksekusi Checklist & Pekerjaan (handle_route_maintenance_do & jobs):
+ *    - Pengecekan daftar job desk checklist per kategori aset.
+ *    - Photo Challenge Code untuk verifikasi kehadiran fisik teknisi di lokasi unit.
+ * 3. Pelaporan & Monitoring (handle_route_reports & handle_route_maintenance_status_report):
+ *    - Rekapitulasi pengerjaan, status expired vs completed, print laporan resmi, dan export Excel.
+ */
+
 function delete_maintenance_schedule_rows(PDO $pdo, int $scheduleId): void
 {
     if (db_table_exists($pdo, 'maintenance_reports')) {

@@ -1,6 +1,24 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * ============================================================================
+ * MODUL CORRECTIVE MAINTENANCE (PERBAIKAN & TIKET KERUSAKAN)
+ * ============================================================================
+ * File: app/modules/corrective.php
+ * 
+ * Mengelola penanganan insiden, kerusakan, dan servis unit aset:
+ * 1. Manajemen Tiket (handle_route_tickets & handle_route_ticket_form):
+ *    - Pembuatan tiket perbaikan via scan QR atau input kode unit aset.
+ *    - Unggah / foto live kamera bukti kwitansi invoice & nota perbaikan.
+ *    - Bukti visual sebelum perbaikan (before) dan sesudah perbaikan (after).
+ * 2. Tindakan Servis & Master Bengkel (corrective_repairs & corrective_workshops):
+ *    - Pencatatan perbaikan internal dan perbaikan pihak ketiga (eksternal/vendor).
+ *    - Master Bengkel rekanan dan estimasi biaya perbaikan.
+ * 3. Integrasi Mobile Field Service (app/modules/field_service.php):
+ *    - Alur kerja teknisi di lapangan untuk update status pengerjaan secara real-time.
+ */
+
 function generate_next_ticket_code(PDO $pdo): string
 {
     $prefix = 'TKT-' . date('Ym') . '-';

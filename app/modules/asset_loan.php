@@ -3,10 +3,25 @@
 declare(strict_types=1);
 
 /**
- * Modul Peminjaman Aset (Asset Loan Management)
- * Terintegrasi dengan Unit Aset (asset_items), Master Karyawan (employee_directory), dan Status Aset.
+ * ============================================================================
+ * MODUL PEMINJAMAN UNIT ASET (ASSET LOAN MANAGEMENT)
+ * ============================================================================
+ * File: app/modules/asset_loan.php
+ * 
+ * Mengelola seluruh siklus peminjaman unit aset fisik (Laptop, Proyektor, Kamera,
+ * Kendaraan, Tools, dll) kepada karyawan / departemen / pihak eksternal.
+ * 
+ * Alur Utama:
+ * 1. find_asset_item_for_loan: Pencarian multi-tingkat (QR encrypted/URL, Kode Unit, Serial Number, ID, NIK/Nama Pengguna).
+ * 2. handle_route_asset_loans: Daftar rekap pinjaman berjalan, terlambat, dan selesai.
+ * 3. handle_route_asset_loan_form: Form pembuatan & persetujuan pinjaman baru.
+ * 4. handle_route_asset_loan_detail: Rincian transaksi dan timeline peminjaman.
+ * 5. handle_route_asset_loan_print: Cetak Surat Bukti Pinjam Aset (Thermal 58/80mm & A4).
+ * 6. handle_route_asset_loan_return: Proses serah terima pengembalian aset dan cek kondisi.
+ */
+
 /**
- * Temukan unit aset berdasarkan kode aset atau hasil scan QR (plain / URL / terenkripsi)
+ * Temukan unit aset untuk peminjaman via QR scan / Kode Unit / SN / Pengguna
  */
 function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
 {
