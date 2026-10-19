@@ -588,6 +588,9 @@ switch ($route) {
     case 'api_corrective_data':
         handle_route_api_corrective_data($pdo);
         break;
+    case 'api_generate_master_item_code':
+        handle_route_api_generate_master_item_code($pdo);
+        break;
 
     default:
         http_response_code(404);

@@ -125,6 +125,24 @@ function find_asset_item_for_loan(PDO $pdo, string $raw): ?array
         $item = $stmt3->fetch(PDO::FETCH_ASSOC);
     }
 
+    // 4. Cari berdasarkan Pengguna (custodian_name / custodian_nik) atau nama aset
+    if (!$item) {
+        $stmt4 = $pdo->prepare("SELECT ai.*, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
+                                FROM asset_items ai
+                                LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
+                                LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                WHERE (LOWER(TRIM(ai.custodian_name)) LIKE ? 
+                                    OR LOWER(TRIM(ai.custodian_nik)) = ? 
+                                    OR LOWER(TRIM(ai.asset_name)) LIKE ?)
+                                  AND LOWER(ai.status) NOT IN ('inactive', 'deleted')
+                                ORDER BY (LOWER(ai.status) = 'active') DESC, ai.id DESC
+                                LIMIT 1");
+        $kw = '%' . strtolower($code) . '%';
+        $stmt4->execute([$kw, strtolower($code), $kw]);
+        $item = $stmt4->fetch(PDO::FETCH_ASSOC);
+    }
+
     return $item ?: null;
 }
 
@@ -599,13 +617,16 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name 
-                                           FROM asset_items ai 
-                                           LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
-                                           LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
-                                           LEFT JOIN asset_locations loc ON loc.id = ai.location_id 
-                                           WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone') 
-                                           ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
+                                                   ai.custodian_name, ai.custodian_nik,
+                                                   g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
+                                            FROM asset_items ai
+                                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
+                                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                            LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                            WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone')
+                                              AND LOWER(ai.status) <> 'deleted'
+                                            ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $ignored) {}
 
     // Data awal unit terverifikasi jika edit
@@ -700,8 +721,8 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '  <div style="background:#f0f9ff;border:1px solid #0284c7;border-radius:8px;padding:16px;margin-bottom:16px;">'
         . '    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">'
         . '      <div>'
-        . '        <h3 style="margin:0;color:#0369a1;font-size:16px;display:flex;align-items:center;gap:8px;">📷 3. Scan QR Code atau Masukkan Kode Unit Aset <span style="color:#ef4444;">*</span></h3>'
-        . '        <p style="margin:4px 0 0 0;font-size:13px;color:#0369a1;">Wajib scan QR code pada stiker fisik atau ketik kode unit aset (contoh: <code>IT-CMP-000001</code> / <code>TL-IT-000001</code>) untuk validasi unit.</p>'
+        . '        <h3 style="margin:0;color:#0369a1;font-size:16px;display:flex;align-items:center;gap:8px;">📷 3. Scan QR Code atau Masukkan Kode Unit / Cari Pengguna <span style="color:#ef4444;">*</span></h3>'
+        . '        <p style="margin:4px 0 0 0;font-size:13px;color:#0369a1;">Wajib scan QR code pada stiker fisik atau cari kode unit aset, serial number, nama barang, atau nama / NIK pengguna pemegang aset.</p>'
         . '      </div>'
         . '      <button type="button" class="btn" id="btnToggleCamera" onclick="toggleCameraScanner()" style="background:#0284c7;color:#fff;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:8px 14px;">'
         . '        📷 <span id="cameraBtnText">Buka Live Scan Kamera QR</span>'
@@ -718,7 +739,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         // Input Single-Box Combobox Unit Aset (Terdaftar) & Barcode Input
         . '    <div style="position:relative;margin-top:12px;">'
         . '      <div style="display:flex;gap:8px;">'
-        . '        <input type="text" id="barcodeAssetInput" placeholder="🔍 Ketik kode, nama, komoditas, atau lokasi unit aset untuk mencari, atau scan barcode..." autocomplete="off" style="flex:1;font-size:14px;padding:10px 14px;font-family:monospace;font-weight:600;background:#fff;border:2px solid #0284c7;border-radius:6px;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(this.value);}">'
+        . '        <input type="text" id="barcodeAssetInput" placeholder="🔍 Cari kode unit, nama aset, SN, komoditas, lokasi, atau nama / NIK pengguna..." autocomplete="off" style="flex:1;font-size:14px;padding:10px 14px;font-family:monospace;font-weight:600;background:#fff;border:2px solid #0284c7;border-radius:6px;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(this.value);}">'
         . '        <button type="button" class="btn primary" onclick="var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(document.getElementById(\'barcodeAssetInput\').value)" style="padding:10px 20px;font-weight:700;white-space:nowrap;">'
         . '          + Tambah Unit'
         . '        </button>'
@@ -792,7 +813,10 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 var group = (item.group_name || "").toLowerCase();
                 var type = (item.type_name || "").toLowerCase();
                 var loc = (item.location_name || "").toLowerCase();
-                return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q);
+                var sn = (item.serial_number || "").toLowerCase();
+                var custName = (item.custodian_name || "").toLowerCase();
+                var custNik = (item.custodian_nik || "").toLowerCase();
+                return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
             });
 
             if (matches.length === 0) {
@@ -805,8 +829,10 @@ function handle_route_asset_loan_form(PDO $pdo): void
             matches.slice(0, 25).forEach(function(item) {
                 var subParts = [];
                 if (item.brand || item.model) subParts.push((item.brand ? item.brand + " " : "") + (item.model || ""));
+                if (item.serial_number) subParts.push("SN: " + item.serial_number);
                 if (item.group_name || item.type_name) subParts.push((item.group_name || "") + " › " + (item.type_name || ""));
                 if (item.location_name) subParts.push("📍 " + item.location_name);
+                if (item.custodian_name) subParts.push("👤 Pengguna: " + item.custodian_name + (item.custodian_nik ? " (" + item.custodian_nik + ")" : ""));
 
                 var div = document.createElement("div");
                 div.style.padding = "9px 12px";

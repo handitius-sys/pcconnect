@@ -383,13 +383,16 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name 
-                                           FROM asset_items ai 
-                                           LEFT JOIN asset_groups g ON g.id = ai.asset_group_id 
-                                           LEFT JOIN asset_types t ON t.id = ai.asset_type_id 
-                                           LEFT JOIN asset_locations loc ON loc.id = ai.location_id 
-                                           WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone') 
-                                           ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
+                                                   ai.custodian_name, ai.custodian_nik,
+                                                   g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
+                                            FROM asset_items ai
+                                            LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
+                                            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                            LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                            WHERE ai.status IN ('active', 'available', 'ready', 'normal', 'standalone')
+                                              AND LOWER(ai.status) <> 'deleted'
+                                            ORDER BY ai.asset_code ASC")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $ignored) {}
 
     render_mobile_header('Pinjam Aset Baru', $user);
@@ -448,7 +451,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             <div style="background:#f1f5f9;border:1px solid #0284c7;border-radius:8px;padding:12px;margin-bottom:12px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <div style="font-size:12px;font-weight:700;color:#0284c7;text-transform:uppercase;">
-                        📷 2. Scan QR / Masukkan Kode Unit <span style="color:#ef4444;">*</span>
+                        📷 2. Scan QR / Masukkan Kode Unit / Cari Pengguna <span style="color:#ef4444;">*</span>
                     </div>
                     <button type="button" id="btnToggleCamera" onclick="toggleCameraScanner()" style="background:#0284c7;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">
                         📷 Buka Kamera
@@ -464,7 +467,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
                 <!-- Manual / Barcode input Single-Box Combobox -->
                 <div style="position:relative;">
                     <div style="display:flex;gap:6px;">
-                        <input type="text" id="barcodeAssetInput" placeholder="🔍 Ketik kode, nama, komoditas, atau lokasi unit aset..." autocomplete="off" style="font-family:monospace;font-weight:700;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;padding:9px 12px;width:100%;box-sizing:border-box;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(this.value);}">
+                        <input type="text" id="barcodeAssetInput" placeholder="🔍 Cari kode, nama aset, SN, pengguna..." autocomplete="off" style="font-family:monospace;font-weight:700;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;padding:9px 12px;width:100%;box-sizing:border-box;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(this.value);}">
                         <button type="button" class="btn btn-primary" onclick="var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(document.getElementById('barcodeAssetInput').value)" style="width:auto;margin:0;padding:8px 14px;white-space:nowrap;font-size:13px;">
                             + Tambah
                         </button>
@@ -531,7 +534,10 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             var group = (item.group_name || "").toLowerCase();
             var type = (item.type_name || "").toLowerCase();
             var loc = (item.location_name || "").toLowerCase();
-            return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q);
+            var sn = (item.serial_number || "").toLowerCase();
+            var custName = (item.custodian_name || "").toLowerCase();
+            var custNik = (item.custodian_nik || "").toLowerCase();
+            return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
         });
 
         if (matches.length === 0) {
@@ -544,8 +550,10 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
         matches.slice(0, 20).forEach(function(item) {
             var subParts = [];
             if (item.brand || item.model) subParts.push((item.brand ? item.brand + " " : "") + (item.model || ""));
+            if (item.serial_number) subParts.push("SN: " + item.serial_number);
             if (item.group_name || item.type_name) subParts.push((item.group_name || "") + " › " + (item.type_name || ""));
             if (item.location_name) subParts.push("📍 " + item.location_name);
+            if (item.custodian_name) subParts.push("👤 Pengguna: " + item.custodian_name + (item.custodian_nik ? " (" + item.custodian_nik + ")" : ""));
 
             var div = document.createElement("div");
             div.style.padding = "9px 12px";

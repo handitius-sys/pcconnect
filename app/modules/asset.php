@@ -4597,12 +4597,17 @@ function handle_route_asset_master_items(PDO $pdo): void
             redirect_to('asset_master_items', $id ? ['id' => $id] : []);
         }
 
-        if ($itemCode === '') {
-            $gCode = (string)$pdo->query("SELECT group_code FROM asset_groups WHERE id = {$groupId}")->fetchColumn() ?: 'GEN';
-            $tCode = (string)$pdo->query("SELECT type_code FROM asset_types WHERE id = {$typeId}")->fetchColumn() ?: 'ITEM';
-            $bCode = $brandId ? ((string)$pdo->query("SELECT brand_code FROM asset_brands WHERE id = {$brandId}")->fetchColumn() ?: 'BRD') : 'GEN';
-            $nextSeq = (int)$pdo->query("SELECT COUNT(*) + 1 FROM asset_master_items WHERE asset_group_id = {$groupId} AND asset_type_id = {$typeId}")->fetchColumn();
-            $itemCode = strtoupper($gCode . '-' . $tCode . '-' . $bCode . '-' . str_pad((string)$nextSeq, 3, '0', STR_PAD_LEFT));
+        if ($id <= 0) {
+            // Selalu auto-generate kode barang baru
+            $itemCode = generate_master_item_code($pdo, $groupId, $typeId, $brandId);
+        } else {
+            // Saat edit, pertahankan item_code asli dari database
+            $existingCode = (string)$pdo->query("SELECT item_code FROM asset_master_items WHERE id = {$id}")->fetchColumn();
+            if ($existingCode !== '') {
+                $itemCode = $existingCode;
+            } else {
+                $itemCode = generate_master_item_code($pdo, $groupId, $typeId, $brandId);
+            }
         }
 
         try {
@@ -4709,7 +4714,13 @@ function handle_route_asset_master_items(PDO $pdo): void
         echo '<label style="display:flex;flex-direction:column;gap:4px;"><span style="display:flex;justify-content:space-between;align-items:center;"><span>Brand / Merk</span><a href="' . route_url('asset_brands', ($editGroupId > 0 ? ['group_id' => $editGroupId, 'type_id' => $editTypeId] : [])) . '" id="linkManageBrands" target="_blank" style="font-size:12px;color:#0284c7;text-decoration:none;font-weight:600;" title="Kelola Master Merk di tab baru">⚙️ Master Merk ↗</a></span><select id="miBrandId" name="brand_id">' . $brandHtml . '</select></label>';
         echo '</div>';
         echo '<div class="grid three">';
-        echo '<label>Kode Barang / SKU<input id="miItemCode" name="item_code" value="' . e($edit['item_code'] ?? '') . '" placeholder="Auto jika dikosongkan (contoh: IT-LPT-LEN-001)"></label>';
+        echo '<label style="display:flex;flex-direction:column;gap:4px;">'
+            . '<span style="display:flex;justify-content:space-between;align-items:center;">'
+            . '<span>Kode Barang / SKU</span>'
+            . '<span class="badge ok" style="font-size:11px;font-weight:600;padding:2px 8px;">Auto Generated</span>'
+            . '</span>'
+            . '<input id="miItemCode" name="item_code" value="' . e($edit['item_code'] ?? '') . '" readonly style="background:#f1f5f9;cursor:not-allowed;font-family:monospace;font-weight:700;color:#0369a1;border:1.5px solid #94a3b8;" placeholder="' . ($edit ? '' : '(Otomatis Dihasilkan Sistem)') . '">'
+            . '</label>';
         echo '<label>Nama Barang / Model Lengkap *<input id="miItemName" name="item_name" required value="' . e($edit['item_name'] ?? '') . '" placeholder="Contoh: Lenovo ThinkPad T480 Core i5 8GB 256GB"></label>';
         echo '<label>Model / Varian Spesifik<input id="miModelName" name="model_name" value="' . e($edit['model_name'] ?? '') . '" placeholder="Contoh: ThinkPad T480 / OptiPlex 3080"></label>';
         echo '</div>';
@@ -4942,6 +4953,7 @@ function handle_route_asset_master_items(PDO $pdo): void
             miType.innerHTML = opts;
             window.loadMiSpecifications(0, gid);
             await window.loadMiBrands("");
+            await window.updateMiCodePreview();
         } catch(e) {
             miType.innerHTML = "<option value=\"\">Gagal memuat kategori</option>";
         }
@@ -4955,15 +4967,54 @@ function handle_route_asset_master_items(PDO $pdo): void
             var tid = parseInt(miType.value, 10) || 0;
             window.loadMiSpecifications(tid, gid);
             await window.loadMiBrands();
+            await window.updateMiCodePreview();
         }
+    };
+
+    window.updateMiCodePreview = async function(){
+        var codeIn = document.getElementById("miItemCode");
+        if(!codeIn) return;
+        var isEdit = ' . ($edit ? 'true' : 'false') . ';
+        if(isEdit && codeIn.value && codeIn.value.trim() !== "") return;
+
+        var gEl = document.getElementById("miGroup");
+        var tEl = document.getElementById("miType");
+        var bEl = document.getElementById("miBrandId");
+        var gid = parseInt(gEl ? gEl.value : 0, 10) || 0;
+        var tid = parseInt(tEl ? tEl.value : 0, 10) || 0;
+        var bid = parseInt(bEl ? bEl.value : 0, 10) || 0;
+
+        if(gid <= 0 || tid <= 0){
+            codeIn.value = "";
+            codeIn.placeholder = "(Otomatis Dihasilkan Setelah Pilih Komoditas & Kategori)";
+            return;
+        }
+        codeIn.placeholder = "Menghasilkan kode otomatis...";
+        try {
+            var r = await fetch("index.php?route=api_generate_master_item_code&group_id=" + gid + "&type_id=" + tid + "&brand_id=" + bid);
+            var d = await r.json();
+            if(d && d.ok && d.code){
+                codeIn.value = d.code;
+            }
+        } catch(e){}
     };
 
     // Auto-load specifications on edit or pre-selected category
     (function(){
         var miGroup = document.getElementById("miGroup");
         var miType = document.getElementById("miType");
+        var miBrand = document.getElementById("miBrandId");
+        if(miBrand){
+            miBrand.addEventListener("change", function(){
+                window.updateMiCodePreview();
+            });
+        }
         if(miGroup && miType && parseInt(miType.value, 10) > 0){
             window.loadMiSpecifications(miType.value, miGroup.value, window._existingMiSpecs);
+        }
+        var isEdit = ' . ($edit ? 'true' : 'false') . ';
+        if(!isEdit && miGroup && parseInt(miGroup.value, 10) > 0 && miType && parseInt(miType.value, 10) > 0){
+            window.updateMiCodePreview();
         }
     })();
 

@@ -246,6 +246,37 @@ function handle_route_asset_mutations(PDO $pdo): void
         }
     } catch (Throwable $ignored) {}
 
+    // Ambil data unit aset untuk Combo Box Pencarian & Pemilihan Unit Mutasi
+    $comboAssets = [];
+    try {
+        $cSql = "SELECT a.id, a.asset_code, a.brand, a.model, a.serial_number,
+                        COALESCE(NULLIF(a.asset_name, ''), a.model, a.asset_code) AS asset_name,
+                        a.asset_group_id, a.asset_type_id,
+                        COALESCE(g.group_name, 'IT') AS group_name,
+                        COALESCE(t.type_name, a.asset_type, '-') AS type_name,
+                        a.company_id, COALESCE(c.company_name, '-') AS company_name,
+                        a.location_id, COALESCE(loc.location_name, a.location_label, '-') AS display_location,
+                        a.location_label,
+                        COALESCE(a.custodian_name, '') AS custodian_name,
+                        COALESCE(a.custodian_nik, '') AS custodian_nik,
+                        a.asset_mode
+                 FROM asset_items a
+                 LEFT JOIN asset_groups g ON g.id = a.asset_group_id
+                 LEFT JOIN asset_types t ON t.id = a.asset_type_id
+                 LEFT JOIN asset_companies c ON a.company_id = c.id
+                 LEFT JOIN asset_locations loc ON a.location_id = loc.id
+                 WHERE LOWER(a.status) NOT IN ('inactive', 'deleted')";
+        if ($filterGroup > 0) {
+            $cSql .= " AND a.asset_group_id = " . (int)$filterGroup;
+        }
+        if ($filterType > 0) {
+            $cSql .= " AND (a.asset_type_id = " . (int)$filterType . " OR a.asset_type = (SELECT type_code FROM asset_types WHERE id = " . (int)$filterType . " LIMIT 1))";
+        }
+        $cSql .= " ORDER BY a.asset_code ASC LIMIT 1000";
+        $comboAssets = $pdo->query($cSql)->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+    $comboAssetsJson = json_encode($comboAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
     render_header('Mutasi Aset', $user);
     echo asset_nav_html();
 
@@ -260,25 +291,34 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '  </div>';
     echo '</div>';
 
-    // Form Filter: Wajib Pilih Komoditas & Kategori (asset_type)
+    // Form Filter: Wajib Pilih Komoditas & Kategori (asset_type) atau Combo Box Pencarian
     echo '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">';
     echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;flex-wrap:wrap;margin:0;">';
     echo '    <input type="hidden" name="route" value="asset_mutations">';
-    echo '    <label style="margin:0;flex:1;min-width:200px;">1. Komoditas (Grup Aset) *';
-    echo '      <select name="group_id" onchange="this.form.submit()" required>' . asset_group_options($pdo, $filterGroup, true, '- Pilih Komoditas Terlebih Dahulu -') . '</select>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">1. Komoditas (Grup Aset) *';
+    echo '      <select name="group_id" id="mutFilterGroup" onchange="this.form.submit()">' . asset_group_options($pdo, $filterGroup, true, '- Semua / Pilih Komoditas -') . '</select>';
     echo '    </label>';
     
-    echo '    <label style="margin:0;flex:1;min-width:200px;">2. Kategori Aset (Tipe) *';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">2. Kategori Aset (Tipe) *';
     if ($filterGroup > 0) {
-        echo '      <select name="type_id" onchange="this.form.submit()" required>' . asset_type_options($pdo, $filterType, $filterGroup, true, '- Pilih Kategori (Tipe) -') . '</select>';
+        echo '      <select name="type_id" id="mutFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $filterType, $filterGroup, true, '- Semua / Pilih Kategori -') . '</select>';
     } else {
-        echo '      <select name="type_id" disabled style="background:#f1f5f9;cursor:not-allowed;"><option value="">- Pilih Komoditas Terlebih Dahulu -</option></select>';
+        echo '      <select name="type_id" id="mutFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $filterType, 0, true, '- Semua / Pilih Kategori -') . '</select>';
     }
     echo '    </label>';
 
-    echo '    <label style="margin:0;flex:1.2;min-width:200px;">Cari (Kode/Nama/SN/Pengguna)';
-    echo '      <input type="text" name="q" value="' . e($q) . '" placeholder="Ketik kata kunci...">';
-    echo '    </label>';
+    echo '    <div style="position:relative;flex:1.5;min-width:280px;">';
+    echo '      <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">';
+    echo '        <span>Cari & Pilih Unit Aset (Kode / Nama / SN / Pengguna)</span>';
+    echo '        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>';
+    echo '      </label>';
+    echo '      <div style="position:relative;display:flex;align-items:stretch;">';
+    echo '        <input type="text" id="mutationAssetSearch" name="q" value="' . e($q) . '" placeholder="🔍 Ketik kode, nama, SN, pengguna..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 58px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMutationDropdown(this.value)" oninput="showMutationDropdown(this.value)" onkeydown="onMutationKeyDown(event)">';
+    echo '        <button type="button" id="mutationClearBtn" onclick="clearMutationSearch()" style="display:' . ($q !== '' ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:4px;line-height:1;" title="Hapus pencarian">✕</button>';
+    echo '        <button type="button" id="mutationDropdownBtn" onclick="toggleMutationDropdown(event)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:12px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup daftar pilihan aset">▼</button>';
+    echo '      </div>';
+    echo '      <div id="mutationDropdownResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:300px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>';
+    echo '    </div>';
     
     echo '    <button class="btn primary" type="submit" style="height:38px;">Tampilkan</button>';
     if ($filterGroup > 0 || $filterType > 0 || $q !== '') {
@@ -288,34 +328,50 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '</div>';
 
     // =========================================================================
-    // 4. VALIDASI PEMILIHAN: HARUS MEMASUKKAN KOMODITAS & KATEGORI TERLEBIH DAHULU
+    // 4. VALIDASI PEMILIHAN: HARUS MEMASUKKAN KOMODITAS & KATEGORI ATAU PENCARIAN COMBO BOX
     // =========================================================================
-    if ($filterGroup <= 0 || $filterType <= 0) {
+    if (($filterGroup <= 0 || $filterType <= 0) && $q === '') {
         echo '<div style="text-align:center;padding:48px 24px;color:#475569;background:#f8fafc;border-radius:8px;border:2px dashed #cbd5e1;margin-bottom:24px;">';
         echo '  <div style="font-size:36px;margin-bottom:10px;">📦</div>';
-        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Masukkan Komoditas dan Kategori Terlebih Dahulu</h3>';
-        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> dan <strong>Kategori (Tipe Aset)</strong> pada filter di atas untuk menampilkan daftar unit aset yang siap dimutasi.</p>';
+        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Pilih Komoditas & Kategori, atau Gunakan Combo Box</h3>';
+        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> & <strong>Kategori</strong> pada filter, atau gunakan <strong>Combo Box Pencarian</strong> untuk langsung mencari dan memilih unit aset yang ingin dimutasi.</p>';
         echo '</div>';
     } else {
-        // Ambil info type_code & type_name dari asset_types untuk filtering yang aman dari isu collation MySQL
-        $stT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
-        $stT->execute([$filterType]);
-        $tRow = $stT->fetch(PDO::FETCH_ASSOC);
-        $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
-        $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+        $whereClauses = ["LOWER(a.status) <> 'deleted'"];
+        $params = [];
 
-        $typeClauses = ["a.asset_type_id = ?"];
-        $params = [$filterGroup, $filterType];
-        if ($tCode !== '') {
-            $typeClauses[] = "a.asset_type = ?";
-            $params[] = $tCode;
-        }
-        if ($tName !== '' && $tName !== $tCode) {
-            $typeClauses[] = "a.asset_type = ?";
-            $params[] = $tName;
+        if ($filterGroup > 0) {
+            $whereClauses[] = "a.asset_group_id = ?";
+            $params[] = $filterGroup;
         }
 
-        // Query unit aset terfilter berdasarkan Komoditas & Kategori
+        if ($filterType > 0) {
+            $stT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+            $stT->execute([$filterType]);
+            $tRow = $stT->fetch(PDO::FETCH_ASSOC);
+            $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+            $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+            $typeClauses = ["a.asset_type_id = ?"];
+            $params[] = $filterType;
+            if ($tCode !== '') {
+                $typeClauses[] = "a.asset_type = ?";
+                $params[] = $tCode;
+            }
+            if ($tName !== '' && $tName !== $tCode) {
+                $typeClauses[] = "a.asset_type = ?";
+                $params[] = $tName;
+            }
+            $whereClauses[] = "(" . implode(" OR ", $typeClauses) . ")";
+        }
+
+        if ($q !== '') {
+            $whereClauses[] = "(a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";
+            $w = '%' . $q . '%';
+            $params = array_merge($params, [$w, $w, $w, $w, $w, $w]);
+        }
+
+        // Query unit aset terfilter berdasarkan Komoditas & Kategori atau kata kunci Combo Box
         $sql = "SELECT a.*, 
                        COALESCE(NULLIF(a.asset_name, ''), a.model, '-') AS display_name,
                        COALESCE(g.group_name, 'IT') AS group_name,
@@ -327,17 +383,8 @@ function handle_route_asset_mutations(PDO $pdo): void
                 LEFT JOIN asset_types t ON t.id = a.asset_type_id
                 LEFT JOIN asset_companies c ON a.company_id = c.id
                 LEFT JOIN asset_locations loc ON a.location_id = loc.id
-                WHERE a.asset_group_id = ?
-                AND (" . implode(" OR ", $typeClauses) . ")
-                AND LOWER(a.status) <> 'deleted'";
-        
-        if ($q !== '') {
-            $sql .= " AND (a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";
-            $w = '%' . $q . '%';
-            $params = array_merge($params, [$w, $w, $w, $w, $w, $w]);
-        }
-        
-        $sql .= " ORDER BY a.asset_code ASC";
+                WHERE " . implode(" AND ", $whereClauses) . "
+                ORDER BY a.asset_code ASC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $assets = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -625,6 +672,219 @@ function handle_route_asset_mutations(PDO $pdo): void
     <!-- Client-side script untuk modal & autocomplete -->
     <script>
     var mutEmployees = ' . $employeesJson . ';
+    var comboMutationAssets = ' . $comboAssetsJson . ';
+    var currentComboMatches = [];
+    var activeComboIndex = -1;
+
+    function toggleMutationDropdown(e) {
+        if (e) e.stopPropagation();
+        var dd = document.getElementById("mutationDropdownResults");
+        if (!dd) return;
+        if (dd.style.display === "block") {
+            dd.style.display = "none";
+        } else {
+            var searchInput = document.getElementById("mutationAssetSearch");
+            showMutationDropdown(searchInput ? searchInput.value : "");
+            if (searchInput) searchInput.focus();
+        }
+    }
+
+    function clearMutationSearch() {
+        var input = document.getElementById("mutationAssetSearch");
+        if (input) input.value = "";
+        var clearBtn = document.getElementById("mutationClearBtn");
+        if (clearBtn) clearBtn.style.display = "none";
+        var dd = document.getElementById("mutationDropdownResults");
+        if (dd) dd.style.display = "none";
+        if (input) input.focus();
+    }
+
+    function showMutationDropdown(q) {
+        var dd = document.getElementById("mutationDropdownResults");
+        var clearBtn = document.getElementById("mutationClearBtn");
+        if (!dd) return;
+
+        var term = (q || "").trim().toLowerCase();
+        if (clearBtn) clearBtn.style.display = term.length > 0 ? "block" : "none";
+
+        activeComboIndex = -1;
+        currentComboMatches = comboMutationAssets.filter(function(item) {
+            if (!term) return true;
+            var code = (item.asset_code || "").toLowerCase();
+            var name = (item.asset_name || "").toLowerCase();
+            var brand = (item.brand || "").toLowerCase();
+            var model = (item.model || "").toLowerCase();
+            var sn = (item.serial_number || "").toLowerCase();
+            var custName = (item.custodian_name || "").toLowerCase();
+            var custNik = (item.custodian_nik || "").toLowerCase();
+            var comp = (item.company_name || "").toLowerCase();
+            var loc = (item.display_location || "").toLowerCase();
+            return code.includes(term) || name.includes(term) || brand.includes(term) || model.includes(term) || sn.includes(term) || custName.includes(term) || custNik.includes(term) || comp.includes(term) || loc.includes(term);
+        });
+
+        if (currentComboMatches.length === 0) {
+            dd.innerHTML = "<div style=\"padding:14px;font-size:12px;color:#64748b;text-align:center;\">Tidak ada unit aset yang cocok dengan kata kunci &ldquo;" + escapeHtml(q) + "&rdquo;.</div>";
+            dd.style.display = "block";
+            return;
+        }
+
+        dd.innerHTML = "";
+
+        var header = document.createElement("div");
+        header.style.cssText = "padding:6px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b;font-weight:600;display:flex;justify-content:space-between;align-items:center;";
+        header.innerHTML = "<span>Menampilkan " + Math.min(currentComboMatches.length, 30) + " dari " + currentComboMatches.length + " unit aset</span><span style=\"font-size:10px;color:#94a3b8;\">Gunakan panah ↑↓ & Enter</span>";
+        dd.appendChild(header);
+
+        currentComboMatches.slice(0, 30).forEach(function(item, idx) {
+            var row = document.createElement("div");
+            row.className = "combo-item-row";
+            row.setAttribute("data-idx", idx);
+            row.style.cssText = "padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:background 0.15s ease;";
+
+            var left = document.createElement("div");
+            left.style.cssText = "flex:1;min-width:0;";
+
+            var titleHtml = "<div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;\">"
+                + "<span style=\"font-weight:700;color:#0284c7;font-size:13px;\">" + escapeHtml(item.asset_code) + "</span>"
+                + "<span style=\"font-weight:600;color:#0f172a;font-size:13px;\">" + escapeHtml(item.asset_name || item.model || "-") + "</span>"
+                + "</div>";
+
+            var subHtml = "<div style=\"font-size:11.5px;color:#475569;margin-top:2px;\">"
+                + (item.serial_number && item.serial_number !== "-" ? ("SN: " + escapeHtml(item.serial_number) + " • ") : "")
+                + escapeHtml(item.group_name || "IT") + " › " + escapeHtml(item.type_name || "-")
+                + "</div>";
+
+            var metaHtml = "<div style=\"font-size:11px;color:#64748b;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;\">"
+                + "<span>🏢 " + escapeHtml(item.company_name || "-") + "</span>"
+                + "<span>📍 " + escapeHtml(item.display_location || item.location_label || "-") + "</span>"
+                + "<span>👤 " + (item.custodian_name ? (escapeHtml(item.custodian_name) + (item.custodian_nik ? " (" + escapeHtml(item.custodian_nik) + ")" : "")) : "Belum ada pengguna") + "</span>"
+                + "</div>";
+
+            left.innerHTML = titleHtml + subHtml + metaHtml;
+
+            var right = document.createElement("div");
+            right.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:4px;";
+
+            var btnDirect = document.createElement("button");
+            btnDirect.type = "button";
+            btnDirect.className = "btn primary";
+            btnDirect.style.cssText = "padding:3px 8px;font-size:11px;font-weight:600;border-radius:4px;white-space:nowrap;";
+            btnDirect.innerText = "⚡ Mutasi";
+            btnDirect.onclick = function(ev) {
+                ev.stopPropagation();
+                dd.style.display = "none";
+                openMutationForm({
+                    id: item.id,
+                    code: item.asset_code,
+                    name: item.asset_name,
+                    sn: item.serial_number,
+                    company_id: item.company_id,
+                    company_name: item.company_name,
+                    location_id: item.location_id,
+                    location_label: item.location_label || item.display_location,
+                    custodian_nik: item.custodian_nik,
+                    custodian_name: item.custodian_name
+                });
+            };
+            right.appendChild(btnDirect);
+
+            row.appendChild(left);
+            row.appendChild(right);
+
+            row.onmouseenter = function() {
+                highlightComboItem(idx);
+            };
+
+            row.onclick = function() {
+                selectMutationAsset(item);
+            };
+
+            dd.appendChild(row);
+        });
+
+        dd.style.display = "block";
+    }
+
+    function highlightComboItem(idx) {
+        activeComboIndex = idx;
+        var rows = document.querySelectorAll("#mutationDropdownResults .combo-item-row");
+        rows.forEach(function(r, i) {
+            if (i === idx) {
+                r.style.background = "#eff6ff";
+                r.style.borderLeft = "3px solid #0284c7";
+            } else {
+                r.style.background = "#fff";
+                r.style.borderLeft = "none";
+            }
+        });
+    }
+
+    function selectMutationAsset(item) {
+        var input = document.getElementById("mutationAssetSearch");
+        if (input) input.value = item.asset_code;
+        var dd = document.getElementById("mutationDropdownResults");
+        if (dd) dd.style.display = "none";
+
+        var form = input ? input.closest("form") : null;
+        if (form) {
+            if (item.asset_group_id) {
+                var g = document.getElementById("mutFilterGroup");
+                if (g) g.value = item.asset_group_id;
+            }
+            if (item.asset_type_id) {
+                var t = document.getElementById("mutFilterType");
+                if (t) t.value = item.asset_type_id;
+            }
+            form.submit();
+        }
+    }
+
+    function onMutationKeyDown(e) {
+        var dd = document.getElementById("mutationDropdownResults");
+        var isVisible = dd && dd.style.display === "block";
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!isVisible) {
+                showMutationDropdown(e.target.value);
+                return;
+            }
+            var max = Math.min(currentComboMatches.length, 30);
+            if (max > 0) {
+                var next = activeComboIndex + 1;
+                if (next >= max) next = 0;
+                highlightComboItem(next);
+                scrollComboItemIntoView(next);
+            }
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (!isVisible) return;
+            var max = Math.min(currentComboMatches.length, 30);
+            if (max > 0) {
+                var prev = activeComboIndex - 1;
+                if (prev < 0) prev = max - 1;
+                highlightComboItem(prev);
+                scrollComboItemIntoView(prev);
+            }
+        } else if (e.key === "Enter") {
+            if (isVisible && activeComboIndex >= 0 && activeComboIndex < currentComboMatches.length) {
+                e.preventDefault();
+                selectMutationAsset(currentComboMatches[activeComboIndex]);
+            }
+        } else if (e.key === "Escape") {
+            if (isVisible) {
+                e.preventDefault();
+                dd.style.display = "none";
+            }
+        }
+    }
+
+    function scrollComboItemIntoView(idx) {
+        var rows = document.querySelectorAll("#mutationDropdownResults .combo-item-row");
+        if (rows[idx]) {
+            rows[idx].scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+    }
 
     function openMutationForm(item) {
         document.getElementById("mutAssetId").value = item.id;
@@ -712,6 +972,13 @@ function handle_route_asset_mutations(PDO $pdo): void
         var input = document.getElementById("mutCustodianSearchInput");
         if (dd && input && !dd.contains(e.target) && e.target !== input) {
             dd.style.display = "none";
+        }
+
+        var mdd = document.getElementById("mutationDropdownResults");
+        var minput = document.getElementById("mutationAssetSearch");
+        var mbtn = document.getElementById("mutationDropdownBtn");
+        if (mdd && minput && !mdd.contains(e.target) && e.target !== minput && (!mbtn || !mbtn.contains(e.target))) {
+            mdd.style.display = "none";
         }
     });
     </script>

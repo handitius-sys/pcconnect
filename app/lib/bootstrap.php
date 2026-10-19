@@ -2324,4 +2324,54 @@ if (!function_exists('corrective_action_type_label')) {
     }
 }
 
+if (!function_exists('generate_master_item_code')) {
+    function generate_master_item_code(PDO $pdo, int $groupId, int $typeId, int $brandId = 0): string
+    {
+        $gCode = 'GEN';
+        $tCode = 'ITEM';
+        $bCode = 'GEN';
+        if ($groupId > 0) {
+            $st = $pdo->prepare("SELECT group_code FROM asset_groups WHERE id = ?");
+            $st->execute([$groupId]);
+            $val = $st->fetchColumn();
+            if ($val) $gCode = strtoupper(trim((string)$val));
+        }
+        if ($typeId > 0) {
+            $st = $pdo->prepare("SELECT type_code FROM asset_types WHERE id = ?");
+            $st->execute([$typeId]);
+            $val = $st->fetchColumn();
+            if ($val) $tCode = strtoupper(trim((string)$val));
+        }
+        if ($brandId > 0) {
+            $st = $pdo->prepare("SELECT brand_code FROM asset_brands WHERE id = ?");
+            $st->execute([$brandId]);
+            $val = $st->fetchColumn();
+            if ($val) $bCode = strtoupper(trim((string)$val));
+        }
+        $basePrefix = $gCode . '-' . $tCode . '-' . $bCode;
+
+        $sMax = $pdo->prepare("SELECT item_code FROM asset_master_items WHERE item_code LIKE ? ORDER BY item_code DESC");
+        $sMax->execute([$basePrefix . '-%']);
+        $existing = $sMax->fetchAll(PDO::FETCH_COLUMN);
+        $maxSeq = 0;
+        foreach ($existing as $ec) {
+            if (preg_match('/-(\d+)$/', $ec, $m)) {
+                $num = (int)$m[1];
+                if ($num > $maxSeq) $maxSeq = $num;
+            }
+        }
+        $seq = $maxSeq + 1;
+        do {
+            $candidate = $basePrefix . '-' . str_pad((string)$seq, 3, '0', STR_PAD_LEFT);
+            $chk = $pdo->prepare("SELECT id FROM asset_master_items WHERE item_code = ?");
+            $chk->execute([$candidate]);
+            if (!$chk->fetchColumn()) {
+                return $candidate;
+            }
+            $seq++;
+        } while (true);
+    }
+}
+
+
 

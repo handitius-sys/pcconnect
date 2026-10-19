@@ -1180,3 +1180,18 @@ function handle_route_api_assets_by_type(PDO $pdo): void
     $assets = $stmt->fetchAll(PDO::FETCH_ASSOC);
     api_json($assets);
 }
+
+/**
+ * Modul API: Auto-Generate Kode Master Barang / SKU
+ */
+function handle_route_api_generate_master_item_code(PDO $pdo): void
+{
+    require_login();
+    $groupId = (int)($_GET['group_id'] ?? 0);
+    $typeId = (int)($_GET['type_id'] ?? 0);
+    $brandId = (int)($_GET['brand_id'] ?? 0);
+
+    $code = generate_master_item_code($pdo, $groupId, $typeId, $brandId);
+    api_json(['ok' => true, 'code' => $code]);
+}
+
