@@ -171,12 +171,12 @@ function asset_items_table(PDO $pdo, array $rows): string
 
     $html .= '<table id="assetItemsTable" class="asset-table-sortable">';
     $html .= '<thead><tr>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Asset Code <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Aset <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Company <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna / Custodian <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kategori <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama / Merek <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama Barang <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Tanggal Input <span class="sort-ind">⇅</span></th>';
     $html .= '<th style="text-align:center;width:96px;">Aksi</th>';
@@ -227,9 +227,7 @@ function asset_items_table(PDO $pdo, array $rows): string
             : (!empty($row['asset_type']) ? $row['asset_type'] : (!empty($row['asset_category']) ? $row['asset_category'] : '-'));
 
         $isDeleted = strtolower((string)($row['status'] ?? '')) === 'deleted';
-        $statusBadge = $isDeleted 
-            ? '<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;font-weight:700;">deleted</span>' 
-            : '<span class="badge">' . e($row['status']) . '</span>';
+        $statusBadge = format_asset_status_badge($row['status'] ?? '');
 
         $createdAtFormatted = !empty($row['created_at']) 
             ? '<span style="font-weight:600;color:#334155;">' . date('d/m/Y', strtotime($row['created_at'])) . '</span><br><span class="muted" style="font-size:11px;">' . date('H:i', strtotime($row['created_at'])) . '</span>' 
@@ -250,13 +248,17 @@ function asset_items_table(PDO $pdo, array $rows): string
             }
         }
 
+        // Tampilan Nama Barang: Merk DIHILANGKAN sesuai instruksi
+        $itemDisplayName = !empty($row['asset_name']) ? e($row['asset_name']) : (!empty($row['model']) ? e($row['model']) : '-');
+        $modelSub = (!empty($row['model']) && !empty($row['asset_name']) && $row['model'] !== $row['asset_name']) ? '<br><span class="muted">' . e($row['model']) . '</span>' : '';
+
         $html .= '<tr>';
         $html .= '<td><strong>' . e($row['asset_code']) . '</strong><br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span>' . $sourcePcBadge . $idfHtml . '</td>';
         $html .= '<td>' . e($row['company_name'] ?: '-') . '</td>';
         $html .= '<td>' . $custodianText . '</td>';
         $html .= '<td><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' . e($displayCategory) . '</span></td>';
         $html .= '<td>' . $mode . '</td>';
-        $html .= '<td>' . e($row['asset_name']) . '<br><span class="muted">' . e(trim(($row['brand'] ?? '') . ' ' . ($row['model'] ?? ''))) . '</span></td>';
+        $html .= '<td>' . $itemDisplayName . $modelSub . '</td>';
         $html .= '<td>' . $statusBadge . '</td>';
         $html .= '<td style="white-space:nowrap;">' . $createdAtFormatted . '</td>';
         $html .= '<td style="text-align:center;"><div style="display:inline-flex;gap:5px;align-items:center;justify-content:center;">' . $itemActions . '</div></td>';
@@ -302,6 +304,20 @@ function asset_items_table(PDO $pdo, array $rows): string
         rows.sort(function(a, b) {
             var cellA = a.children[colIndex] ? a.children[colIndex].innerText.trim() : "";
             var cellB = b.children[colIndex] ? b.children[colIndex].innerText.trim() : "";
+
+            if (colIndex === 7) {
+                var parseDate = function(str) {
+                    var line = str.split("\n")[0].trim();
+                    var parts = line.split("/");
+                    if (parts.length === 3) {
+                        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10)).getTime() || 0;
+                    }
+                    return 0;
+                };
+                var dateA = parseDate(cellA);
+                var dateB = parseDate(cellB);
+                return isAsc ? (dateA - dateB) : (dateB - dateA);
+            }
 
             return isAsc 
                 ? cellA.localeCompare(cellB, undefined, {numeric: true, sensitivity: "base"})
@@ -2188,7 +2204,7 @@ function asset_bundles_table(array $rows): string
     }
     $html = '<table><tr><th>No Aset Pemeliharaan</th><th>Tipe</th><th>Nama Bundle</th><th>Company</th><th>Pengguna / Lokasi</th><th>Member</th><th>Status</th><th>Aksi</th></tr>';
     foreach ($rows as $row) {
-        $html .= '<tr><td><strong>' . e($row['maintenance_asset_code']) . '</strong></td><td>' . e($row['bundle_type']) . '</td><td>' . e($row['bundle_name']) . '</td><td>' . e($row['company_name'] ?: '-') . '</td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['location_label'] ?: '-') . '</span></td><td>' . e($row['member_count']) . ' item</td><td><span class="badge">' . e($row['status']) . '</span></td><td><a class="btn" href="' . route_url('asset_bundle_form', ['id' => $row['id']]) . '">Buka</a></td></tr>';
+        $html .= '<tr><td><strong>' . e($row['maintenance_asset_code']) . '</strong></td><td>' . e($row['bundle_type']) . '</td><td>' . e($row['bundle_name']) . '</td><td>' . e($row['company_name'] ?: '-') . '</td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['location_label'] ?: '-') . '</span></td><td>' . e($row['member_count']) . ' item</td><td>' . format_asset_status_badge($row['status'] ?? '') . '</td><td><a class="btn" href="' . route_url('asset_bundle_form', ['id' => $row['id']]) . '">Buka</a></td></tr>';
     }
     return $html . '</table>';
 }
@@ -2761,7 +2777,8 @@ function asset_status_options(PDO $pdo, int $selected = 0): string
         return $h;
     }
     foreach ($pdo->query("SELECT * FROM asset_statuses WHERE is_active=1 AND status_code <> 'DELETED' ORDER BY status_name") as $r) {
-        $h .= '<option value="' . $r['id'] . '"' . ((int)$r['id'] === $selected ? ' selected' : '') . '>' . e($r['status_name']) . '</option>';
+        $label = function_exists('format_asset_status_label') ? format_asset_status_label($r['status_name'] ?: $r['status_code']) : $r['status_name'];
+        $h .= '<option value="' . $r['id'] . '"' . ((int)$r['id'] === $selected ? ' selected' : '') . '>' . e($label) . '</option>';
     }
     return $h;
 }
@@ -5596,11 +5613,8 @@ function handle_route_asset_items(PDO $pdo): void
 
     $addBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn primary" href="' . route_url('asset_item_form', $masterItemId ? ['master_item_id' => $masterItemId] : []) . '">+ Tambah Unit Aset</a>' : '';
 
-    $backdoorBtn = is_full_admin($user) 
-        ? ($showBackdoor 
-            ? '<a class="btn" href="' . route_url('asset_items') . '">← List Normal</a>' 
-            : '<a class="btn" style="color:#64748b;" href="' . route_url('asset_items', ['backdoor' => 1]) . '" title="Lihat daftar history unit aset berstatus deleted">History Deleted (Backdoor)</a>')
-        : '';
+    // Tombol backdoor history deleted dihapus sesuai instruksi
+    $backdoorBtn = '';
 
     echo '<section class="panel">';
     
@@ -5613,8 +5627,11 @@ function handle_route_asset_items(PDO $pdo): void
 
     echo '<div class="split"><h1>' . $filterTitle . '</h1><div class="actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $backdoorBtn . $addBtn . '<a class="btn" href="' . route_url('export_excel', array_merge(['type' => 'asset_items'], $showBackdoor ? ['status' => 'deleted'] : [])) . '">Export Excel</a></div></div>';
 
-    // Filters: Komoditas, Kategori, Company, Lokasi, Sort By, Sort Dir
-    echo '<form method="get" class="actions" style="margin:16px 0 8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
+    // Layout Filter 2 Baris:
+    // Baris 1: Komoditas | Kategori
+    // Baris 2: Company | Lokasi (dan Reset Filter)
+    // Menu sort terpisah dihapus; sort dilakukan langsung melalui klik kolom header tabel.
+    echo '<form method="get" style="margin:16px 0 14px 0;background:#f8fafc;padding:14px 16px;border:1px solid #e2e8f0;border-radius:8px;display:flex;flex-direction:column;gap:12px;">';
     echo '<input type="hidden" name="route" value="asset_items">';
     if ($masterItemId > 0) {
         echo '<input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
@@ -5622,34 +5639,32 @@ function handle_route_asset_items(PDO $pdo): void
     if ($showBackdoor) {
         echo '<input type="hidden" name="backdoor" value="1">';
     }
-    echo '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>';
-    echo '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>';
-    echo '<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>';
-    echo '<select name="location_id" onchange="this.form.submit()">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>';
 
-    // Sort By & Urutan (Ascending / Descending)
-    echo '<div style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:#f8fafc;padding:4px 8px;border-radius:6px;border:1px solid #e2e8f0;flex-wrap:wrap;">';
-    echo '<span style="font-size:12px;font-weight:600;color:#64748b;">Sort:</span>';
-    echo '<select name="sort_by" onchange="this.form.submit()" style="padding:4px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">';
-    echo '<option value="created_at"' . ($sortBy === 'created_at' ? ' selected' : '') . '>Tanggal Input (Default)</option>';
-    echo '<option value="asset_code"' . ($sortBy === 'asset_code' ? ' selected' : '') . '>Asset Code</option>';
-    echo '<option value="company"' . ($sortBy === 'company' ? ' selected' : '') . '>Company</option>';
-    echo '<option value="custodian"' . ($sortBy === 'custodian' ? ' selected' : '') . '>Pengguna / Custodian</option>';
-    echo '<option value="type_name"' . ($sortBy === 'type_name' ? ' selected' : '') . '>Kategori</option>';
-    echo '<option value="mode"' . ($sortBy === 'mode' ? ' selected' : '') . '>Mode Asset</option>';
-    echo '<option value="asset_name"' . ($sortBy === 'asset_name' ? ' selected' : '') . '>Nama / Merek</option>';
-    echo '<option value="status"' . ($sortBy === 'status' ? ' selected' : '') . '>Status</option>';
-    echo '</select>';
-
-    echo '<select name="sort_dir" onchange="this.form.submit()" style="padding:4px 8px;font-size:13px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">';
-    echo '<option value="ASC"' . ($sortDir === 'ASC' ? ' selected' : '') . '>Ascending (Lama ke Baru / A-Z)</option>';
-    echo '<option value="DESC"' . ($sortDir === 'DESC' ? ' selected' : '') . '>Descending (Baru ke Lama / Z-A)</option>';
-    echo '</select>';
+    // Baris 1: Komoditas | Kategori
+    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;">';
+    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Komoditas';
+    echo '    <select name="group_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>';
+    echo '  </label>';
+    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Kategori';
+    echo '    <select name="type_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>';
+    echo '  </label>';
     echo '</div>';
 
-    if ($masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId || $sortBy !== 'created_at' || $sortDir !== 'ASC' || $showBackdoor) {
-        echo '<a class="btn" href="' . route_url('asset_items') . '">Reset Filter & Sort</a>';
+    // Baris 2: Company | Lokasi (+ Reset Filter)
+    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;align-items:flex-end;">';
+    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Company';
+    echo '    <select name="company_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>';
+    echo '  </label>';
+    echo '  <div style="display:flex;gap:10px;align-items:flex-end;">';
+    echo '    <label style="margin:0;flex:1;font-size:12.5px;color:#334155;">Lokasi';
+    echo '      <select name="location_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>';
+    echo '    </label>';
+    if ($masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId || $showBackdoor) {
+        echo '    <a class="btn" href="' . route_url('asset_items') . '" style="height:38px;box-sizing:border-box;display:inline-flex;align-items:center;padding:0 14px;white-space:nowrap;" title="Hapus seluruh filter">Reset Filter</a>';
     }
+    echo '  </div>';
+    echo '</div>';
+
     echo '</form>';
 
     echo asset_items_table($pdo, $rows);
@@ -6399,9 +6414,7 @@ function handle_route_report_asset_items(PDO $pdo): void
             foreach ($items as $item) {
                 $rawMode = (string)($item['asset_mode'] ?? 'standalone');
                 $modeLabel = $rawMode === 'group' ? 'Bundle (Parent)' : ($rawMode === 'child' ? 'Bundle (Child)' : 'Single');
-                $statusBadge = ($item['status'] ?? 'available') === 'available' 
-                    ? '<span class="badge ok">Tersedia</span>' 
-                    : (($item['status'] ?? '') === 'borrowed' ? '<span class="badge" style="background:#fef3c7;color:#b45309;">Dipinjam</span>' : '<span class="badge">' . e($item['status'] ?? '-') . '</span>');
+                $statusBadge = format_asset_status_badge($item['status'] ?? '');
 
                 $assetName = !empty($item['asset_name']) ? $item['asset_name'] : (!empty($item['model']) ? $item['model'] : '-');
                 $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');

@@ -338,7 +338,7 @@ function handle_route_asset_loans(PDO $pdo): void
             } elseif ($isOverdue) {
                 $badge = '<span class="badge danger" style="font-weight:600;">⚠️ Terlambat</span>';
             } elseif ($l['status'] === 'active') {
-                $badge = '<span class="badge warning" style="font-weight:600;">Sedang Dipinjam</span>';
+                $badge = '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>';
             } else {
                 $badge = '<span class="badge muted">' . e(ucfirst($l['status'])) . '</span>';
             }
@@ -1627,7 +1627,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
                     ? '<span class="badge ok">Dikembalikan</span>'
                     : ($isOver
                         ? '<span class="badge danger">Terlambat</span>'
-                        : '<span class="badge warning">Dipinjam</span>'))
+                        : '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>'))
                 . '  </td>'
                 . '</tr>';
         }

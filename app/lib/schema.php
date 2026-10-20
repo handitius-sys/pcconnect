@@ -679,7 +679,7 @@ function ensure_asset_master_schema(PDO $pdo): void
             $s = $pdo->prepare('INSERT IGNORE INTO asset_groups(group_code,group_name) VALUES (?,?)');
             $s->execute([$code,$name]);
         }
-        foreach ([['ACTIVE','Active'],['REPAIR','In Repair'],['MAINT','Under Maintenance'],['IDLE','Idle'],['TRANSFER','Transferred'],['DISPOSED','Disposed'],['LOST','Lost'],['SOLD','Sold'],['RETIRED','Retired'],['BORROWED','Dipinjam'],['DELETED','Deleted']] as [$code,$name]) {
+        foreach ([['ACTIVE','Aktif'],['INACTIVE','Tidak Aktif'],['REPAIR','Perbaikan'],['MAINT','Under Maintenance'],['IDLE','Idle'],['TRANSFER','Transferred'],['DISPOSED','Disposed'],['LOST','Hilang'],['SOLD','Sold'],['RETIRED','Retired'],['BORROWED','Dipinjam'],['DELETED','Deleted']] as [$code,$name]) {
             $s = $pdo->prepare('INSERT IGNORE INTO asset_statuses(status_code,status_name) VALUES (?,?)');
             $s->execute([$code,$name]);
         }
@@ -689,6 +689,13 @@ function ensure_asset_master_schema(PDO $pdo): void
         }
         // Auto-repair asset_types asset_group_id to correct groups
         repair_asset_type_groups($pdo);
+        // Sinkronisasi penamaan status barang (Aktif, Tidak Aktif, Dipinjam)
+        try {
+            $pdo->exec("UPDATE asset_statuses SET status_name = 'Aktif' WHERE status_code = 'ACTIVE'");
+            $pdo->exec("UPDATE asset_statuses SET status_name = 'Tidak Aktif' WHERE status_code IN ('INACTIVE', 'NON_ACTIVE') OR (status_code = 'DELETED' AND status_name = 'Deleted')");
+            $pdo->exec("UPDATE asset_statuses SET status_name = 'Dipinjam' WHERE status_code = 'BORROWED'");
+        } catch (Throwable $ignored) {}
+
         ensure_default_identifiers_per_group_and_type($pdo);
         ensure_default_specifications_per_group_and_type($pdo);
         $pdo->exec("CREATE TABLE IF NOT EXISTS asset_locations (id INT AUTO_INCREMENT PRIMARY KEY, location_code VARCHAR(30) NOT NULL UNIQUE, location_name VARCHAR(120) NOT NULL, is_active TINYINT(1) NOT NULL DEFAULT 1, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");

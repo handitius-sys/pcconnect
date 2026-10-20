@@ -531,6 +531,7 @@ function render_header(string $title, ?array $user = null): void
     echo '.badge{display:inline-flex;align-items:center;border-radius:999px;background:#e2e8f0;color:#475569;padding:3px 10px;font-size:11.5px;font-weight:600}';
     echo '.badge.ok{background:#dcfce7;color:#15803d}';
     echo '.badge.danger{background:#fee2e2;color:#b91c1c}';
+    echo '.badge.info{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}';
     echo '.muted{color:#64748b}';
     echo '.flash{padding:12px 16px;border-radius:8px;margin-bottom:18px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:500;display:flex;align-items:center;gap:10px}';
     echo '.flash.err{background:#fef2f2;color:#991b1b;border-color:#fecaca}';
@@ -2401,5 +2402,54 @@ if (!function_exists('generate_master_item_code')) {
     }
 }
 
+/**
+ * Format badge status unit aset standar sistem AsetConnect:
+ * - 'Aktif'       -> Highlight Hijau (#dcfce7 / #15803d)
+ * - 'Tidak Aktif' -> Highlight Merah (#fee2e2 / #b91c1c)
+ * - 'Dipinjam'    -> Highlight Biru Muda (#e0f2fe / #0369a1)
+ */
+function format_asset_status_badge(?string $rawStatus): string
+{
+    $st = strtolower(trim((string)$rawStatus));
+    if ($st === 'active' || $st === 'aktive' || $st === 'aktif' || $st === 'available' || $st === 'tersedia') {
+        return '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;font-weight:600;">Aktif</span>';
+    }
+    if ($st === 'inactive' || $st === 'non aktive' || $st === 'non active' || $st === 'tidak aktif' || $st === 'non-aktif' || $st === 'nonaktif' || $st === 'deleted') {
+        return '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;font-weight:600;">Tidak Aktif</span>';
+    }
+    if ($st === 'borrowed' || $st === 'dipinjam') {
+        return '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>';
+    }
+    if ($st === 'repair' || $st === 'perbaikan') {
+        return '<span class="badge" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;font-weight:600;">Perbaikan</span>';
+    }
+    if ($st === 'lost' || $st === 'hilang') {
+        return '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;font-weight:600;">Hilang</span>';
+    }
+    if ($st === '') {
+        return '<span class="muted">-</span>';
+    }
+    return '<span class="badge">' . e(ucfirst($st)) . '</span>';
+}
 
+function format_asset_status_label(?string $rawStatus): string
+{
+    $st = strtolower(trim((string)$rawStatus));
+    if ($st === 'active' || $st === 'aktive' || $st === 'aktif' || $st === 'available' || $st === 'tersedia') {
+        return 'Aktif';
+    }
+    if ($st === 'inactive' || $st === 'non aktive' || $st === 'non active' || $st === 'tidak aktif' || $st === 'non-aktif' || $st === 'nonaktif' || $st === 'deleted') {
+        return 'Tidak Aktif';
+    }
+    if ($st === 'borrowed' || $st === 'dipinjam') {
+        return 'Dipinjam';
+    }
+    if ($st === 'repair' || $st === 'perbaikan') {
+        return 'Perbaikan';
+    }
+    if ($st === 'lost' || $st === 'hilang') {
+        return 'Hilang';
+    }
+    return ucfirst($st ?: '-');
+}
 

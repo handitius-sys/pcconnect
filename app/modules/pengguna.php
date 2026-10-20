@@ -436,7 +436,7 @@ function handle_route_master_pengguna(PDO $pdo): void
         if ($totAssets > 0) {
             echo '<h3 style="margin:16px 0 6px 0;">🏷️ Daftar Unit Aset</h3><table><tr><th>Kode Aset</th><th>Nama Aset</th><th>Kategori / Tipe</th><th>Brand & Model</th><th>Lokasi</th><th>Status</th><th>Aksi</th></tr>';
             foreach ($viewAssets['assets'] as $va) {
-                echo '<tr><td><strong>' . e($va['asset_code']) . '</strong></td><td>' . e($va['asset_name']) . '</td><td>' . e($va['asset_type']) . '</td><td>' . e(trim(($va['brand'] ?? '') . ' ' . ($va['model'] ?? ''))) . '</td><td>' . e($va['location_label'] ?: '-') . '</td><td><span class="badge">' . e($va['status']) . '</span></td><td><a class="btn" href="' . route_url('asset_item_form', ['id' => $va['id']]) . '">Buka Aset</a></td></tr>';
+                echo '<tr><td><strong>' . e($va['asset_code']) . '</strong></td><td>' . e($va['asset_name']) . '</td><td>' . e($va['asset_type']) . '</td><td>' . e(trim(($va['brand'] ?? '') . ' ' . ($va['model'] ?? ''))) . '</td><td>' . e($va['location_label'] ?: '-') . '</td><td>' . (function_exists('format_asset_status_badge') ? format_asset_status_badge($va['status'] ?? '') : ('<span class="badge">' . e($va['status']) . '</span>')) . '</td><td><a class="btn" href="' . route_url('asset_item_form', ['id' => $va['id']]) . '">Buka Aset</a></td></tr>';
             }
             echo '</table>';
         }
