@@ -263,7 +263,7 @@ function get_regulated_menus(): array
         'Maintenance Aset' => [
             'maintenance' => 'Schedule PM',
             'tickets' => 'Aset Corrective',
-            'jobs' => 'Job Desk PM',
+            'jobs' => 'Master Jobdesk PM',
             'corrective_job_desks' => 'Job Desk Corrective',
             'mobile_service' => 'Mobile Service',
         ],
@@ -625,7 +625,7 @@ function render_header(string $title, ?array $user = null): void
                 echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
             }
             if ($isAdmin || has_regulation('jobs', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk PM</span></a>';
+                echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk PM</span></a>';
             }
             if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk Corrective</span></a>';

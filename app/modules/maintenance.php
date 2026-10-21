@@ -1016,11 +1016,13 @@ function handle_route_maintenance(PDO $pdo): void
             u.name technician, 
             COALESCE(ag.group_name, 'IT Asset') asset_group_name,
             COALESCE(ag.group_code, 'IT') asset_group_code,
-            ai.asset_mode
+            ai.asset_mode,
+            COALESCE(pjd.job_desk_name, ai.job_desk_name, ma.job_desk_name, 'Master Jobdesk PM') AS master_job_desk_name
         FROM maintenance_schedules s 
         LEFT JOIN asset_items ai ON ai.id = s.asset_item_id
         LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id
         LEFT JOIN asset_groups ag ON ag.id = COALESCE(s.asset_group_id, ai.asset_group_id, ma.asset_group_id)
+        LEFT JOIN preventive_job_desks pjd ON pjd.id = s.preventive_job_desk_id
         LEFT JOIN pcs p ON p.pc_id = s.pc_id 
         LEFT JOIN printers pr ON pr.prn_id = s.printer_id 
         LEFT JOIN users u ON u.id = s.technician_id 
@@ -1085,7 +1087,8 @@ function handle_route_maintenance(PDO $pdo): void
         }
         $groupBadge = $row['asset_group_code'] ? ($row['asset_group_code'] . ' - ' . $row['asset_group_name']) : ($row['asset_group_name'] ?: 'IT Asset');
         $bundleBadge = ($row['asset_mode'] ?? '') === 'group' ? '<br><span class="badge" style="background:#1e3a8a;color:#fff;font-size:11px;">📦 Induk Bundle</span>' : '';
-        echo '<tr><td>' . $dateCell . '</td><td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . '<br><span class="badge">' . e($row['asset_type'] ?? 'pc') . '</span></td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td><td><span class="badge">' . e($groupBadge) . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . $statusBadge . '</td><td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td><td>' . $actions . '</td></tr>';
+        $deskBadge = !empty($row['master_job_desk_name']) ? ('<br><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;font-weight:600;margin-top:3px;" title="Terhubung ke Master Jobdesk PM">📋 ' . e($row['master_job_desk_name']) . '</span>') : '';
+        echo '<tr><td>' . $dateCell . '</td><td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . '<br><span class="badge">' . e($row['asset_type'] ?? 'pc') . '</span>' . $deskBadge . '</td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td><td><span class="badge">' . e($groupBadge) . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . $statusBadge . '</td><td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td><td>' . $actions . '</td></tr>';
     }
     echo '</table></section>';
     render_footer();
@@ -1285,6 +1288,29 @@ function handle_route_schedule_form(PDO $pdo): void
             $expiredDate = date('Y-m-d', strtotime($scheduledDate . ' +3 days'));
         }
 
+        // Resolusi relasi Master Jobdesk PM
+        $preventiveJobDeskId = (int)($_POST['preventive_job_desk_id'] ?? 0);
+        $selectedJobDeskName = trim((string)($_POST['selected_job_desk'] ?? ''));
+        if ($preventiveJobDeskId <= 0 && $selectedJobDeskName !== '') {
+            $pStmt = $pdo->prepare('SELECT id FROM preventive_job_desks WHERE job_desk_name = ? LIMIT 1');
+            $pStmt->execute([$selectedJobDeskName]);
+            $preventiveJobDeskId = (int)($pStmt->fetchColumn() ?: 0);
+        }
+        if ($preventiveJobDeskId <= 0 && $assetGroupId > 0) {
+            $typeId = (int)($ai['asset_type_id'] ?? 0);
+            $pStmt = $pdo->prepare('SELECT id FROM preventive_job_desks WHERE asset_group_id = ? AND (asset_type_id = ? OR asset_type_id IS NULL) ORDER BY (asset_type_id = ?) DESC LIMIT 1');
+            $pStmt->execute([$assetGroupId, $typeId, $typeId]);
+            $preventiveJobDeskId = (int)($pStmt->fetchColumn() ?: 0);
+        }
+
+        $hasPjdCol = db_column_exists($pdo, 'maintenance_schedules', 'preventive_job_desk_id');
+        if (!$hasPjdCol) {
+            try {
+                $pdo->exec('ALTER TABLE maintenance_schedules ADD COLUMN preventive_job_desk_id INT NULL AFTER maintenance_asset_id');
+                $pdo->exec('ALTER TABLE maintenance_schedules ADD INDEX idx_sched_pjd (preventive_job_desk_id)');
+            } catch (Throwable $e) {}
+        }
+
         $hasExpCol = db_column_exists($pdo, 'maintenance_schedules', 'expired_date');
         if (!$hasExpCol) {
             try {
@@ -1296,8 +1322,8 @@ function handle_route_schedule_form(PDO $pdo): void
         try {
             if ($editId > 0) {
                 if ($hasExpCol) {
-                    $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, expired_date=?, notes=? WHERE id=?');
-                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? ''), $editId]);
+                    $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, preventive_job_desk_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, expired_date=?, notes=? WHERE id=?');
+                    $stmt->execute([$assetType, $assetItemId, $preventiveJobDeskId ?: null, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? ''), $editId]);
                 } else {
                     $stmt = $pdo->prepare('UPDATE maintenance_schedules SET asset_type=?, asset_item_id=?, asset_group_id=?, pc_id=?, printer_id=?, technician_id=?, scheduled_date=?, notes=? WHERE id=?');
                     $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? ''), $editId]);
@@ -1307,14 +1333,14 @@ function handle_route_schedule_form(PDO $pdo): void
                 flash('Schedule maintenance berhasil diupdate.');
             } else {
                 if ($hasExpCol) {
-                    $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, expired_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? '')]);
+                    $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, preventive_job_desk_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, expired_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute([$assetType, $assetItemId, $preventiveJobDeskId ?: null, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, $expiredDate, trim($_POST['notes'] ?? '')]);
                 } else {
                     $stmt = $pdo->prepare('INSERT INTO maintenance_schedules (asset_type, asset_item_id, asset_group_id, pc_id, printer_id, technician_id, scheduled_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
                     $stmt->execute([$assetType, $assetItemId, $assetGroupId ?: null, $pcId, $printerId, $technicianId, $scheduledDate, trim($_POST['notes'] ?? '')]);
                 }
                 $scheduleId = (int)$pdo->lastInsertId();
-                flash('Schedule maintenance berhasil dibuat.');
+                flash('Schedule maintenance berhasil dibuat dan terhubung ke Master Jobdesk PM.');
             }
             foreach ($jobIds as $jobId) {
                 $pdo->prepare('INSERT INTO schedule_jobs (schedule_id, job_id) VALUES (?, ?)')->execute([$scheduleId, $jobId]);
@@ -1499,7 +1525,8 @@ function syncEditExpiredDate(val) {
     }
 
     $sqlAi = "SELECT ai.id, ai.asset_code, ai.asset_name, ai.asset_group_id, ai.asset_type_id, ai.job_desk_name,
-                     ai.asset_mode, ai.serial_number, ai.brand, ai.model,
+                     ai.asset_mode,
+                     ai.serial_number, ai.brand, ai.model,
                      ag.group_name, ag.group_code,
                      at.type_name, at.type_code,
                      c.company_name,
@@ -1632,13 +1659,14 @@ function syncEditExpiredDate(val) {
     // BAGIAN 2: PEMILIHAN JOB DESK PREVENTIVE MAINTENANCE
     echo '<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
         . '<div style="font-weight: 700; font-size: 15px; color: #1e40af; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">'
-        . '<span>📋 2. Pilih Job Desk Preventive Maintenance yang Sesuai</span>'
+        . '<span>📋 2. Master Jobdesk PM (Otomatis Terhubung ke Jadwal)</span>'
         . '<span id="jobDeskStatsBadge" class="badge ok" style="font-size: 12px; padding: 5px 12px; display: none;"></span>'
         . '</div>'
         . '<div class="grid two" style="align-items: center;">'
-        . '<label style="margin: 0;">Job Desk Terpilih *'
+        . '<input type="hidden" name="preventive_job_desk_id" id="schedJobDeskIdHidden" value="' . e($existingSchedule['preventive_job_desk_id'] ?? '') . '">'
+        . '<label style="margin: 0;">Master Jobdesk PM Terpilih *'
         . '<select id="schedJobDeskSelect" name="selected_job_desk" required style="font-weight: 700; font-size: 14px; color: #0f172a; padding: 8px 12px; background: #fff;">'
-        . '<option value="">-- Pilih Job Desk --</option>';
+        . '<option value="">-- Pilih Master Jobdesk PM --</option>';
 
     foreach ($preventiveDesks as $pd) {
         $pId = (int)$pd['desk_id'];
@@ -1662,7 +1690,7 @@ function syncEditExpiredDate(val) {
 
     echo '</select></label>'
         . '<div style="display: flex; gap: 8px; align-items: flex-end; padding-bottom: 2px;">'
-        . '<a id="linkKelolaDesk" href="' . route_url('jobs') . '" target="_blank" class="btn" style="padding: 7px 12px; font-size: 12px; background: #fff;" title="Buka kelola Master Job Desk">+ Master Job Desk ↗</a>'
+        . '<a id="linkKelolaDesk" href="' . route_url('jobs') . '" target="_blank" class="btn" style="padding: 7px 12px; font-size: 12px; background: #fff;" title="Buka kelola Master Jobdesk PM">+ Master Jobdesk PM ↗</a>'
         . '</div>'
         . '</div>';
 
@@ -1827,7 +1855,7 @@ window.syncCreateExpiredDate = function(val) {
         var desk = item.job_desk_name || "(Belum ada penugasan default)";
         var sub = item.display_sub || "";
         assetNotice.style.display = "block";
-        assetNotice.innerHTML = "✅ <strong>Target Terpilih:</strong> " + code + " &bull; <strong>Komoditas:</strong> " + grp + " &bull; <strong>Kategori:</strong> " + typ + (sub ? (" &bull; <em>" + sub + "</em>") : "") + " &bull; <strong>Job Desk Default Aset:</strong> " + desk;
+        assetNotice.innerHTML = "✅ <strong>Target Terpilih:</strong> " + code + " &bull; <strong>Komoditas:</strong> " + grp + " &bull; <strong>Kategori:</strong> " + typ + (sub ? (" &bull; <em>" + sub + "</em>") : "") + "<br><span style=\"color:#0284c7;font-weight:700;\">🔗 Otomatis Terhubung ke Master Jobdesk PM: " + (desk || "Sesuai Kategori") + "</span>";
     }
 
     function renderAssetDropdown(q) {
@@ -1969,6 +1997,10 @@ window.syncCreateExpiredDate = function(val) {
         var deskName = selectedOpt ? selectedOpt.getAttribute("data-desk-name") : "";
         var count = selectedOpt ? selectedOpt.getAttribute("data-job-count") : "0";
         var mins = selectedOpt ? selectedOpt.getAttribute("data-minutes") : "0";
+        var pjdHidden = document.getElementById("schedJobDeskIdHidden");
+        if (pjdHidden && selectedOpt) {
+            pjdHidden.value = selectedOpt.getAttribute("data-desk-id") || "";
+        }
         var hasVisibleDesk = false;
 
         taskGroups.forEach(function(grp) {
@@ -2061,17 +2093,19 @@ function handle_route_maintenance_do(PDO $pdo): void
     cancel_expired_maintenance_schedules($pdo);
     $id = (int)($_GET['id'] ?? 0);
     $printerReady = printer_schema_ready($pdo);
-    $stmt = $pdo->prepare('SELECT s.*, 
+    $stmt = $pdo->prepare("SELECT s.*, 
         COALESCE(ai.asset_code, s.pc_id, s.printer_id) asset_id, 
         COALESCE(ai.custodian_name, p.owner_name, pr.printer_name) owner_name, 
         COALESCE(ai.asset_name, p.computer_name, pr.location) computer_name, 
         COALESCE(p.physical_condition, pr.physical_condition) physical_condition,
-        ai.asset_mode
+        ai.asset_mode,
+        COALESCE(pjd.job_desk_name, 'Master Jobdesk Standar') AS master_job_desk_name
         FROM maintenance_schedules s 
         LEFT JOIN asset_items ai ON ai.id = s.asset_item_id
+        LEFT JOIN preventive_job_desks pjd ON pjd.id = s.preventive_job_desk_id
         LEFT JOIN pcs p ON p.pc_id = s.pc_id 
         LEFT JOIN printers pr ON pr.prn_id = s.printer_id 
-        WHERE s.id = ?');
+        WHERE s.id = ?");
     $stmt->execute([$id]);
     $schedule = $stmt->fetch();
     if (!$schedule) {
@@ -2112,7 +2146,7 @@ function handle_route_maintenance_do(PDO $pdo): void
     if (can_manage_maintenance($user) && $locked) {
         echo '<form method="post" action="' . route_url('maintenance_unlock', ['id' => $id]) . '"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="reason" value="Admin unlock dari detail maintenance"><button class="btn danger">Unlock Report</button></form>';
     }
-    echo '</div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><h2>Checklist Job Desk</h2><div class="grid two">';
+    echo '</div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><h2>Checklist Master Jobdesk PM: ' . e($schedule['master_job_desk_name'] ?? 'Standar') . '</h2><div class="grid two">';
     foreach ($jobs as $job) {
         echo '<label><input type="checkbox" name="done[]" value="' . e($job['id']) . '"' . ($job['is_done'] ? ' checked' : '') . ($locked ? ' disabled' : '') . '> ' . e($job['title']) . '<input name="job_notes[' . e($job['id']) . ']" value="' . e($job['note'] ?? '') . '" placeholder="Keterangan, boleh kosong" ' . ($locked ? 'readonly' : '') . '></label>';
     }

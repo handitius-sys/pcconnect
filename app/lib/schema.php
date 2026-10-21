@@ -321,6 +321,32 @@ function ensure_preventive_job_desk_schema(PDO $pdo): void
             SELECT DISTINCT job_desk_name, asset_group_id, asset_type_id 
             FROM maintenance_jobs 
             WHERE job_desk_name IS NOT NULL AND job_desk_name != ''");
+
+        // Pastikan maintenance_schedules memiliki kolom relasi langsung ke Master Jobdesk PM
+        if (db_table_exists($pdo, 'maintenance_schedules')) {
+            if (!db_column_exists($pdo, 'maintenance_schedules', 'preventive_job_desk_id')) {
+                try {
+                    $pdo->exec("ALTER TABLE maintenance_schedules ADD COLUMN preventive_job_desk_id INT NULL AFTER maintenance_asset_id");
+                    $pdo->exec("ALTER TABLE maintenance_schedules ADD INDEX idx_sched_pjd (preventive_job_desk_id)");
+                } catch (Throwable $ignored) {}
+            }
+            // Sinkronkan jadwal lama yang belum memiliki preventive_job_desk_id
+            try {
+                $pdo->exec("UPDATE maintenance_schedules s 
+                            JOIN schedule_jobs sj ON sj.schedule_id = s.id 
+                            JOIN maintenance_jobs j ON j.id = sj.job_id 
+                            JOIN preventive_job_desks d ON (d.job_desk_name COLLATE utf8mb4_unicode_ci = j.job_desk_name COLLATE utf8mb4_unicode_ci)
+                            SET s.preventive_job_desk_id = d.id 
+                            WHERE s.preventive_job_desk_id IS NULL");
+            } catch (Throwable $ignored) {}
+            try {
+                $pdo->exec("UPDATE maintenance_schedules s 
+                            JOIN asset_items ai ON ai.id = s.asset_item_id 
+                            JOIN preventive_job_desks d ON (d.asset_group_id = ai.asset_group_id AND d.asset_type_id = ai.asset_type_id)
+                            SET s.preventive_job_desk_id = d.id 
+                            WHERE s.preventive_job_desk_id IS NULL");
+            } catch (Throwable $ignored) {}
+        }
     } catch (Throwable $ignored) {
     }
 }
