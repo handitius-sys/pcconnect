@@ -2413,10 +2413,11 @@ function get_standard_preventive_tasks_catalog(PDO $pdo, ?int $groupId, ?int $ty
  * Proses: Mengelola SOP dan daftar item pekerjaan (Job Tasks) pemeliharaan preventif (Preventive Maintenance)
  *         langsung per Komoditas dan per Kategori aset tanpa perantara nama kelompok/grup tersendiri.
  * 
- * Field pekerjaan:
- * 1. "Nama Pekerjaan / Job Task" (title)
- * 2. "Estimasi Waktu (Menit)" (estimated_minutes)
- * 3. "Keterangan / SOP (Opsional)" (description)
+/**
+ * Modul: Master Jobdesk PM (Data Master)
+ * Proses: Mengelola SOP dan daftar item pekerjaan (Job Tasks) pemeliharaan preventif (Preventive Maintenance).
+ *         Form input memilih Komoditas & Kategori aset, memasukkan Nama Pekerjaan, Estimasi Menit, dan Keterangan/SOP.
+ *         Daftar pekerjaan di bawah menampilkan seluruh task terdaftar dengan filter Komoditas & Kategori.
  */
 function handle_route_jobs(PDO $pdo): void
 {
@@ -2427,144 +2428,93 @@ function handle_route_jobs(PDO $pdo): void
     $canEdit = has_regulation('jobs', 'edit');
     $canDelete = has_regulation('jobs', 'delete');
 
-    // 1. Parameter Komoditas & Kategori yang sedang dipilih
-    $selectedGroupId = (int)($_GET['group_id'] ?? 0);
-    $selectedTypeId = (int)($_GET['type_id'] ?? 0);
-    $editTaskId = (int)($_GET['edit_task_id'] ?? 0);
-
-    // Ambil semua daftar komoditas aktif
+    // 1. Data Komoditas & Kategori untuk dropdown
     $assetGroups = $pdo->query('SELECT id, group_code, group_name FROM asset_groups ORDER BY group_name ASC')->fetchAll(PDO::FETCH_ASSOC);
+    $allAssetTypes = $pdo->query('SELECT id, asset_group_id, type_code, type_name FROM asset_types ORDER BY type_name ASC')->fetchAll(PDO::FETCH_ASSOC);
 
-    // Jika Komoditas belum dipilih, pilih default komoditas pertama (atau IT jika ada)
-    if ($selectedGroupId <= 0 && !empty($assetGroups)) {
-        foreach ($assetGroups as $ag) {
-            if ($ag['group_code'] === 'IT') {
-                $selectedGroupId = (int)$ag['id'];
-                break;
-            }
-        }
-        if ($selectedGroupId <= 0) {
-            $selectedGroupId = (int)$assetGroups[0]['id'];
-        }
-    }
-
-    // Ambil daftar kategori yang sesuai dengan komoditas terpilih
-    $stmtTypes = $pdo->prepare('SELECT id, type_code, type_name, asset_group_id FROM asset_types WHERE asset_group_id = ? ORDER BY type_name ASC');
-    $stmtTypes->execute([$selectedGroupId]);
-    $assetTypes = $stmtTypes->fetchAll(PDO::FETCH_ASSOC);
-
-    // Jika Kategori belum dipilih atau tidak sesuai dengan Komoditas yang dipilih, pilih kategori pertama
-    if ($selectedTypeId <= 0 && !empty($assetTypes)) {
-        $selectedTypeId = (int)$assetTypes[0]['id'];
-    } elseif ($selectedTypeId > 0 && !empty($assetTypes)) {
-        $found = false;
-        foreach ($assetTypes as $at) {
-            if ((int)$at['id'] === $selectedTypeId) {
-                $found = true;
-                break;
-            }
-        }
-        if (!$found) {
-            $selectedTypeId = (int)$assetTypes[0]['id'];
-        }
-    }
-
-    // Ambil data task yang sedang diedit jika parameter edit_task_id ada
+    // 2. Data Form (Tambah vs Edit)
+    $editTaskId = (int)($_GET['edit_task_id'] ?? 0);
     $editingTask = null;
     if ($editTaskId > 0) {
         $stEdit = $pdo->prepare('SELECT * FROM maintenance_jobs WHERE id = ?');
         $stEdit->execute([$editTaskId]);
         $editingTask = $stEdit->fetch(PDO::FETCH_ASSOC) ?: null;
-        if ($editingTask) {
-            $selectedGroupId = (int)($editingTask['asset_group_id'] ?: $selectedGroupId);
-            $selectedTypeId = (int)($editingTask['asset_type_id'] ?: $selectedTypeId);
-        }
     }
 
-    // Info Komoditas & Kategori terpilih saat ini
-    $curGroupName = '';
-    $curGroupCode = '';
-    foreach ($assetGroups as $ag) {
-        if ((int)$ag['id'] === $selectedGroupId) {
-            $curGroupName = $ag['group_name'];
-            $curGroupCode = $ag['group_code'];
-            break;
-        }
-    }
-    $curTypeName = '';
-    $curTypeCode = '';
-    foreach ($assetTypes as $at) {
-        if ((int)$at['id'] === $selectedTypeId) {
-            $curTypeName = $at['type_name'];
-            $curTypeCode = $at['type_code'];
-            break;
-        }
-    }
-    if ($curTypeName === '' && $selectedTypeId > 0) {
-        $stT = $pdo->prepare('SELECT type_code, type_name FROM asset_types WHERE id = ?');
-        $stT->execute([$selectedTypeId]);
-        $tRow = $stT->fetch(PDO::FETCH_ASSOC);
-        if ($tRow) {
-            $curTypeCode = (string)$tRow['type_code'];
-            $curTypeName = (string)$tRow['type_name'];
-        }
-    }
+    $isEditing = ($editingTask !== null);
+    $formGroupId = $editingTask ? (int)$editingTask['asset_group_id'] : (int)($_GET['form_group_id'] ?? 0);
+    $formTypeId = $editingTask ? (int)$editingTask['asset_type_id'] : (int)($_GET['form_type_id'] ?? 0);
+    $formTitle = $editingTask ? (string)$editingTask['title'] : '';
+    $formMinutes = $editingTask ? (int)$editingTask['estimated_minutes'] : 5;
+    $formDesc = $editingTask ? (string)($editingTask['description'] ?? '') : '';
 
-    // 2. PROSES POST (TAMBAH, EDIT, HAPUS, TOGGLE, SALIN STANDAR)
+    // 3. Filter Tabel Daftar Pekerjaan
+    $filterGroupId = (int)($_GET['filter_group_id'] ?? 0);
+    $filterTypeId = (int)($_GET['filter_type_id'] ?? 0);
+
+    // 4. PROSES POST (TAMBAH, EDIT, TOGGLE, HAPUS)
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string)($_POST['action'] ?? '');
-        $postGroupId = (int)($_POST['asset_group_id'] ?? $selectedGroupId);
-        $postTypeId = (int)($_POST['asset_type_id'] ?? $selectedTypeId);
+        $postFilterGid = (int)($_POST['filter_group_id'] ?? $filterGroupId);
+        $postFilterTid = (int)($_POST['filter_type_id'] ?? $filterTypeId);
 
         // --- TAMBAH PEKERJAAN / JOB TASK ---
         if ($action === 'add_task') {
             require_regulation('jobs', 'create');
+            $groupId = (int)($_POST['asset_group_id'] ?? 0);
+            $typeId = (int)($_POST['asset_type_id'] ?? 0);
             $title = trim((string)($_POST['title'] ?? ''));
             $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 5));
             $desc = trim((string)($_POST['description'] ?? ''));
 
-            if ($title === '') {
+            if ($groupId <= 0 || $typeId <= 0) {
+                flash('Pilih Komoditas (Asset Group) dan Kategori (Asset Type) terlebih dahulu.', 'err');
+            } elseif ($title === '') {
                 flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
-            } elseif ($postGroupId <= 0 || $postTypeId <= 0) {
-                flash('Pilih Komoditas dan Kategori terlebih dahulu sebelum menambahkan pekerjaan.', 'err');
             } else {
                 $stmtIns = $pdo->prepare('INSERT INTO maintenance_jobs (title, description, asset_group_id, asset_type_id, estimated_minutes, is_active) VALUES (?, ?, ?, ?, ?, 1)');
                 $stmtIns->execute([
                     $title,
                     $desc !== '' ? $desc : null,
-                    $postGroupId,
-                    $postTypeId,
+                    $groupId,
+                    $typeId,
                     $estMinutes,
                 ]);
-                flash("Pekerjaan '{$title}' berhasil ditambahkan ke Master Jobdesk PM.");
+                flash("Pekerjaan '{$title}' berhasil disimpan.");
             }
-            redirect_to('jobs', array_filter(['group_id' => $postGroupId, 'type_id' => $postTypeId]));
+            redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
 
         // --- EDIT PEKERJAAN / JOB TASK ---
         if ($action === 'edit_task') {
             require_regulation('jobs', 'edit');
             $taskId = (int)($_POST['task_id'] ?? 0);
+            $groupId = (int)($_POST['asset_group_id'] ?? 0);
+            $typeId = (int)($_POST['asset_type_id'] ?? 0);
             $title = trim((string)($_POST['title'] ?? ''));
             $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 5));
             $desc = trim((string)($_POST['description'] ?? ''));
 
-            if ($taskId > 0 && $title !== '') {
+            if ($groupId <= 0 || $typeId <= 0) {
+                flash('Pilih Komoditas (Asset Group) dan Kategori (Asset Type) terlebih dahulu.', 'err');
+            } elseif ($title === '') {
+                flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
+            } elseif ($taskId > 0) {
                 $stmtUpd = $pdo->prepare('UPDATE maintenance_jobs SET title=?, estimated_minutes=?, description=?, asset_group_id=?, asset_type_id=? WHERE id=?');
                 $stmtUpd->execute([
                     $title,
                     $estMinutes,
                     $desc !== '' ? $desc : null,
-                    $postGroupId,
-                    $postTypeId,
+                    $groupId,
+                    $typeId,
                     $taskId,
                 ]);
                 flash("Pekerjaan '{$title}' berhasil diperbarui.");
             }
-            redirect_to('jobs', array_filter(['group_id' => $postGroupId, 'type_id' => $postTypeId]));
+            redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
 
-        // --- TOGGLE AKTIF / NON-AKTIF STATUS TASK ---
+        // --- TOGGLE STATUS AKTIF / NON-AKTIF ---
         if ($action === 'toggle_task') {
             require_regulation('jobs', 'edit');
             $taskId = (int)($_POST['id'] ?? 0);
@@ -2572,7 +2522,7 @@ function handle_route_jobs(PDO $pdo): void
                 $pdo->prepare('UPDATE maintenance_jobs SET is_active = 1 - is_active WHERE id = ?')->execute([$taskId]);
                 flash('Status pekerjaan berhasil diperbarui.');
             }
-            redirect_to('jobs', array_filter(['group_id' => $postGroupId, 'type_id' => $postTypeId]));
+            redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
 
         // --- HAPUS PEKERJAAN / JOB TASK ---
@@ -2585,333 +2535,242 @@ function handle_route_jobs(PDO $pdo): void
                 $usedCount = (int)$checkStmt->fetchColumn();
                 if ($usedCount > 0) {
                     $pdo->prepare('UPDATE maintenance_jobs SET is_active = 0 WHERE id = ?')->execute([$taskId]);
-                    flash("Pekerjaan pernah digunakan pada {$usedCount} riwayat jadwal, sehingga dinonaktifkan (diarsipkan).", 'warn');
+                    flash("Pekerjaan pernah digunakan pada {$usedCount} jadwal, sehingga dinonaktifkan (diarsipkan).", 'warn');
                 } else {
                     $pdo->prepare('DELETE FROM maintenance_jobs WHERE id = ?')->execute([$taskId]);
                     flash('Pekerjaan berhasil dihapus dari Master Jobdesk PM.');
                 }
             }
-            redirect_to('jobs', array_filter(['group_id' => $postGroupId, 'type_id' => $postTypeId]));
-        }
-
-        // --- SALIN TEMPLATE SOP STANDAR UNTUK KATEGORI TERPILIH ---
-        if ($action === 'copy_default_tasks') {
-            require_regulation('jobs', 'create');
-            if ($postGroupId > 0 && $postTypeId > 0) {
-                $catalog = get_standard_preventive_tasks_catalog($pdo, $postGroupId, $postTypeId);
-                $standardTasks = $catalog['tasks'] ?? [];
-                $catLabel = $catalog['category_label'] ?? 'Standar';
-
-                $ins = $pdo->prepare('INSERT INTO maintenance_jobs (title, description, asset_group_id, asset_type_id, estimated_minutes, is_active) VALUES (?, ?, ?, ?, ?, 1)');
-                $copied = 0;
-                foreach ($standardTasks as $st) {
-                    $chk = $pdo->prepare('SELECT COUNT(*) FROM maintenance_jobs WHERE asset_group_id = ? AND asset_type_id = ? AND title = ?');
-                    $chk->execute([$postGroupId, $postTypeId, $st['title']]);
-                    if ((int)$chk->fetchColumn() === 0) {
-                        $ins->execute([
-                            $st['title'],
-                            $st['description'] ?? null,
-                            $postGroupId,
-                            $postTypeId,
-                            (int)($st['estimated_minutes'] ?? 5),
-                        ]);
-                        $copied++;
-                    }
-                }
-                flash("Berhasil menyalin {$copied} tugas standar ({$catLabel}) ke Kategori terpilih.");
-            }
-            redirect_to('jobs', array_filter(['group_id' => $postGroupId, 'type_id' => $postTypeId]));
+            redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
     }
 
     render_header('Master Jobdesk PM', $user);
 
-    // Ambil daftar task untuk pasangan (Komoditas, Kategori) yang sedang dipilih
-    $tasksStmt = $pdo->prepare('SELECT * FROM maintenance_jobs WHERE asset_group_id = ? AND asset_type_id = ? ORDER BY is_active DESC, id ASC');
-    $tasksStmt->execute([$selectedGroupId, $selectedTypeId]);
-    $currentTasks = $tasksStmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $totMinutes = 0;
-    $activeCount = 0;
-    foreach ($currentTasks as $t) {
-        if (!empty($t['is_active'])) {
-            $totMinutes += (int)$t['estimated_minutes'];
-            $activeCount++;
-        }
+    // 5. QUERY DAFTAR PEKERJAAN (MUNCUL SEMUA ATAU SESUAI FILTER)
+    $where = ['1=1'];
+    $params = [];
+    if ($filterGroupId > 0) {
+        $where[] = 'j.asset_group_id = ?';
+        $params[] = $filterGroupId;
     }
+    if ($filterTypeId > 0) {
+        $where[] = 'j.asset_type_id = ?';
+        $params[] = $filterTypeId;
+    }
+    $whereSql = implode(' AND ', $where);
 
-    // Katalog tugas standar untuk kategori terpilih (jika ada template standar)
-    $catCatalog = get_standard_preventive_tasks_catalog($pdo, $selectedGroupId, $selectedTypeId);
-    $stdTaskCount = count($catCatalog['tasks'] ?? []);
-    $stdLabel = $catCatalog['category_label'] ?? 'Standar';
+    $tasksQuery = "SELECT j.*, g.group_code, g.group_name, t.type_code, t.type_name
+                   FROM maintenance_jobs j
+                   LEFT JOIN asset_groups g ON g.id = j.asset_group_id
+                   LEFT JOIN asset_types t ON t.id = j.asset_type_id
+                   WHERE {$whereSql}
+                   ORDER BY g.group_name ASC, t.type_name ASC, j.title ASC";
+    $tasksStmt = $pdo->prepare($tasksQuery);
+    $tasksStmt->execute($params);
+    $tasksList = $tasksStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 3. TAMPILAN HEADER & FILTER BAR KOMODITAS & KATEGORI
-    echo '<section class="panel" style="margin-bottom:16px;">'
-        . '<div class="split" style="align-items:center;flex-wrap:wrap;gap:12px;">'
+    // 6. FORM INPUT PEKERJAAN (BAGIAN ATAS)
+    echo '<section class="panel" style="margin-bottom:20px; border-top:3px solid #2563eb;">'
+        . '<div class="split" style="align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">'
         . '  <div>'
-        . '    <h1 style="margin:0;font-size:20px;color:#0f172a;">📋 Master Jobdesk PM</h1>'
-        . '    <p class="muted" style="margin:4px 0 0 0;font-size:13px;">Kelola daftar item pekerjaan (SOP Preventive Maintenance) langsung berdasarkan Komoditas dan Kategori aset.</p>'
+        . '    <h1 style="margin:0; font-size:18px; color:#1e40af;">' . ($isEditing ? ('Edit Pekerjaan / Job Task #' . $editTaskId) : '+ Tambah Pekerjaan / Job Task') . '</h1>'
+        . '    <p class="muted" style="margin:2px 0 0 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan dan estimasi waktu, lalu simpan pekerjaan.</p>'
         . '  </div>'
-        . '  <div class="actions" style="display:flex;gap:8px;align-items:center;">'
-        . '    <a class="btn" href="' . route_url('export_excel', ['type' => 'jobs']) . '" style="background:#fff;">📥 Export Excel</a>'
-        . '  </div>'
-        . '</div>'
-        . '<div style="margin-top:16px;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">'
-        . '  <form method="get" id="filterCategoryForm" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin:0;">'
-        . '    <input type="hidden" name="route" value="jobs">'
-        . '    <label style="flex:1;min-width:220px;margin:0;font-weight:600;font-size:13px;color:#334155;">1. Pilih Komoditas (Asset Group) *'
-        . '      <select name="group_id" id="jobGroupSelect" style="width:100%;margin-top:4px;padding:8px 12px;font-weight:600;background:#fff;">';
-    foreach ($assetGroups as $ag) {
-        $sel = ((int)$ag['id'] === $selectedGroupId) ? ' selected' : '';
-        echo '<option value="' . (int)$ag['id'] . '"' . $sel . '>' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
-    }
-    echo '      </select>'
-        . '    </label>'
-        . '    <label style="flex:1;min-width:240px;margin:0;font-weight:600;font-size:13px;color:#334155;">2. Pilih Kategori (Asset Type) *'
-        . '      <select name="type_id" id="jobTypeSelect" style="width:100%;margin-top:4px;padding:8px 12px;font-weight:600;background:#fff;">';
-    if (empty($assetTypes)) {
-        echo '<option value="">(Belum ada kategori untuk komoditas ini)</option>';
-    } else {
-        foreach ($assetTypes as $at) {
-            $sel = ((int)$at['id'] === $selectedTypeId) ? ' selected' : '';
-            echo '<option value="' . (int)$at['id'] . '"' . $sel . '>' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
-        }
-    }
-    echo '      </select>'
-        . '    </label>'
-        . '    <button type="submit" class="btn primary" style="padding:9px 18px;margin-bottom:1px;">Terapkan Filter</button>'
-        . '  </form>'
-        . '</div>'
-        . '</section>';
-
-    // 4. GRID DUA KOLOM: FORM INPUT TASK (KIRI) & TABEL DAFTAR TASK (KANAN)
-    echo '<section class="grid two" style="align-items:start;margin-bottom:20px;">';
-
-    // PANEL KIRI: FORM INPUT / EDIT TASK
-    $isEditingTask = ($editingTask !== null);
-    $formTaskTitle = $isEditingTask ? ('Edit Pekerjaan / Job Task #' . (int)$editingTask['id']) : '+ Tambah Pekerjaan / Job Task';
-    $formTaskAction = $isEditingTask ? 'edit_task' : 'add_task';
-    $taskTitleVal = $isEditingTask ? (string)$editingTask['title'] : '';
-    $taskEstVal = $isEditingTask ? (int)$editingTask['estimated_minutes'] : 5;
-    $taskDescVal = $isEditingTask ? (string)($editingTask['description'] ?? '') : '';
-
-    echo '<div class="panel" style="border-top:3px solid #2563eb;">'
-        . '<div class="split" style="align-items:center;margin-bottom:12px;">'
-        . '  <div>'
-        . '    <h2 style="margin:0;font-size:16px;color:#1e40af;">' . e($formTaskTitle) . '</h2>'
-        . '    <p class="muted" style="margin:2px 0 0 0;font-size:12px;">Untuk Komoditas: <strong>' . e($curGroupName) . '</strong> &bull; Kategori: <strong>' . e($curTypeName ?: 'Semua') . '</strong></p>'
-        . '  </div>'
-        . ($isEditingTask ? '<a class="btn" href="' . route_url('jobs', ['group_id' => $selectedGroupId, 'type_id' => $selectedTypeId]) . '" style="padding:4px 8px;font-size:12px;">✕ Batal Edit</a>' : '')
+        . ($isEditing ? ('<a class="btn" href="' . route_url('jobs', array_filter(['filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:5px 12px; font-size:12px;">✕ Batal Edit</a>') : '')
         . '</div>';
 
-    if (($isEditingTask && $canEdit) || (!$isEditingTask && $canCreate)) {
-        echo '<form method="post">'
+    if (($isEditing && $canEdit) || (!$isEditing && $canCreate)) {
+        echo '<form method="post" id="jobTaskForm">'
             . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-            . '<input type="hidden" name="action" value="' . $formTaskAction . '">'
-            . '<input type="hidden" name="asset_group_id" value="' . $selectedGroupId . '">'
-            . '<input type="hidden" name="asset_type_id" value="' . $selectedTypeId . '">'
-            . ($isEditingTask ? '<input type="hidden" name="task_id" value="' . (int)$editingTask['id'] . '">' : '')
-            . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:10px;display:block;">Nama Pekerjaan / Job Task *'
-            . '  <input type="text" name="title" required value="' . e($taskTitleVal) . '" placeholder="Contoh: Pembersihan Fan & Casing Unit" style="width:100%;margin-top:4px;padding:9px 12px;font-size:14px;font-weight:600;box-sizing:border-box;">'
+            . '<input type="hidden" name="action" value="' . ($isEditing ? 'edit_task' : 'add_task') . '">'
+            . '<input type="hidden" name="filter_group_id" value="' . $filterGroupId . '">'
+            . '<input type="hidden" name="filter_type_id" value="' . $filterTypeId . '">'
+            . ($isEditing ? ('<input type="hidden" name="task_id" value="' . $editTaskId . '">') : '')
+            . '<div class="grid two" style="margin-bottom:12px;">'
+            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
+            . '    <select id="formAssetGroup" name="asset_group_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+            . '      <option value="">-- Pilih Komoditas --</option>';
+        foreach ($assetGroups as $ag) {
+            $sel = ($formGroupId === (int)$ag['id']) ? ' selected' : '';
+            echo '<option value="' . (int)$ag['id'] . '"' . $sel . '>' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
+        }
+        echo '    </select>'
+            . '  </label>'
+            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
+            . '    <select id="formAssetType" name="asset_type_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+            . '      <option value="">-- Pilih Kategori --</option>';
+        foreach ($allAssetTypes as $at) {
+            $sel = ($formTypeId === (int)$at['id']) ? ' selected' : '';
+            echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '"' . $sel . '>' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
+        }
+        echo '    </select>'
+            . '  </label>'
+            . '</div>'
+            . '<div class="grid two" style="margin-bottom:12px;">'
+            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Pekerjaan / Job Task *'
+            . '    <input type="text" name="title" required value="' . e($formTitle) . '" placeholder="Contoh: Pembersihan Fan & Casing Unit" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; font-weight:600; box-sizing:border-box;">'
+            . '  </label>'
+            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Estimasi Waktu (Menit) *'
+            . '    <input type="number" min="1" max="1440" name="estimated_minutes" required value="' . e((string)$formMinutes) . '" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; box-sizing:border-box;">'
+            . '  </label>'
+            . '</div>'
+            . '<label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:16px; display:block;">Keterangan / SOP (Opsional)'
+            . '  <textarea name="description" rows="2" placeholder="Instruksi kerja teknis atau SOP pengerjaan oleh teknisi..." style="width:100%; margin-top:4px; padding:9px 12px; font-size:13px; box-sizing:border-box;">' . e($formDesc) . '</textarea>'
             . '</label>'
-            . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:10px;display:block;">Estimasi Waktu (Menit) *'
-            . '  <input type="number" min="1" max="1440" name="estimated_minutes" required value="' . e((string)$taskEstVal) . '" style="width:100%;margin-top:4px;padding:9px 12px;font-size:14px;box-sizing:border-box;">'
-            . '</label>'
-            . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:14px;display:block;">Keterangan / SOP (Opsional)'
-            . '  <textarea name="description" rows="3" placeholder="Instruksi kerja teknis atau SOP pengerjaan oleh teknisi..." style="width:100%;margin-top:4px;padding:9px 12px;font-size:13px;box-sizing:border-box;">' . e($taskDescVal) . '</textarea>'
-            . '</label>'
-            . '<div class="actions" style="display:flex;gap:8px;">'
-            . '  <button class="btn primary" style="flex:1;padding:10px 16px;font-weight:700;">' . ($isEditingTask ? 'Simpan Perubahan' : '+ Tambah Pekerjaan') . '</button>'
+            . '<div class="actions" style="display:flex; gap:10px;">'
+            . '  <button type="submit" class="btn primary" style="padding:10px 22px; font-size:14px; font-weight:700;">' . ($isEditing ? 'Perbarui Pekerjaan' : 'Simpan Pekerjaan') . '</button>'
+            . ($isEditing ? ('<a class="btn" href="' . route_url('jobs', array_filter(['filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:10px 18px;">Batal Edit</a>') : '')
             . '</div>'
             . '</form>';
     } else {
         echo '<p class="muted">Anda tidak memiliki hak akses untuk menambah atau mengubah pekerjaan pada modul ini.</p>';
     }
-    echo '</div>';
+    echo '</section>';
 
-    // PANEL KANAN: TABEL DAFTAR TASK UNTUK KATEGORI TERPILIH
-    echo '<div class="panel">'
-        . '<div class="split" style="align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'
+    // 7. DAFTAR PEKERJAAN (TASKS) DI BAWAHNYA (MUNCUL SEMUA DENGAN FILTER)
+    echo '<section class="panel">'
+        . '<div class="split" style="align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">'
         . '  <div>'
-        . '    <h2 style="margin:0;font-size:16px;color:#0f172a;">📋 Daftar Pekerjaan (Tasks): ' . e($curTypeName ?: '-') . '</h2>'
-        . '    <p class="muted" style="margin:2px 0 0 0;font-size:12px;">Komoditas: <strong>' . e($curGroupName) . '</strong></p>'
+        . '    <h2 style="margin:0; font-size:18px; color:#0f172a;">📋 Daftar Pekerjaan (Tasks)</h2>'
+        . '    <p class="muted" style="margin:2px 0 0 0; font-size:13px;">Daftar seluruh item pekerjaan SOP Preventive Maintenance terdaftar.</p>'
         . '  </div>'
-        . '  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
-    if ($canCreate && $stdTaskCount > 0) {
-        echo '<form method="post" style="margin:0;">'
-            . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-            . '<input type="hidden" name="action" value="copy_default_tasks">'
-            . '<input type="hidden" name="asset_group_id" value="' . $selectedGroupId . '">'
-            . '<input type="hidden" name="asset_type_id" value="' . $selectedTypeId . '">'
-            . '<button type="submit" class="btn" style="padding:6px 10px;font-size:12px;background:#f0fdf4;border:1px solid #86efac;color:#166534;font-weight:600;" title="Salin template tugas pemeliharaan preventif standar ' . e($stdLabel) . '">'
-            . '📥 Salin Template SOP Standar (' . e($stdLabel) . ')'
-            . '</button>'
-            . '</form>';
-    }
-    echo '    <span class="badge ok" style="font-size:12px;padding:6px 10px;">Total: ' . count($currentTasks) . ' Tasks (~' . $totMinutes . ' Menit)</span>'
+        . '  <div style="display:flex; gap:8px; align-items:center;">'
+        . '    <span class="badge ok" style="font-size:12px; padding:6px 12px;">Total: ' . count($tasksList) . ' Tasks</span>'
+        . '    <a class="btn" href="' . route_url('export_excel', array_filter(['type' => 'jobs', 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="background:#fff;">📥 Export Excel</a>'
         . '  </div>'
         . '</div>';
 
-    if (empty($currentTasks)) {
-        echo '<div style="padding:32px 20px;text-align:center;background:#fff;border:1px dashed #cbd5e1;border-radius:8px;">'
-            . '<p class="muted" style="margin:0 0 6px 0;font-size:14px;font-weight:600;">Belum ada item pekerjaan untuk kategori ' . e($curTypeName) . '.</p>'
-            . '<p style="font-size:13px;color:#64748b;margin:0 0 14px 0;">Silakan isi formulir di sebelah kiri untuk menambahkan pekerjaan manual, atau klik tombol <strong>Salin Template SOP Standar</strong> jika tersedia.</p>';
-        if ($canCreate && $stdTaskCount > 0) {
-            echo '<form method="post" style="margin:0;">'
-                . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-                . '<input type="hidden" name="action" value="copy_default_tasks">'
-                . '<input type="hidden" name="asset_group_id" value="' . $selectedGroupId . '">'
-                . '<input type="hidden" name="asset_type_id" value="' . $selectedTypeId . '">'
-                . '<button type="submit" class="btn primary" style="font-size:13px;padding:8px 16px;">📥 Salin ' . $stdTaskCount . ' Tugas Standar ' . e($stdLabel) . '</button>'
-                . '</form>';
-        }
-        echo '</div>';
+    // Form Filter Daftar Pekerjaan
+    echo '<div style="margin-bottom:16px; padding:12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">'
+        . '<form method="get" id="filterTasksForm" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:0;">'
+        . '  <input type="hidden" name="route" value="jobs">'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Komoditas (Asset Group)'
+        . '    <select id="filterAssetGroup" name="filter_group_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
+        . '      <option value="">-- Semua Komoditas --</option>';
+    foreach ($assetGroups as $ag) {
+        $sel = ($filterGroupId === (int)$ag['id']) ? ' selected' : '';
+        echo '<option value="' . (int)$ag['id'] . '"' . $sel . '>' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Kategori (Asset Type)'
+        . '    <select id="filterAssetType" name="filter_type_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
+        . '      <option value="">-- Semua Kategori --</option>';
+    foreach ($allAssetTypes as $at) {
+        $sel = ($filterTypeId === (int)$at['id']) ? ' selected' : '';
+        echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '"' . $sel . '>' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <button type="submit" class="btn primary" style="padding:8px 16px; font-size:13px;">Filter</button>'
+        . (($filterGroupId > 0 || $filterTypeId > 0) ? ('<a class="btn" href="' . route_url('jobs') . '" style="padding:8px 14px; font-size:13px;">✕ Reset</a>') : '')
+        . '</form>'
+        . '</div>';
+
+    // Tabel Daftar Pekerjaan
+    if (empty($tasksList)) {
+        echo '<div style="padding:32px 20px; text-align:center; background:#fff; border:1px dashed #cbd5e1; border-radius:8px;">'
+            . '<p class="muted" style="margin:0 0 6px 0; font-size:14px; font-weight:600;">Tidak ada pekerjaan / tasks yang sesuai dengan filter.</p>'
+            . '<p style="font-size:13px; color:#64748b; margin:0;">Silakan pilih filter lain atau tambahkan pekerjaan melalui formulir di atas.</p>'
+            . '</div>';
     } else {
         echo '<div style="overflow-x:auto;"><table style="margin:0;">'
             . '<thead><tr>'
-            . '<th style="width:40px;text-align:center;">No</th>'
+            . '<th style="width:40px; text-align:center;">No</th>'
+            . '<th style="width:160px;">Komoditas (Asset Group)</th>'
+            . '<th style="width:160px;">Kategori (Asset Type)</th>'
             . '<th>Nama Pekerjaan / Job Task</th>'
-            . '<th style="width:110px;text-align:center;">Estimasi</th>'
+            . '<th style="width:110px; text-align:center;">Estimasi</th>'
             . '<th>Keterangan / SOP</th>'
-            . '<th style="width:90px;text-align:center;">Status</th>'
-            . ($canEdit || $canDelete ? '<th style="width:120px;text-align:center;">Aksi</th>' : '')
+            . '<th style="width:90px; text-align:center;">Status</th>'
+            . ($canEdit || $canDelete ? '<th style="width:120px; text-align:center;">Aksi</th>' : '')
             . '</tr></thead><tbody>';
 
         $no = 1;
-        foreach ($currentTasks as $task) {
+        foreach ($tasksList as $task) {
             $tId = (int)$task['id'];
             $tTitle = $task['title'];
             $tEst = (int)$task['estimated_minutes'];
             $tDesc = trim((string)($task['description'] ?? ''));
             $tActive = !empty($task['is_active']);
+            $gLabel = !empty($task['group_name']) ? ($task['group_code'] . ' - ' . $task['group_name']) : '<span class="muted">(Semua)</span>';
+            $tLabel = !empty($task['type_name']) ? ($task['type_code'] . ' - ' . $task['type_name']) : '<span class="muted">(Semua)</span>';
 
             $statusBadge = $tActive
-                ? '<span class="badge ok" style="font-size:11px;font-weight:600;">Aktif</span>'
-                : '<span class="badge danger" style="font-size:11px;font-weight:600;">Tidak Aktif</span>';
+                ? '<span class="badge ok" style="font-size:11px; font-weight:600;">Aktif</span>'
+                : '<span class="badge danger" style="font-size:11px; font-weight:600;">Tidak Aktif</span>';
 
             $toggleBtn = $canEdit
-                ? ('<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="asset_group_id" value="' . $selectedGroupId . '"><input type="hidden" name="asset_type_id" value="' . $selectedTypeId . '"><button class="btn" style="padding:3px 7px;font-size:11px;" title="Ubah status aktif/non-aktif">' . ($tActive ? 'Nonaktifkan' : 'Aktifkan') . '</button></form>')
+                ? ('<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button class="btn" style="padding:3px 7px; font-size:11px;" title="Ubah status aktif/non-aktif">' . ($tActive ? 'Nonaktifkan' : 'Aktifkan') . '</button></form>')
                 : '';
 
             $editLink = $canEdit
-                ? ('<a class="btn" href="' . route_url('jobs', ['group_id' => $selectedGroupId, 'type_id' => $selectedTypeId, 'edit_task_id' => $tId]) . '" style="padding:3px 7px;font-size:11px;">Edit</a>')
+                ? ('<a class="btn" href="' . route_url('jobs', array_filter(['edit_task_id' => $tId, 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:3px 7px; font-size:11px;">Edit</a>')
                 : '';
 
             $delBtn = $canDelete
-                ? ('<form method="post" style="display:inline;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini?&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="asset_group_id" value="' . $selectedGroupId . '"><input type="hidden" name="asset_type_id" value="' . $selectedTypeId . '"><button class="btn danger" style="padding:3px 7px;font-size:11px;">Hapus</button></form>')
+                ? ('<form method="post" style="display:inline;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini?&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button class="btn danger" style="padding:3px 7px; font-size:11px;">Hapus</button></form>')
                 : '';
 
             echo '<tr' . (!$tActive ? ' style="opacity:0.6;background:#f8fafc;"' : '') . '>'
-                . '<td style="text-align:center;font-weight:600;color:#64748b;">' . $no++ . '</td>'
+                . '<td style="text-align:center; font-weight:600; color:#64748b;">' . $no++ . '</td>'
+                . '<td><strong>' . $gLabel . '</strong></td>'
+                . '<td>' . $tLabel . '</td>'
                 . '<td><strong>' . e($tTitle) . '</strong></td>'
-                . '<td style="text-align:center;"><span class="badge" style="font-size:11px;font-weight:600;">~' . $tEst . ' mnt</span></td>'
-                . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px;color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>'
+                . '<td style="text-align:center;"><span class="badge" style="font-size:11px; font-weight:600;">~' . $tEst . ' mnt</span></td>'
+                . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>'
                 . '<td style="text-align:center;">' . $statusBadge . '</td>';
 
             if ($canEdit || $canDelete) {
-                echo '<td style="text-align:center;"><div class="actions" style="display:flex;gap:4px;justify-content:center;">' . $editLink . $toggleBtn . $delBtn . '</div></td>';
+                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:4px; justify-content:center;">' . $editLink . $toggleBtn . $delBtn . '</div></td>';
             }
             echo '</tr>';
         }
         echo '</tbody></table></div>';
     }
-    echo '</div>';
     echo '</section>';
 
-    // 5. PANEL BAWAH: REKAPITULASI SEMUA KATEGORI
-    $allCatQuery = 'SELECT 
-        g.id AS group_id, g.group_code, g.group_name,
-        t.id AS type_id, t.type_code, t.type_name,
-        COUNT(j.id) AS total_tasks,
-        SUM(CASE WHEN j.is_active = 1 THEN 1 ELSE 0 END) AS active_tasks,
-        COALESCE(SUM(CASE WHEN j.is_active = 1 THEN j.estimated_minutes ELSE 0 END), 0) AS total_minutes
-    FROM asset_groups g
-    JOIN asset_types t ON t.asset_group_id = g.id
-    LEFT JOIN maintenance_jobs j ON j.asset_group_id = g.id AND j.asset_type_id = t.id
-    GROUP BY g.id, g.group_code, g.group_name, t.id, t.type_code, t.type_name
-    ORDER BY g.group_name ASC, t.type_name ASC';
-    $catSummaries = $pdo->query($allCatQuery)->fetchAll(PDO::FETCH_ASSOC);
-
-    echo '<section class="panel">'
-        . '<div class="split" style="align-items:center;margin-bottom:12px;">'
-        . '  <div>'
-        . '    <h3 style="margin:0;font-size:16px;color:#0f172a;">📊 Rekapitulasi Master Jobdesk PM Semua Kategori</h3>'
-        . '    <p class="muted" style="margin:2px 0 0 0;font-size:12px;">Tinjau kelengkapan checklist SOP maintenance untuk setiap kategori aset yang ada di sistem.</p>'
-        . '  </div>'
-        . '</div>'
-        . '<div style="overflow-x:auto;"><table style="margin:0;">'
-        . '<thead><tr>'
-        . '<th>Komoditas</th>'
-        . '<th>Kategori</th>'
-        . '<th style="text-align:center;width:120px;">Jumlah Tasks</th>'
-        . '<th style="text-align:center;width:140px;">Estimasi Waktu</th>'
-        . '<th style="text-align:center;width:120px;">Status Kelola</th>'
-        . '<th style="text-align:center;width:130px;">Aksi</th>'
-        . '</tr></thead><tbody>';
-
-    foreach ($catSummaries as $cs) {
-        $cGid = (int)$cs['group_id'];
-        $cTid = (int)$cs['type_id'];
-        $cTasks = (int)$cs['total_tasks'];
-        $cActTasks = (int)$cs['active_tasks'];
-        $cMins = (int)$cs['total_minutes'];
-        $isCurrent = ($cGid === $selectedGroupId && $cTid === $selectedTypeId);
-
-        $rowBg = $isCurrent ? ' style="background:#eff6ff;"' : '';
-        $currentBadge = $isCurrent ? ' <span class="badge ok" style="font-size:10px;">Sedang Dipilih</span>' : '';
-
-        echo '<tr' . $rowBg . '>'
-            . '<td><strong>' . e($cs['group_code'] . ' - ' . $cs['group_name']) . '</strong></td>'
-            . '<td>' . e($cs['type_code'] . ' - ' . $cs['type_name']) . $currentBadge . '</td>'
-            . '<td style="text-align:center;"><span class="badge' . ($cTasks > 0 ? '' : ' danger') . '" style="font-size:11px;">' . $cTasks . ' tasks (' . $cActTasks . ' aktif)</span></td>'
-            . '<td style="text-align:center;"><span class="muted" style="font-size:12px;">~' . $cMins . ' menit</span></td>'
-            . '<td style="text-align:center;">' . ($cTasks > 0 ? '<span class="badge ok" style="font-size:11px;">Siap Pakai</span>' : '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px;">Belum Diisi</span>') . '</td>'
-            . '<td style="text-align:center;"><a class="btn ' . ($isCurrent ? 'primary' : '') . '" href="' . route_url('jobs', ['group_id' => $cGid, 'type_id' => $cTid]) . '" style="padding:4px 10px;font-size:12px;">' . ($isCurrent ? '✓ Dikelola' : 'Kelola Tasks ➔') . '</a></td>'
-            . '</tr>';
-    }
-    echo '</tbody></table></div>';
-    echo '</section>';
-
-    // JavaScript: Dinamisasi Kategori saat Komoditas diubah
+    // 8. JAVASCRIPT: DINAMISASI KATEGORI BERDASARKAN KOMODITAS (FORM & FILTER)
     echo '<script>
 (function(){
-    var groupSelect = document.getElementById("jobGroupSelect");
-    var typeSelect = document.getElementById("jobTypeSelect");
-    var filterForm = document.getElementById("filterCategoryForm");
+    function setupDependentCategoryDropdown(groupSelectId, typeSelectId, autoResetSelection) {
+        var gSel = document.getElementById(groupSelectId);
+        var tSel = document.getElementById(typeSelectId);
+        if (!gSel || !tSel) return;
 
-    if (groupSelect && typeSelect) {
-        groupSelect.addEventListener("change", function() {
-            var gid = this.value;
-            typeSelect.innerHTML = "<option value=\"\">- Memuat Kategori... -</option>";
-            fetch("index.php?route=api_asset_types&group_id=" + encodeURIComponent(gid))
-                .then(function(r) { return r.json(); })
-                .then(function(types) {
-                    typeSelect.innerHTML = "";
-                    if (!types || types.length === 0) {
-                        typeSelect.innerHTML = "<option value=\"\">(Tidak ada kategori)</option>";
-                    } else {
-                        types.forEach(function(t) {
-                            var opt = document.createElement("option");
-                            opt.value = t.id;
-                            opt.textContent = t.type_code + " - " + t.type_name;
-                            typeSelect.appendChild(opt);
-                        });
-                    }
-                    if (filterForm) {
-                        filterForm.submit();
-                    }
-                })
-                .catch(function() {
-                    if (filterForm) filterForm.submit();
-                });
-        });
+        function filterOptions() {
+            var selectedGid = gSel.value;
+            var currentTid = tSel.value;
+            var hasMatch = false;
 
-        typeSelect.addEventListener("change", function() {
-            if (filterForm) {
-                filterForm.submit();
+            Array.from(tSel.options).forEach(function(opt, idx) {
+                if (idx === 0) {
+                    opt.style.display = "";
+                    return;
+                }
+                var optGid = opt.getAttribute("data-group-id");
+                var show = (!selectedGid || optGid === selectedGid);
+                opt.style.display = show ? "" : "none";
+                if (show && opt.value === currentTid) {
+                    hasMatch = true;
+                }
+            });
+
+            if (autoResetSelection && !hasMatch && selectedGid !== "") {
+                tSel.value = "";
             }
-        });
+        }
+
+        gSel.addEventListener("change", filterOptions);
+        filterOptions();
     }
+
+    // Pasang dinamisasi dropdown pada Form Input
+    setupDependentCategoryDropdown("formAssetGroup", "formAssetType", true);
+
+    // Pasang dinamisasi dropdown pada Filter Tabel
+    setupDependentCategoryDropdown("filterAssetGroup", "filterAssetType", false);
 })();
 </script>';
 
@@ -3336,7 +3195,17 @@ function export_excel(PDO $pdo, string $type): never
     }
 
     if ($type === 'jobs') {
-        $rows = $pdo->query('SELECT j.title, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, j.estimated_minutes, j.description, CASE WHEN j.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, j.created_at FROM maintenance_jobs j LEFT JOIN asset_groups g ON g.id=j.asset_group_id LEFT JOIN asset_types t ON t.id=j.asset_type_id ORDER BY g.group_name ASC, t.type_name ASC, j.title ASC')->fetchAll();
+        $filterGid = (int)($_GET['filter_group_id'] ?? ($_GET['group_id'] ?? 0));
+        $filterTid = (int)($_GET['filter_type_id'] ?? ($_GET['type_id'] ?? 0));
+        $whereExp = ["1=1"];
+        $paramsExp = [];
+        if ($filterGid > 0) { $whereExp[] = "j.asset_group_id = ?"; $paramsExp[] = $filterGid; }
+        if ($filterTid > 0) { $whereExp[] = "j.asset_type_id = ?"; $paramsExp[] = $filterTid; }
+        $whereExpSql = implode(' AND ', $whereExp);
+
+        $stmtExp = $pdo->prepare('SELECT j.title, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, j.estimated_minutes, j.description, CASE WHEN j.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, j.created_at FROM maintenance_jobs j LEFT JOIN asset_groups g ON g.id=j.asset_group_id LEFT JOIN asset_types t ON t.id=j.asset_type_id WHERE ' . $whereExpSql . ' ORDER BY g.group_name ASC, t.type_name ASC, j.title ASC');
+        $stmtExp->execute($paramsExp);
+        $rows = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
         output_tsv(['Nama Pekerjaan / Job Task', 'Komoditas', 'Kategori', 'Estimasi (Menit)', 'Keterangan / SOP', 'Status', 'Dibuat'], $rows);
         exit;
     }
