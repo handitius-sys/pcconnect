@@ -1248,7 +1248,7 @@ function handle_route_schedule_form(PDO $pdo): void
         }
         $jobIds = array_map('intval', $_POST['jobs'] ?? []);
         if (empty($jobIds)) {
-            flash('Pilih minimal satu job desk untuk schedule maintenance.', 'err');
+            flash('Pilih minimal satu item pekerjaan (Job Task) untuk schedule maintenance.', 'err');
             redirect_to('schedule_form', ['edit_id' => $editId, 'asset_group_id' => $selectedGroupId]);
         }
 
@@ -2013,11 +2013,6 @@ window.syncCreateExpiredDate = function(val) {
         });
     }
 
-    if (deskSelect) {
-        deskSelect.addEventListener("change", function() {
-            applySelectedJobDeskTasks();
-            updateManageDeskLink();
-        });
     }
 
     // Inisialisasi awal saat halaman dimuat
