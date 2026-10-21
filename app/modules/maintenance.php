@@ -2414,6 +2414,12 @@ function get_standard_preventive_tasks_catalog(PDO $pdo, ?int $groupId, ?int $ty
  *         Form input memilih Komoditas & Kategori aset, memasukkan Nama Pekerjaan, Estimasi Menit, dan Keterangan/SOP.
  *         Daftar pekerjaan di bawah menampilkan seluruh task terdaftar dengan filter Komoditas & Kategori.
  */
+/**
+ * Modul: Master Jobdesk PM (Data Master)
+ * Proses: Mengelola SOP dan daftar item pekerjaan (Job Tasks) pemeliharaan preventif (Preventive Maintenance).
+ *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
+ *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
+ */
 function handle_route_jobs(PDO $pdo): void
 {
     $user = require_regulation('jobs', 'view');
@@ -2427,7 +2433,11 @@ function handle_route_jobs(PDO $pdo): void
     $assetGroups = $pdo->query('SELECT id, group_code, group_name FROM asset_groups ORDER BY group_name ASC')->fetchAll(PDO::FETCH_ASSOC);
     $allAssetTypes = $pdo->query('SELECT id, asset_group_id, type_code, type_name FROM asset_types ORDER BY type_name ASC')->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. Data Form (Tambah vs Edit)
+    // 2. Filter Tabel Daftar Pekerjaan
+    $filterGroupId = (int)($_GET['filter_group_id'] ?? 0);
+    $filterTypeId = (int)($_GET['filter_type_id'] ?? 0);
+
+    // 3. Edit task ID dari URL (jika ada request edit via link langsung)
     $editTaskId = (int)($_GET['edit_task_id'] ?? 0);
     $editingTask = null;
     if ($editTaskId > 0) {
@@ -2435,17 +2445,6 @@ function handle_route_jobs(PDO $pdo): void
         $stEdit->execute([$editTaskId]);
         $editingTask = $stEdit->fetch(PDO::FETCH_ASSOC) ?: null;
     }
-
-    $isEditing = ($editingTask !== null);
-    $formGroupId = $editingTask ? (int)$editingTask['asset_group_id'] : (int)($_GET['form_group_id'] ?? 0);
-    $formTypeId = $editingTask ? (int)$editingTask['asset_type_id'] : (int)($_GET['form_type_id'] ?? 0);
-    $formTitle = $editingTask ? (string)$editingTask['title'] : '';
-    $formMinutes = $editingTask ? (int)$editingTask['estimated_minutes'] : 5;
-    $formDesc = $editingTask ? (string)($editingTask['description'] ?? '') : '';
-
-    // 3. Filter Tabel Daftar Pekerjaan
-    $filterGroupId = (int)($_GET['filter_group_id'] ?? 0);
-    $filterTypeId = (int)($_GET['filter_type_id'] ?? 0);
 
     // 4. PROSES POST (TAMBAH, EDIT, TOGGLE, HAPUS)
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -2475,7 +2474,7 @@ function handle_route_jobs(PDO $pdo): void
                     $typeId,
                     $estMinutes,
                 ]);
-                flash("Pekerjaan '{$title}' berhasil disimpan.");
+                flash("Pekerjaan '{$title}' berhasil ditambahkan ke Daftar Pekerjaan.");
             }
             redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
@@ -2565,73 +2564,16 @@ function handle_route_jobs(PDO $pdo): void
     $tasksStmt->execute($params);
     $tasksList = $tasksStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 6. FORM INPUT PEKERJAAN (BAGIAN ATAS)
-    echo '<section class="panel" style="margin-bottom:20px; border-top:3px solid #2563eb;">'
-        . '<div class="split" style="align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">'
-        . '  <div>'
-        . '    <h1 style="margin:0; font-size:18px; color:#1e40af;">' . ($isEditing ? ('Edit Pekerjaan / Job Task #' . $editTaskId) : '+ Tambah Pekerjaan / Job Task') . '</h1>'
-        . '    <p class="muted" style="margin:2px 0 0 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan dan estimasi waktu, lalu simpan pekerjaan.</p>'
-        . '  </div>'
-        . ($isEditing ? ('<a class="btn" href="' . route_url('jobs', array_filter(['filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:5px 12px; font-size:12px;">✕ Batal Edit</a>') : '')
-        . '</div>';
-
-    if (($isEditing && $canEdit) || (!$isEditing && $canCreate)) {
-        echo '<form method="post" id="jobTaskForm">'
-            . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-            . '<input type="hidden" name="action" value="' . ($isEditing ? 'edit_task' : 'add_task') . '">'
-            . '<input type="hidden" name="filter_group_id" value="' . $filterGroupId . '">'
-            . '<input type="hidden" name="filter_type_id" value="' . $filterTypeId . '">'
-            . ($isEditing ? ('<input type="hidden" name="task_id" value="' . $editTaskId . '">') : '')
-            . '<div class="grid two" style="margin-bottom:12px;">'
-            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
-            . '    <select id="formAssetGroup" name="asset_group_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
-            . '      <option value="">-- Pilih Komoditas --</option>';
-        foreach ($assetGroups as $ag) {
-            $sel = ($formGroupId === (int)$ag['id']) ? ' selected' : '';
-            echo '<option value="' . (int)$ag['id'] . '"' . $sel . '>' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
-        }
-        echo '    </select>'
-            . '  </label>'
-            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
-            . '    <select id="formAssetType" name="asset_type_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
-            . '      <option value="">-- Pilih Kategori --</option>';
-        foreach ($allAssetTypes as $at) {
-            $sel = ($formTypeId === (int)$at['id']) ? ' selected' : '';
-            echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '"' . $sel . '>' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
-        }
-        echo '    </select>'
-            . '  </label>'
-            . '</div>'
-            . '<div class="grid two" style="margin-bottom:12px;">'
-            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Pekerjaan / Job Task *'
-            . '    <input type="text" name="title" required value="' . e($formTitle) . '" placeholder="Contoh: Pembersihan Fan & Casing Unit" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; font-weight:600; box-sizing:border-box;">'
-            . '  </label>'
-            . '  <label style="font-weight:600; font-size:13px; color:#334155;">Estimasi Waktu (Menit) *'
-            . '    <input type="number" min="1" max="1440" name="estimated_minutes" required value="' . e((string)$formMinutes) . '" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; box-sizing:border-box;">'
-            . '  </label>'
-            . '</div>'
-            . '<label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:16px; display:block;">Keterangan / SOP (Opsional)'
-            . '  <textarea name="description" rows="2" placeholder="Instruksi kerja teknis atau SOP pengerjaan oleh teknisi..." style="width:100%; margin-top:4px; padding:9px 12px; font-size:13px; box-sizing:border-box;">' . e($formDesc) . '</textarea>'
-            . '</label>'
-            . '<div class="actions" style="display:flex; gap:10px;">'
-            . '  <button type="submit" class="btn primary" style="padding:10px 22px; font-size:14px; font-weight:700;">' . ($isEditing ? 'Perbarui Pekerjaan' : 'Simpan Pekerjaan') . '</button>'
-            . ($isEditing ? ('<a class="btn" href="' . route_url('jobs', array_filter(['filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:10px 18px;">Batal Edit</a>') : '')
-            . '</div>'
-            . '</form>';
-    } else {
-        echo '<p class="muted">Anda tidak memiliki hak akses untuk menambah atau mengubah pekerjaan pada modul ini.</p>';
-    }
-    echo '</section>';
-
-    // 7. DAFTAR PEKERJAAN (TASKS) DI BAWAHNYA (MUNCUL SEMUA DENGAN FILTER)
+    // 6. TAMPILAN UTAMA: DAFTAR PEKERJAAN (TASKS) DI DEPAN
     echo '<section class="panel">'
-        . '<div class="split" style="align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">'
+        . '<div class="split" style="align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">'
         . '  <div>'
-        . '    <h2 style="margin:0; font-size:18px; color:#0f172a;">📋 Daftar Pekerjaan (Tasks)</h2>'
-        . '    <p class="muted" style="margin:2px 0 0 0; font-size:13px;">Daftar seluruh item pekerjaan SOP Preventive Maintenance terdaftar.</p>'
+        . '    <h1 style="margin:0; font-size:20px; color:#0f172a;">📋 Daftar Pekerjaan (Tasks)</h1>'
+        . '    <p class="muted" style="margin:3px 0 0 0; font-size:13px;">Master Jobdesk PM: Kelola daftar rincian tugas SOP Preventive Maintenance per Komoditas dan Kategori aset.</p>'
         . '  </div>'
-        . '  <div style="display:flex; gap:8px; align-items:center;">'
+        . '  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">'
         . '    <span class="badge ok" style="font-size:12px; padding:6px 12px;">Total: ' . count($tasksList) . ' Tasks</span>'
+        . ($canCreate ? ('<button type="button" class="btn primary" onclick="openJobTaskModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg> + Tambah Pekerjaan / Job Task</button>') : '')
         . '    <a class="btn" href="' . route_url('export_excel', array_filter(['type' => 'jobs', 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="background:#fff;">📥 Export Excel</a>'
         . '  </div>'
         . '</div>';
@@ -2659,15 +2601,16 @@ function handle_route_jobs(PDO $pdo): void
     echo '    </select>'
         . '  </label>'
         . '  <button type="submit" class="btn primary" style="padding:8px 16px; font-size:13px;">Filter</button>'
-        . (($filterGroupId > 0 || $filterTypeId > 0) ? ('<a class="btn" href="' . route_url('jobs') . '" style="padding:8px 14px; font-size:13px;">✕ Reset</a>') : '')
+        . (($filterGroupId > 0 || $filterTypeId > 0) ? ('<a class="btn" href="' . route_url('jobs') . '" style="padding:8px 14px; font-size:13px;">✕ Reset Filter</a>') : '')
         . '</form>'
         . '</div>';
 
     // Tabel Daftar Pekerjaan
     if (empty($tasksList)) {
-        echo '<div style="padding:32px 20px; text-align:center; background:#fff; border:1px dashed #cbd5e1; border-radius:8px;">'
-            . '<p class="muted" style="margin:0 0 6px 0; font-size:14px; font-weight:600;">Tidak ada pekerjaan / tasks yang sesuai dengan filter.</p>'
-            . '<p style="font-size:13px; color:#64748b; margin:0;">Silakan pilih filter lain atau tambahkan pekerjaan melalui formulir di atas.</p>'
+        echo '<div style="padding:40px 20px; text-align:center; background:#fff; border:1px dashed #cbd5e1; border-radius:8px;">'
+            . '<p class="muted" style="margin:0 0 8px 0; font-size:14px; font-weight:600;">Tidak ada item pekerjaan / tasks yang sesuai dengan filter.</p>'
+            . '<p style="font-size:13px; color:#64748b; margin:0 0 16px 0;">Klik tombol di bawah untuk menambahkan pekerjaan baru ke daftar.</p>'
+            . ($canCreate ? ('<button type="button" class="btn primary" onclick="openJobTaskModal()">+ Tambah Pekerjaan / Job Task</button>') : '')
             . '</div>';
     } else {
         echo '<div style="overflow-x:auto;"><table style="margin:0;">'
@@ -2679,7 +2622,7 @@ function handle_route_jobs(PDO $pdo): void
             . '<th style="width:110px; text-align:center;">Estimasi</th>'
             . '<th>Keterangan / SOP</th>'
             . '<th style="width:90px; text-align:center;">Status</th>'
-            . ($canEdit || $canDelete ? '<th style="width:120px; text-align:center;">Aksi</th>' : '')
+            . ($canEdit || $canDelete ? '<th style="width:130px; text-align:center;">Aksi</th>' : '')
             . '</tr></thead><tbody>';
 
         $no = 1;
@@ -2689,6 +2632,8 @@ function handle_route_jobs(PDO $pdo): void
             $tEst = (int)$task['estimated_minutes'];
             $tDesc = trim((string)($task['description'] ?? ''));
             $tActive = !empty($task['is_active']);
+            $gId = (int)($task['asset_group_id'] ?? 0);
+            $tTypeId = (int)($task['asset_type_id'] ?? 0);
             $gLabel = !empty($task['group_name']) ? ($task['group_code'] . ' - ' . $task['group_name']) : '<span class="muted">(Semua)</span>';
             $tLabel = !empty($task['type_name']) ? ($task['type_code'] . ' - ' . $task['type_name']) : '<span class="muted">(Semua)</span>';
 
@@ -2700,8 +2645,8 @@ function handle_route_jobs(PDO $pdo): void
                 ? ('<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button class="btn" style="padding:3px 7px; font-size:11px;" title="Ubah status aktif/non-aktif">' . ($tActive ? 'Nonaktifkan' : 'Aktifkan') . '</button></form>')
                 : '';
 
-            $editLink = $canEdit
-                ? ('<a class="btn" href="' . route_url('jobs', array_filter(['edit_task_id' => $tId, 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="padding:3px 7px; font-size:11px;">Edit</a>')
+            $editBtn = $canEdit
+                ? ('<button type="button" class="btn" style="padding:3px 8px; font-size:11px;" onclick="editJobTaskModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '">Edit</button>')
                 : '';
 
             $delBtn = $canDelete
@@ -2718,7 +2663,7 @@ function handle_route_jobs(PDO $pdo): void
                 . '<td style="text-align:center;">' . $statusBadge . '</td>';
 
             if ($canEdit || $canDelete) {
-                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:4px; justify-content:center;">' . $editLink . $toggleBtn . $delBtn . '</div></td>';
+                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:4px; justify-content:center;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
             }
             echo '</tr>';
         }
@@ -2726,46 +2671,200 @@ function handle_route_jobs(PDO $pdo): void
     }
     echo '</section>';
 
-    // 8. JAVASCRIPT: DINAMISASI KATEGORI BERDASARKAN KOMODITAS (FORM & FILTER)
+    // 7. WINDOWS MODUL: TAMBAH / EDIT PEKERJAAN (MODAL POPUP)
+    echo '<div id="modalJobTask" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.65); backdrop-filter:blur(3px); z-index:99999; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">'
+        . '<div style="background:#fff; border-radius:12px; padding:24px; width:100%; max-width:620px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:92vh; overflow-y:auto; position:relative;">'
+        . '<button type="button" onclick="closeJobTaskModal()" style="position:absolute; top:18px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:#64748b; line-height:1;" title="Tutup Window">&times;</button>'
+        . '<h2 id="modalJobTaskTitle" style="margin:0 0 6px 0; font-size:18px; color:#1e40af;">+ Tambah Pekerjaan / Job Task</h2>'
+        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan dan estimasi waktu, lalu simpan pekerjaan.</p>'
+        . '<form method="post" id="formModalJobTask">'
+        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" name="action" id="modalJobTaskAction" value="add_task">'
+        . '<input type="hidden" name="task_id" id="modalJobTaskId" value="">'
+        . '<input type="hidden" name="filter_group_id" value="' . $filterGroupId . '">'
+        . '<input type="hidden" name="filter_type_id" value="' . $filterTypeId . '">'
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
+        . '    <select id="formAssetGroup" name="asset_group_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+        . '      <option value="">-- Pilih Komoditas --</option>';
+    foreach ($assetGroups as $ag) {
+        echo '<option value="' . (int)$ag['id'] . '">' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
+        . '    <select id="formAssetType" name="asset_type_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+        . '      <option value="">-- Pilih Kategori --</option>';
+    foreach ($allAssetTypes as $at) {
+        echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '">' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '</div>'
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Pekerjaan / Job Task *'
+        . '    <input type="text" id="modalTaskTitleInput" name="title" required placeholder="Contoh: Pembersihan Fan & Casing Unit" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; font-weight:600; box-sizing:border-box;">'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Estimasi Waktu (Menit) *'
+        . '    <input type="number" id="modalTaskMinutesInput" min="1" max="1440" name="estimated_minutes" required value="5" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; box-sizing:border-box;">'
+        . '  </label>'
+        . '</div>'
+        . '<label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:18px; display:block;">Keterangan / SOP (Opsional)'
+        . '  <textarea id="modalTaskDescInput" name="description" rows="3" placeholder="Instruksi kerja teknis atau SOP pengerjaan oleh teknisi..." style="width:100%; margin-top:4px; padding:9px 12px; font-size:13px; box-sizing:border-box;"></textarea>'
+        . '</label>'
+        . '<div class="actions" style="display:flex; justify-content:flex-end; gap:10px;">'
+        . '  <button type="button" class="btn" onclick="closeJobTaskModal()" style="padding:10px 18px;">Batal</button>'
+        . '  <button type="submit" id="modalJobTaskSubmitBtn" class="btn primary" style="padding:10px 22px; font-size:14px; font-weight:700;">Simpan Pekerjaan</button>'
+        . '</div>'
+        . '</form>'
+        . '</div></div>';
+
+    // 8. JAVASCRIPT: LOGIKA MODAL POPUP & DINAMISASI KATEGORI
     echo '<script>
 (function(){
-    function setupDependentCategoryDropdown(groupSelectId, typeSelectId, autoResetSelection) {
-        var gSel = document.getElementById(groupSelectId);
-        var tSel = document.getElementById(typeSelectId);
-        if (!gSel || !tSel) return;
+    var modal = document.getElementById("modalJobTask");
+    var modalTitle = document.getElementById("modalJobTaskTitle");
+    var modalAction = document.getElementById("modalJobTaskAction");
+    var modalTaskId = document.getElementById("modalJobTaskId");
+    var modalSubmitBtn = document.getElementById("modalJobTaskSubmitBtn");
+    var formGroup = document.getElementById("formAssetGroup");
+    var formType = document.getElementById("formAssetType");
+    var taskTitleInput = document.getElementById("modalTaskTitleInput");
+    var taskMinutesInput = document.getElementById("modalTaskMinutesInput");
+    var taskDescInput = document.getElementById("modalTaskDescInput");
 
-        function filterOptions() {
-            var selectedGid = gSel.value;
-            var currentTid = tSel.value;
-            var hasMatch = false;
+    function syncTypeOptions(gSel, tSel, autoReset) {
+        var selectedGid = gSel ? gSel.value : "";
+        var currentTid = tSel ? tSel.value : "";
+        var hasMatch = false;
 
-            Array.from(tSel.options).forEach(function(opt, idx) {
-                if (idx === 0) {
-                    opt.style.display = "";
-                    return;
-                }
-                var optGid = opt.getAttribute("data-group-id");
-                var show = (!selectedGid || optGid === selectedGid);
-                opt.style.display = show ? "" : "none";
-                if (show && opt.value === currentTid) {
-                    hasMatch = true;
-                }
-            });
-
-            if (autoResetSelection && !hasMatch && selectedGid !== "") {
-                tSel.value = "";
+        if (!tSel) return;
+        Array.from(tSel.options).forEach(function(opt, idx) {
+            if (idx === 0) {
+                opt.style.display = "";
+                return;
             }
-        }
+            var optGid = opt.getAttribute("data-group-id");
+            var show = (!selectedGid || optGid === selectedGid);
+            opt.style.display = show ? "" : "none";
+            if (show && opt.value === currentTid) {
+                hasMatch = true;
+            }
+        });
 
-        gSel.addEventListener("change", filterOptions);
-        filterOptions();
+        if (autoReset && !hasMatch && selectedGid !== "") {
+            tSel.value = "";
+        }
     }
 
-    // Pasang dinamisasi dropdown pada Form Input
-    setupDependentCategoryDropdown("formAssetGroup", "formAssetType", true);
+    if (formGroup && formType) {
+        formGroup.addEventListener("change", function() {
+            syncTypeOptions(formGroup, formType, true);
+        });
+    }
 
-    // Pasang dinamisasi dropdown pada Filter Tabel
-    setupDependentCategoryDropdown("filterAssetGroup", "filterAssetType", false);
+    var filterGroup = document.getElementById("filterAssetGroup");
+    var filterType = document.getElementById("filterAssetType");
+    if (filterGroup && filterType) {
+        filterGroup.addEventListener("change", function() {
+            syncTypeOptions(filterGroup, filterType, false);
+        });
+        syncTypeOptions(filterGroup, filterType, false);
+    }
+
+    window.openJobTaskModal = function() {
+        if (!modal) return;
+        modalTitle.textContent = "+ Tambah Pekerjaan / Job Task";
+        modalAction.value = "add_task";
+        modalTaskId.value = "";
+        modalSubmitBtn.textContent = "Simpan Pekerjaan";
+
+        // Pre-fill filter saat ini jika ada
+        var currentFilterGid = "' . $filterGroupId . '";
+        var currentFilterTid = "' . $filterTypeId . '";
+        if (formGroup && currentFilterGid && currentFilterGid !== "0") {
+            formGroup.value = currentFilterGid;
+            syncTypeOptions(formGroup, formType, false);
+            if (formType && currentFilterTid && currentFilterTid !== "0") {
+                formType.value = currentFilterTid;
+            }
+        } else if (formGroup) {
+            formGroup.selectedIndex = 0;
+            syncTypeOptions(formGroup, formType, true);
+        }
+
+        if (taskTitleInput) taskTitleInput.value = "";
+        if (taskMinutesInput) taskMinutesInput.value = "5";
+        if (taskDescInput) taskDescInput.value = "";
+
+        modal.style.display = "flex";
+        if (formGroup) formGroup.focus();
+    };
+
+    window.editJobTaskModal = function(btn) {
+        if (!modal || !btn) return;
+        var id = btn.getAttribute("data-id") || "";
+        var gid = btn.getAttribute("data-group-id") || "";
+        var tid = btn.getAttribute("data-type-id") || "";
+        var title = btn.getAttribute("data-title") || "";
+        var minutes = btn.getAttribute("data-minutes") || "5";
+        var desc = btn.getAttribute("data-desc") || "";
+
+        modalTitle.textContent = "Edit Pekerjaan / Job Task #" + id;
+        modalAction.value = "edit_task";
+        modalTaskId.value = id;
+        modalSubmitBtn.textContent = "Perbarui Pekerjaan";
+
+        if (formGroup) {
+            formGroup.value = gid;
+            syncTypeOptions(formGroup, formType, false);
+        }
+        if (formType) {
+            formType.value = tid;
+        }
+        if (taskTitleInput) taskTitleInput.value = title;
+        if (taskMinutesInput) taskMinutesInput.value = minutes;
+        if (taskDescInput) taskDescInput.value = desc;
+
+        modal.style.display = "flex";
+        if (taskTitleInput) taskTitleInput.focus();
+    };
+
+    window.closeJobTaskModal = function() {
+        if (modal) modal.style.display = "none";
+    };
+
+    // Tutup modal jika klik di luar card modal
+    if (modal) {
+        modal.addEventListener("click", function(e) {
+            if (e.target === modal) {
+                closeJobTaskModal();
+            }
+        });
+    }
+
+    // Tutup modal dengan tombol Escape
+    document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape" && modal && modal.style.display === "flex") {
+            closeJobTaskModal();
+        }
+    });
+
+    // Buka otomatis jika ada edit_task_id di URL
+    ' . ($editingTask ? '
+    var editBtnDummy = {
+        getAttribute: function(name) {
+            if (name === "data-id") return "' . (int)$editingTask['id'] . '";
+            if (name === "data-group-id") return "' . (int)$editingTask['asset_group_id'] . '";
+            if (name === "data-type-id") return "' . (int)$editingTask['asset_type_id'] . '";
+            if (name === "data-title") return ' . json_encode((string)$editingTask['title']) . ';
+            if (name === "data-minutes") return "' . (int)$editingTask['estimated_minutes'] . '";
+            if (name === "data-desc") return ' . json_encode((string)($editingTask['description'] ?? '')) . ';
+            return "";
+        }
+    };
+    window.editJobTaskModal(editBtnDummy);
+    ' : '') . '
 })();
 </script>';
 
