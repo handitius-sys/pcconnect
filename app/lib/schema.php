@@ -316,11 +316,75 @@ function ensure_preventive_job_desk_schema(PDO $pdo): void
             $pdo->exec("ALTER TABLE maintenance_jobs MODIFY COLUMN job_desk_name VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
         } catch (Throwable $ignored) {}
 
-        // Pastikan tabel master disinkronkan hanya jika ada job_desk_name valid
-        $pdo->exec("INSERT IGNORE INTO preventive_job_desks (job_desk_name, asset_group_id, asset_type_id) 
-            SELECT DISTINCT job_desk_name, asset_group_id, asset_type_id 
-            FROM maintenance_jobs 
-            WHERE job_desk_name IS NOT NULL AND job_desk_name != ''");
+        // Pastikan maintenance_jobs memiliki kolom asset_group_id dan asset_type_id
+        if (db_table_exists($pdo, 'maintenance_jobs')) {
+            if (!db_column_exists($pdo, 'maintenance_jobs', 'asset_group_id')) {
+                try {
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN asset_group_id INT NULL AFTER description');
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD INDEX idx_jobs_asset_group (asset_group_id)');
+                } catch (Throwable $e) {}
+            }
+            if (!db_column_exists($pdo, 'maintenance_jobs', 'asset_type_id')) {
+                try {
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN asset_type_id INT NULL AFTER asset_group_id');
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD INDEX idx_jobs_asset_type (asset_type_id)');
+                } catch (Throwable $e) {}
+            }
+            if (!db_column_exists($pdo, 'maintenance_jobs', 'estimated_minutes')) {
+                try {
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN estimated_minutes INT NOT NULL DEFAULT 5 AFTER description');
+                } catch (Throwable $e) {}
+            }
+
+            // Backfill Komoditas & Kategori untuk data maintenance_jobs lama
+            try {
+                $pdo->exec("UPDATE maintenance_jobs j
+                            JOIN preventive_job_desks d ON (d.job_desk_name COLLATE utf8mb4_unicode_ci = j.job_desk_name COLLATE utf8mb4_unicode_ci)
+                            SET j.asset_group_id = COALESCE(j.asset_group_id, d.asset_group_id),
+                                j.asset_type_id = COALESCE(j.asset_type_id, d.asset_type_id)
+                            WHERE j.asset_type_id IS NULL");
+            } catch (Throwable $e) {}
+
+            try {
+                $pdo->exec("UPDATE maintenance_jobs j
+                            JOIN asset_types t ON t.type_code = 'CMP'
+                            SET j.asset_type_id = t.id, j.asset_group_id = COALESCE(j.asset_group_id, t.asset_group_id)
+                            WHERE j.asset_type_id IS NULL AND (LOWER(j.title) LIKE '%cpu%' OR LOWER(j.title) LIKE '%casing%' OR LOWER(j.title) LIKE '%keyboard%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%komputer%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%cmp%')");
+            } catch (Throwable $e) {}
+
+            try {
+                $pdo->exec("UPDATE maintenance_jobs j
+                            JOIN asset_types t ON t.type_code = 'PRT'
+                            SET j.asset_type_id = t.id, j.asset_group_id = COALESCE(j.asset_group_id, t.asset_group_id)
+                            WHERE j.asset_type_id IS NULL AND (LOWER(j.title) LIKE '%printer%' OR LOWER(j.title) LIKE '%roller%' OR LOWER(j.title) LIKE '%tinta%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%printer%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%prt%')");
+            } catch (Throwable $e) {}
+
+            try {
+                $pdo->exec("UPDATE maintenance_jobs j
+                            JOIN asset_types t ON t.type_code = 'NBK'
+                            SET j.asset_type_id = t.id, j.asset_group_id = COALESCE(j.asset_group_id, t.asset_group_id)
+                            WHERE j.asset_type_id IS NULL AND (LOWER(j.title) LIKE '%laptop%' OR LOWER(j.title) LIKE '%notebook%' OR LOWER(j.title) LIKE '%baterai%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%notebook%' OR LOWER(COALESCE(j.job_desk_name,'')) LIKE '%laptop%')");
+            } catch (Throwable $e) {}
+
+            try {
+                $itGid = (int)($pdo->query("SELECT id FROM asset_groups WHERE group_code = 'IT' LIMIT 1")->fetchColumn() ?: 0);
+                if ($itGid > 0) {
+                    $pdo->exec("UPDATE maintenance_jobs SET asset_group_id = {$itGid} WHERE asset_group_id IS NULL");
+                }
+                $cmpTid = (int)($pdo->query("SELECT id FROM asset_types WHERE type_code = 'CMP' LIMIT 1")->fetchColumn() ?: 0);
+                if ($cmpTid > 0) {
+                    $pdo->exec("UPDATE maintenance_jobs SET asset_type_id = {$cmpTid} WHERE asset_type_id IS NULL");
+                }
+            } catch (Throwable $e) {}
+        }
+
+        // Sinkronisasi data preventive_job_desks jika tabel masih digunakan
+        try {
+            $pdo->exec("INSERT IGNORE INTO preventive_job_desks (job_desk_name, asset_group_id, asset_type_id) 
+                SELECT DISTINCT job_desk_name, asset_group_id, asset_type_id 
+                FROM maintenance_jobs 
+                WHERE job_desk_name IS NOT NULL AND job_desk_name != ''");
+        } catch (Throwable $e) {}
 
         // Pastikan maintenance_schedules memiliki kolom relasi langsung ke Master Jobdesk PM
         if (db_table_exists($pdo, 'maintenance_schedules')) {

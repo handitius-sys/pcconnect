@@ -263,7 +263,6 @@ function get_regulated_menus(): array
         'Maintenance Aset' => [
             'maintenance' => 'Schedule PM',
             'tickets' => 'Aset Corrective',
-            'jobs' => 'Master Jobdesk PM',
             'corrective_job_desks' => 'Job Desk Corrective',
             'mobile_service' => 'Mobile Service',
         ],
@@ -279,6 +278,7 @@ function get_regulated_menus(): array
             'printers' => 'Pendataan Printer',
             'asset_groups' => 'Master Komoditas',
             'asset_types' => 'Master Kategori',
+            'jobs' => 'Master Jobdesk PM',
             'asset_brands' => 'Master Brand / Merk',
             'asset_master_items' => 'Master Barang (Katalog Model)',
             'asset_identifiers' => 'Identifier Aset',
@@ -624,9 +624,6 @@ function render_header(string $title, ?array $user = null): void
             if ($isAdmin || has_regulation('tickets', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
             }
-            if ($isAdmin || has_regulation('jobs', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk PM</span></a>';
-            }
             if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk Corrective</span></a>';
             }
@@ -659,7 +656,7 @@ function render_header(string $title, ?array $user = null): void
         echo '</details>';
 
         // 4. Data Master Accordion
-        $masterRoutes = ['pcs', 'asset_groups', 'asset_types', 'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications', 'asset_locations', 'asset_companies', 'master_pengguna', 'corrective_workshops'];
+        $masterRoutes = ['pcs', 'asset_groups', 'asset_types', 'jobs', 'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications', 'asset_locations', 'asset_companies', 'master_pengguna', 'corrective_workshops'];
         $isMasterOpen = in_array($curRoute, $masterRoutes, true);
         echo '<details class="nav-accordion"' . ($isMasterOpen ? ' open' : '') . '>';
         echo '  <summary class="nav-item" title="Data Master"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Data Master</span><span class="nav-chevron">▶</span></summary>';
@@ -675,6 +672,9 @@ function render_header(string $title, ?array $user = null): void
         }
         if ($isAdmin || has_regulation('asset_types', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_types' ? ' active' : '') . '" href="' . route_url('asset_types') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Kategori</span></a>';
+        }
+        if ($isAdmin || has_regulation('jobs', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk PM</span></a>';
         }
         if ($isAdmin || has_regulation('asset_brands', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_brands' ? ' active' : '') . '" href="' . route_url('asset_brands') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Master Brand / Merk</span></a>';
