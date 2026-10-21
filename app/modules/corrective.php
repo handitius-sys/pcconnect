@@ -2462,6 +2462,12 @@ function handle_route_corrective_action_types(PDO $pdo): void
  *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
  *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
  */
+/**
+ * Modul: Master Jobdesk Corrective (Data Master)
+ * Proses: Mengelola master rincian pekerjaan dan tindakan perbaikan (Action Types / Job Tasks) Corrective Maintenance.
+ *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
+ *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
+ */
 function handle_route_corrective_job_desks(PDO $pdo): void
 {
     $user = require_regulation('corrective_job_desks', 'view');
@@ -2501,7 +2507,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             $groupId = (int)($_POST['asset_group_id'] ?? 0);
             $typeId = (int)($_POST['asset_type_id'] ?? 0);
             $title = trim((string)($_POST['title'] ?? ''));
-            $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 15));
             $desc = trim((string)($_POST['description'] ?? ''));
 
             if ($groupId <= 0 || $typeId <= 0) {
@@ -2524,14 +2529,13 @@ function handle_route_corrective_job_desks(PDO $pdo): void
                 }
                 $deskName = 'Job Desk Corrective ' . trim($gName . ' ' . $tName);
 
-                $stmtIns = $pdo->prepare('INSERT INTO corrective_action_types (action_code, action_name, job_desk_name, asset_group_id, asset_type_id, estimated_minutes, description, is_active, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)');
+                $stmtIns = $pdo->prepare('INSERT INTO corrective_action_types (action_code, action_name, job_desk_name, asset_group_id, asset_type_id, estimated_minutes, description, is_active, is_deleted) VALUES (?, ?, ?, ?, ?, 0, ?, 1, 0)');
                 $stmtIns->execute([
                     $code,
                     $title,
                     $deskName,
                     $groupId,
                     $typeId,
-                    $estMinutes,
                     $desc !== '' ? $desc : null,
                 ]);
 
@@ -2557,7 +2561,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             $groupId = (int)($_POST['asset_group_id'] ?? 0);
             $typeId = (int)($_POST['asset_type_id'] ?? 0);
             $title = trim((string)($_POST['title'] ?? ''));
-            $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 15));
             $desc = trim((string)($_POST['description'] ?? ''));
 
             if ($groupId <= 0 || $typeId <= 0) {
@@ -2565,10 +2568,9 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             } elseif ($title === '') {
                 flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
             } elseif ($taskId > 0) {
-                $stmtUpd = $pdo->prepare('UPDATE corrective_action_types SET action_name=?, estimated_minutes=?, description=?, asset_group_id=?, asset_type_id=? WHERE id=?');
+                $stmtUpd = $pdo->prepare('UPDATE corrective_action_types SET action_name=?, description=?, asset_group_id=?, asset_type_id=? WHERE id=?');
                 $stmtUpd->execute([
                     $title,
-                    $estMinutes,
                     $desc !== '' ? $desc : null,
                     $groupId,
                     $typeId,
@@ -2682,7 +2684,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             . '<th style="width:160px;">Komoditas (Asset Group)</th>'
             . '<th style="width:160px;">Kategori (Asset Type)</th>'
             . '<th>Nama Pekerjaan / Job Task</th>'
-            . '<th style="width:110px; text-align:center;">Estimasi</th>'
             . '<th>Keterangan / SOP</th>'
             . ($canEdit || $canDelete ? '<th style="width:110px; text-align:center;">Aksi</th>' : '')
             . '</tr></thead><tbody>';
@@ -2691,7 +2692,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
         foreach ($tasksList as $task) {
             $tId = (int)$task['id'];
             $tTitle = $task['action_name'];
-            $tEst = (int)$task['estimated_minutes'];
             $tDesc = trim((string)($task['description'] ?? ''));
             $tActive = !empty($task['is_active']);
             $gId = (int)($task['asset_group_id'] ?? 0);
@@ -2704,7 +2704,7 @@ function handle_route_corrective_job_desks(PDO $pdo): void
                 : '';
 
             $editBtn = $canEdit
-                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="editCorrectiveJobModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="editCorrectiveJobModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
                 : '';
 
             $delBtn = $canDelete
@@ -2716,7 +2716,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
                 . '<td><strong>' . $gLabel . '</strong></td>'
                 . '<td>' . $tLabel . '</td>'
                 . '<td><strong>' . e($tTitle) . '</strong>' . (!$tActive ? ' <span class="badge" style="font-size:10px; background:#f1f5f9; color:#64748b; margin-left:6px;">Tidak Aktif</span>' : '') . '</td>'
-                . '<td style="text-align:center;"><span class="badge" style="font-size:11px; font-weight:600;">~' . $tEst . ' mnt</span></td>'
                 . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>';
 
             if ($canEdit || $canDelete) {
@@ -2733,7 +2732,7 @@ function handle_route_corrective_job_desks(PDO $pdo): void
         . '<div style="background:#fff; border-radius:12px; padding:24px; width:100%; max-width:620px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:92vh; overflow-y:auto; position:relative;">'
         . '<button type="button" onclick="closeCorrectiveJobModal()" style="position:absolute; top:18px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:#64748b; line-height:1;" title="Tutup Window">&times;</button>'
         . '<h2 id="modalCorrectiveJobTitle" style="margin:0 0 6px 0; font-size:18px; color:#1e40af;">+ Tambah Pekerjaan / Job Task</h2>'
-        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan dan estimasi waktu, lalu simpan pekerjaan.</p>'
+        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan, lalu simpan pekerjaan.</p>'
         . '<form method="post" id="formModalCorrectiveJob">'
         . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
         . '<input type="hidden" name="action" id="modalCorrectiveJobAction" value="add_task">'
@@ -2758,12 +2757,9 @@ function handle_route_corrective_job_desks(PDO $pdo): void
     echo '    </select>'
         . '  </label>'
         . '</div>'
-        . '<div class="grid two" style="margin-bottom:12px;">'
-        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Pekerjaan / Job Task *'
+        . '<div style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155; display:block;">Nama Pekerjaan / Job Task *'
         . '    <input type="text" id="modalCorrectiveTitleInput" name="title" required placeholder="Contoh: Penggantian Power Supply / Komponen" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; font-weight:600; box-sizing:border-box;">'
-        . '  </label>'
-        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Estimasi Waktu (Menit) *'
-        . '    <input type="number" id="modalCorrectiveMinutesInput" min="1" max="1440" name="estimated_minutes" required value="15" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; box-sizing:border-box;">'
         . '  </label>'
         . '</div>'
         . '<label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:18px; display:block;">Keterangan / SOP (Opsional)'
@@ -2787,7 +2783,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
     var formGroup = document.getElementById("formCorrectiveGroup");
     var formType = document.getElementById("formCorrectiveType");
     var taskTitleInput = document.getElementById("modalCorrectiveTitleInput");
-    var taskMinutesInput = document.getElementById("modalCorrectiveMinutesInput");
     var taskDescInput = document.getElementById("modalCorrectiveDescInput");
 
     function syncTypeOptions(gSel, tSel, autoReset) {
@@ -2850,7 +2845,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
         }
 
         if (taskTitleInput) taskTitleInput.value = "";
-        if (taskMinutesInput) taskMinutesInput.value = "15";
         if (taskDescInput) taskDescInput.value = "";
 
         modal.style.display = "flex";
@@ -2863,7 +2857,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
         var gid = btn.getAttribute("data-group-id") || "";
         var tid = btn.getAttribute("data-type-id") || "";
         var title = btn.getAttribute("data-title") || "";
-        var minutes = btn.getAttribute("data-minutes") || "15";
         var desc = btn.getAttribute("data-desc") || "";
 
         modalTitle.textContent = "Edit Pekerjaan / Job Task #" + id;
@@ -2879,7 +2872,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             formType.value = tid;
         }
         if (taskTitleInput) taskTitleInput.value = title;
-        if (taskMinutesInput) taskMinutesInput.value = minutes;
         if (taskDescInput) taskDescInput.value = desc;
 
         modal.style.display = "flex";
@@ -2911,7 +2903,6 @@ function handle_route_corrective_job_desks(PDO $pdo): void
             if (name === "data-group-id") return "' . (int)$editingTask['asset_group_id'] . '";
             if (name === "data-type-id") return "' . (int)$editingTask['asset_type_id'] . '";
             if (name === "data-title") return ' . json_encode((string)$editingTask['action_name']) . ';
-            if (name === "data-minutes") return "' . (int)$editingTask['estimated_minutes'] . '";
             if (name === "data-desc") return ' . json_encode((string)($editingTask['description'] ?? '')) . ';
             return "";
         }

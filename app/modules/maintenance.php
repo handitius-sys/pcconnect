@@ -3305,10 +3305,10 @@ function export_excel(PDO $pdo, string $type): never
         if ($filterTid > 0) { $whereExp[] = "cat.asset_type_id = ?"; $paramsExp[] = $filterTid; }
         $whereExpSql = implode(' AND ', $whereExp);
 
-        $stmtExp = $pdo->prepare('SELECT cat.action_name, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, cat.estimated_minutes, cat.description, CASE WHEN cat.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, cat.created_at FROM corrective_action_types cat LEFT JOIN asset_groups g ON g.id=cat.asset_group_id LEFT JOIN asset_types t ON t.id=cat.asset_type_id WHERE ' . $whereExpSql . ' ORDER BY g.group_name ASC, t.type_name ASC, cat.action_name ASC');
+        $stmtExp = $pdo->prepare('SELECT cat.action_name, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, cat.description, CASE WHEN cat.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, cat.created_at FROM corrective_action_types cat LEFT JOIN asset_groups g ON g.id=cat.asset_group_id LEFT JOIN asset_types t ON t.id=cat.asset_type_id WHERE ' . $whereExpSql . ' ORDER BY g.group_name ASC, t.type_name ASC, cat.action_name ASC');
         $stmtExp->execute($paramsExp);
         $rows = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
-        output_tsv(['Nama Pekerjaan / Job Task', 'Komoditas', 'Kategori', 'Estimasi (Menit)', 'Keterangan / SOP', 'Status', 'Dibuat'], $rows);
+        output_tsv(['Nama Pekerjaan / Job Task', 'Komoditas', 'Kategori', 'Keterangan / SOP', 'Status', 'Dibuat'], $rows);
         exit;
     }
 
