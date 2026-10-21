@@ -532,6 +532,9 @@ function render_header(string $title, ?array $user = null): void
     echo '.badge.ok{background:#dcfce7;color:#15803d}';
     echo '.badge.danger{background:#fee2e2;color:#b91c1c}';
     echo '.badge.info{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}';
+    echo '.badge-status-aktif{background:#16a34a !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(22,163,74,0.35)}';
+    echo '.badge-status-tidak-aktif{background:#dc2626 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(220,38,38,0.35)}';
+    echo '.badge-status-dipinjam{background:#0284c7 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(2,132,199,0.35)}';
     echo '.muted{color:#64748b}';
     echo '.flash{padding:12px 16px;border-radius:8px;margin-bottom:18px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:500;display:flex;align-items:center;gap:10px}';
     echo '.flash.err{background:#fef2f2;color:#991b1b;border-color:#fecaca}';
@@ -2412,19 +2415,19 @@ function format_asset_status_badge(?string $rawStatus): string
 {
     $st = strtolower(trim((string)$rawStatus));
     if ($st === 'active' || $st === 'aktive' || $st === 'aktif' || $st === 'available' || $st === 'tersedia') {
-        return '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;font-weight:600;">Aktif</span>';
+        return '<span class="badge badge-status-aktif" style="background:#16a34a !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(22,163,74,0.35);">Aktif</span>';
     }
     if ($st === 'inactive' || $st === 'non aktive' || $st === 'non active' || $st === 'tidak aktif' || $st === 'non-aktif' || $st === 'nonaktif' || $st === 'deleted') {
-        return '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;font-weight:600;">Tidak Aktif</span>';
+        return '<span class="badge badge-status-tidak-aktif" style="background:#dc2626 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(220,38,38,0.35);">Tidak Aktif</span>';
     }
     if ($st === 'borrowed' || $st === 'dipinjam') {
-        return '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>';
+        return '<span class="badge badge-status-dipinjam" style="background:#0284c7 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(2,132,199,0.35);">Dipinjam</span>';
     }
     if ($st === 'repair' || $st === 'perbaikan') {
-        return '<span class="badge" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;font-weight:600;">Perbaikan</span>';
+        return '<span class="badge" style="background:#d97706 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(217,119,6,0.35);">Perbaikan</span>';
     }
     if ($st === 'lost' || $st === 'hilang') {
-        return '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;font-weight:600;">Hilang</span>';
+        return '<span class="badge badge-status-tidak-aktif" style="background:#dc2626 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:0.3px;box-shadow:0 1px 3px rgba(220,38,38,0.35);">Hilang</span>';
     }
     if ($st === '') {
         return '<span class="muted">-</span>';

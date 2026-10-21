@@ -334,11 +334,11 @@ function handle_route_asset_loans(PDO $pdo): void
             // Badge Status
             $badge = '';
             if ($l['status'] === 'returned') {
-                $badge = '<span class="badge ok" style="font-weight:600;">✓ Dikembalikan</span>';
+                $badge = '<span class="badge" style="background:#16a34a !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;box-shadow:0 1px 3px rgba(22,163,74,0.35);">✓ Dikembalikan</span>';
             } elseif ($isOverdue) {
-                $badge = '<span class="badge danger" style="font-weight:600;">⚠️ Terlambat</span>';
+                $badge = '<span class="badge" style="background:#dc2626 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;box-shadow:0 1px 3px rgba(220,38,38,0.35);">⚠️ Terlambat</span>';
             } elseif ($l['status'] === 'active') {
-                $badge = '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>';
+                $badge = '<span class="badge badge-status-dipinjam" style="background:#0284c7 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;box-shadow:0 1px 3px rgba(2,132,199,0.35);">Dipinjam</span>';
             } else {
                 $badge = '<span class="badge muted">' . e(ucfirst($l['status'])) . '</span>';
             }
@@ -1624,10 +1624,10 @@ function handle_route_report_asset_loans(PDO $pdo): void
                 . '  <td style="padding:8px 10px;max-width:180px;">' . e($r['purpose'] ?: '-') . '</td>'
                 . '  <td style="padding:8px 10px;text-align:center;">'
                 . ($r['status'] === 'returned'
-                    ? '<span class="badge ok">Dikembalikan</span>'
+                    ? '<span class="badge" style="background:#16a34a !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;">Dikembalikan</span>'
                     : ($isOver
-                        ? '<span class="badge danger">Terlambat</span>'
-                        : '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-weight:600;">Dipinjam</span>'))
+                        ? '<span class="badge" style="background:#dc2626 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;">Terlambat</span>'
+                        : '<span class="badge badge-status-dipinjam" style="background:#0284c7 !important;color:#ffffff !important;font-weight:700;padding:4px 12px;border-radius:999px;">Dipinjam</span>'))
                 . '  </td>'
                 . '</tr>';
         }

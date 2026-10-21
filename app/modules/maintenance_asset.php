@@ -134,9 +134,9 @@ function maintenance_assets_table(PDO $pdo, array $rows): string
         $grpLabel = $row['group_code'] ? ($row['group_code'] . ' - ' . $row['group_name']) : $row['group_name'];
         $typeLabel = !empty($row['type_name']) ? ($row['type_code'] . ' - ' . $row['type_name']) : '-';
         $deskBadge = !empty($row['job_desk_name']) ? '<span class="badge ok" style="font-size:11px;font-weight:700;">' . e($row['job_desk_name']) . '</span>' : '<span class="muted">-</span>';
-        $statusBadge = ($row['status'] ?? 'active') === 'active' 
-            ? '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;font-weight:600;">Aktif</span>' 
-            : (($row['status'] ?? '') === 'spare' ? '<span class="badge">Spare</span>' : '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;font-weight:600;">Tidak Aktif</span>');
+        $statusBadge = function_exists('format_asset_status_badge') ? format_asset_status_badge($row['status'] ?? 'active') : ''; // asset status badge 
+ 
+
 
         $unitAssetHtml = '<span class="muted" style="color:#ef4444;font-size:12px;">⚠️ Belum ditautkan unit aset</span>';
         if (!empty($row['unit_asset_code'])) {

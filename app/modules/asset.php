@@ -167,6 +167,9 @@ function asset_items_table(PDO $pdo, array $rows): string
         .asset-table-sortable th.sortable:hover { background: #edf2f7; }
         .sort-ind { display: inline-block; margin-left: 4px; font-size: 11px; opacity: 0.35; transition: all 0.15s; }
         .sort-ind.active { opacity: 1; color: #2563eb; font-weight: 700; }
+        .badge-status-aktif { background: #16a34a !important; color: #ffffff !important; font-weight: 700 !important; padding: 4px 12px !important; border-radius: 999px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 11.5px !important; letter-spacing: 0.3px !important; box-shadow: 0 1px 3px rgba(22,163,74,0.35) !important; }
+        .badge-status-tidak-aktif { background: #dc2626 !important; color: #ffffff !important; font-weight: 700 !important; padding: 4px 12px !important; border-radius: 999px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 11.5px !important; letter-spacing: 0.3px !important; box-shadow: 0 1px 3px rgba(220,38,38,0.35) !important; }
+        .badge-status-dipinjam { background: #0284c7 !important; color: #ffffff !important; font-weight: 700 !important; padding: 4px 12px !important; border-radius: 999px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 11.5px !important; letter-spacing: 0.3px !important; box-shadow: 0 1px 3px rgba(2,132,199,0.35) !important; }
     </style>';
 
     $html .= '<table id="assetItemsTable" class="asset-table-sortable">';
@@ -5587,11 +5590,13 @@ function handle_route_asset_items(PDO $pdo): void
     $orderByClause = $allowedSortFields[$sortBy] . ' ' . $sortDir . ', ai.id ' . $sortDir;
 
     $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code,
-            COALESCE(t.type_name, ai.asset_type, '-') AS type_name
+            COALESCE(t.type_name, ai.asset_type, '-') AS type_name,
+            COALESCE(NULLIF(ai.status, ''), st.status_code, 'active') AS status
             FROM asset_items ai 
             LEFT JOIN asset_companies c ON c.id = ai.company_id 
             LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id 
             LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id
             WHERE " . implode(" AND ", $where) . " 
             ORDER BY {$orderByClause}";
     $stmt = $pdo->prepare($sql);
