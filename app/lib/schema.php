@@ -335,6 +335,17 @@ function ensure_preventive_job_desk_schema(PDO $pdo): void
                     $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN estimated_minutes INT NOT NULL DEFAULT 5 AFTER description');
                 } catch (Throwable $e) {}
             }
+            if (!db_column_exists($pdo, 'maintenance_jobs', 'is_deleted')) {
+                try {
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0 AFTER is_active');
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD INDEX idx_jobs_is_deleted (is_deleted)');
+                } catch (Throwable $e) {}
+            }
+            if (!db_column_exists($pdo, 'maintenance_jobs', 'deleted_at')) {
+                try {
+                    $pdo->exec('ALTER TABLE maintenance_jobs ADD COLUMN deleted_at DATETIME NULL AFTER is_deleted');
+                } catch (Throwable $e) {}
+            }
 
             // Backfill Komoditas & Kategori untuk data maintenance_jobs lama
             try {
@@ -1665,6 +1676,8 @@ function ensure_corrective_maintenance_schema(PDO $pdo): void
             ['asset_group_id', 'INT NULL AFTER job_desk_name'],
             ['asset_type_id', 'INT NULL AFTER asset_group_id'],
             ['estimated_minutes', 'INT NOT NULL DEFAULT 15 AFTER asset_type_id'],
+            ['is_deleted', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER is_active'],
+            ['deleted_at', 'DATETIME NULL AFTER is_deleted'],
         ] as [$col, $colDef]) {
             if (!db_column_exists($pdo, 'corrective_action_types', $col)) {
                 try {

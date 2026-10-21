@@ -2457,650 +2457,472 @@ function handle_route_corrective_action_types(PDO $pdo): void
 }
 
 /**
- * Modul: Master Job Desk
- * Proses: Mengelola master deskripsi pekerjaan dan alokasi tim teknisi penanganan masalah.
+ * Modul: Master Jobdesk Corrective (Data Master)
+ * Proses: Mengelola master rincian pekerjaan dan tindakan perbaikan (Action Types / Job Tasks) Corrective Maintenance.
+ *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
+ *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
  */
 function handle_route_corrective_job_desks(PDO $pdo): void
 {
     $user = require_regulation('corrective_job_desks', 'view');
     ensure_corrective_maintenance_schema($pdo);
 
-    $editDeskId = (int)($_GET['edit_id'] ?? 0);
-    $editDeskName = '';
-    $editGroupId = 0;
-    $editTypeId = 0;
-    $editDesc = '';
-    $isEditing = false;
+    $canCreate = has_regulation('corrective_job_desks', 'create');
+    $canEdit = has_regulation('corrective_job_desks', 'edit');
+    $canDelete = has_regulation('corrective_job_desks', 'delete');
 
-    if ($editDeskId > 0) {
-        $stmtEdit = $pdo->prepare('SELECT * FROM corrective_job_desks WHERE id = ?');
-        $stmtEdit->execute([$editDeskId]);
-        $editRow = $stmtEdit->fetch(PDO::FETCH_ASSOC);
-        if ($editRow) {
-            $isEditing = true;
-            $editDeskName = (string)$editRow['job_desk_name'];
-            $editGroupId = (int)($editRow['asset_group_id'] ?? 0);
-            $editTypeId = (int)($editRow['asset_type_id'] ?? 0);
-            $editDesc = (string)($editRow['description'] ?? '');
-        }
+    // 1. Data Komoditas & Kategori untuk dropdown
+    $assetGroups = $pdo->query('SELECT id, group_code, group_name FROM asset_groups ORDER BY group_name ASC')->fetchAll(PDO::FETCH_ASSOC);
+    $allAssetTypes = $pdo->query('SELECT id, asset_group_id, type_code, type_name FROM asset_types ORDER BY type_name ASC')->fetchAll(PDO::FETCH_ASSOC);
+
+    // 2. Filter Tabel Daftar Pekerjaan
+    $filterGroupId = (int)($_GET['filter_group_id'] ?? 0);
+    $filterTypeId = (int)($_GET['filter_type_id'] ?? 0);
+
+    // 3. Edit task ID dari URL (jika ada request edit via link langsung)
+    $editTaskId = (int)($_GET['edit_task_id'] ?? 0);
+    $editingTask = null;
+    if ($editTaskId > 0) {
+        $stEdit = $pdo->prepare('SELECT * FROM corrective_action_types WHERE id = ?');
+        $stEdit->execute([$editTaskId]);
+        $editingTask = $stEdit->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
+    // 4. PROSES POST (TAMBAH, EDIT, TOGGLE, HAPUS)
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
-        $action = trim((string)($_POST['action'] ?? ''));
+        $action = (string)($_POST['action'] ?? '');
+        $postFilterGid = (int)($_POST['filter_group_id'] ?? $filterGroupId);
+        $postFilterTid = (int)($_POST['filter_type_id'] ?? $filterTypeId);
 
-        // --- TAMBAH JOB DESK CORRECTIVE MAINTENANCE ---
-        if ($action === 'add_desk') {
+        // --- TAMBAH PEKERJAAN / JOB TASK CORRECTIVE ---
+        if ($action === 'add_task') {
             require_regulation('corrective_job_desks', 'create');
             $groupId = (int)($_POST['asset_group_id'] ?? 0);
             $typeId = (int)($_POST['asset_type_id'] ?? 0);
-
-            $groupName = '';
-            if ($groupId > 0) {
-                $gStmt = $pdo->prepare('SELECT group_name FROM asset_groups WHERE id=?');
-                $gStmt->execute([$groupId]);
-                $groupName = (string)$gStmt->fetchColumn();
-            }
-            $typeName = '';
-            if ($typeId > 0) {
-                $tStmt = $pdo->prepare('SELECT type_name FROM asset_types WHERE id=?');
-                $tStmt->execute([$typeId]);
-                $typeName = (string)$tStmt->fetchColumn();
-            }
-
-            $deskName = trim((string)($_POST['job_desk_name'] ?? ''));
-            if ($deskName === '') {
-                $deskName = 'Job Desk Corrective ' . trim($groupName . ' ' . $typeName);
-            }
-            if ($deskName === 'Job Desk Corrective' || $deskName === '') {
-                $deskName = 'Job Desk Corrective Umum';
-            }
-
-            $desc = trim((string)($_POST['description'] ?? ''));
-
-            // Periksa duplikasi nama
-            $chk = $pdo->prepare('SELECT id FROM corrective_job_desks WHERE job_desk_name = ? LIMIT 1');
-            $chk->execute([$deskName]);
-            $existId = $chk->fetchColumn();
-            if ($existId) {
-                flash("Job Desk Corrective dengan nama '{$deskName}' sudah ada (ID: #{$existId}).", 'err');
-                redirect_to('corrective_job_desks', ['manage_desk_id' => $existId]);
-            }
-
-            $stmtIns = $pdo->prepare('INSERT INTO corrective_job_desks (job_desk_name, asset_group_id, asset_type_id, description) VALUES (?, ?, ?, ?)');
-            $stmtIns->execute([
-                $deskName,
-                $groupId > 0 ? $groupId : null,
-                $typeId > 0 ? $typeId : null,
-                $desc !== '' ? $desc : null,
-            ]);
-            $newDeskId = (int)$pdo->lastInsertId();
-
-            flash("Job Desk Corrective Maintenance '{$deskName}' (ID: #{$newDeskId}) berhasil dibuat. Silakan isi daftar tindakan / perbaikan di bawah.");
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $newDeskId]);
-        }
-
-        // --- EDIT JOB DESK CORRECTIVE MAINTENANCE ---
-        if ($action === 'edit_desk') {
-            require_regulation('corrective_job_desks', 'edit');
-            $deskId = (int)($_POST['desk_id'] ?? 0);
-            $origDesk = trim((string)($_POST['original_desk_name'] ?? ''));
-            $newDesk = trim((string)($_POST['job_desk_name'] ?? ''));
-            if ($newDesk === '') {
-                $newDesk = $origDesk;
-            }
-            $groupId = (int)($_POST['asset_group_id'] ?? 0);
-            $typeId = (int)($_POST['asset_type_id'] ?? 0);
-            $desc = trim((string)($_POST['description'] ?? ''));
-
-            if ($deskId > 0) {
-                $updDesk = $pdo->prepare('UPDATE corrective_job_desks SET job_desk_name=?, asset_group_id=?, asset_type_id=?, description=? WHERE id=?');
-                $updDesk->execute([
-                    $newDesk,
-                    $groupId > 0 ? $groupId : null,
-                    $typeId > 0 ? $typeId : null,
-                    $desc !== '' ? $desc : null,
-                    $deskId,
-                ]);
-
-                // Sinkronkan ke corrective_action_types
-                $updActions = $pdo->prepare('UPDATE corrective_action_types SET job_desk_name=?, asset_group_id=?, asset_type_id=? WHERE job_desk_name = ?');
-                $updActions->execute([
-                    $newDesk,
-                    $groupId > 0 ? $groupId : null,
-                    $typeId > 0 ? $typeId : null,
-                    $origDesk,
-                ]);
-
-                flash("Job Desk Corrective Maintenance '{$newDesk}' berhasil diperbarui.");
-            }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $deskId]);
-        }
-
-        // --- HAPUS JOB DESK CORRECTIVE MAINTENANCE ---
-        if ($action === 'delete_desk') {
-            require_regulation('corrective_job_desks', 'delete');
-            $deskId = (int)($_POST['desk_id'] ?? 0);
-            $deskName = trim((string)($_POST['job_desk_name'] ?? ''));
-
-            if ($deskId > 0 || $deskName !== '') {
-                if ($deskName === '' && $deskId > 0) {
-                    $stmtGet = $pdo->prepare('SELECT job_desk_name FROM corrective_job_desks WHERE id=?');
-                    $stmtGet->execute([$deskId]);
-                    $deskName = (string)$stmtGet->fetchColumn();
-                }
-
-                // Hapus tindakan yang belum pernah dipakai
-                $pdo->prepare('DELETE FROM corrective_action_types WHERE job_desk_name = ? AND action_code NOT IN (SELECT DISTINCT action_type FROM corrective_repairs)')
-                    ->execute([$deskName]);
-
-                // Lepaskan job_desk_name dari tindakan yang sudah pernah dipakai agar riwayat masa lalu aman
-                $pdo->prepare('UPDATE corrective_action_types SET job_desk_name = NULL, is_active = 0 WHERE job_desk_name = ?')
-                    ->execute([$deskName]);
-
-                if ($deskId > 0) {
-                    $pdo->prepare('DELETE FROM corrective_job_desks WHERE id=?')->execute([$deskId]);
-                }
-                if ($deskName !== '') {
-                    $pdo->prepare('DELETE FROM corrective_job_desks WHERE job_desk_name=?')->execute([$deskName]);
-                }
-
-                flash("Job Desk Corrective '{$deskName}' berhasil dihapus.");
-            }
-            redirect_to('corrective_job_desks');
-        }
-
-        // --- TAMBAH TINDAKAN / ACTION KE JOB DESK ---
-        if ($action === 'add_action') {
-            require_regulation('corrective_job_desks', 'create');
-            $manageDeskId = (int)($_POST['manage_desk_id'] ?? 0);
-            $stmtDesk = $pdo->prepare('SELECT * FROM corrective_job_desks WHERE id=?');
-            $stmtDesk->execute([$manageDeskId]);
-            $curDesk = $stmtDesk->fetch(PDO::FETCH_ASSOC);
-
-            if ($curDesk) {
-                $actionName = trim((string)($_POST['action_name'] ?? ''));
-                $actionCode = strtolower(trim((string)preg_replace('/[^a-zA-Z0-9_]/', '_', (string)($_POST['action_code'] ?? ''))));
-                if ($actionCode === '') {
-                    $actionCode = strtolower(trim((string)preg_replace('/[^a-zA-Z0-9_]/', '_', $actionName)));
-                }
-                // Unikkan kode jika sudah ada
-                $chkCode = $pdo->prepare('SELECT COUNT(*) FROM corrective_action_types WHERE action_code = ?');
-                $chkCode->execute([$actionCode]);
-                if ((int)$chkCode->fetchColumn() > 0) {
-                    $actionCode .= '_' . substr(md5(uniqid('', true)), 0, 4);
-                }
-
-                $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 15));
-                $sortOrder = (int)($_POST['sort_order'] ?? 10);
-                $desc = trim((string)($_POST['description'] ?? ''));
-
-                if ($actionName !== '') {
-                    $stmtInsAction = $pdo->prepare('INSERT INTO corrective_action_types (action_code, action_name, job_desk_name, asset_group_id, asset_type_id, estimated_minutes, sort_order, description, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)');
-                    $stmtInsAction->execute([
-                        $actionCode,
-                        $actionName,
-                        $curDesk['job_desk_name'],
-                        $curDesk['asset_group_id'] ?: null,
-                        $curDesk['asset_type_id'] ?: null,
-                        $estMinutes,
-                        $sortOrder,
-                        $desc !== '' ? $desc : null,
-                    ]);
-                    flash("Tindakan '{$actionName}' berhasil ditambahkan ke {$curDesk['job_desk_name']}.");
-                } else {
-                    flash('Nama tindakan perbaikan wajib diisi.', 'err');
-                }
-            }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $manageDeskId]);
-        }
-
-        // --- UPDATE TINDAKAN / ACTION ---
-        if ($action === 'update_action') {
-            require_regulation('corrective_job_desks', 'edit');
-            $actionId = (int)($_POST['action_id'] ?? 0);
-            $manageDeskId = (int)($_POST['manage_desk_id'] ?? 0);
-            $actionName = trim((string)($_POST['action_name'] ?? ''));
+            $title = trim((string)($_POST['title'] ?? ''));
             $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 15));
-            $sortOrder = (int)($_POST['sort_order'] ?? 10);
             $desc = trim((string)($_POST['description'] ?? ''));
 
-            if ($actionId > 0 && $actionName !== '') {
-                $pdo->prepare('UPDATE corrective_action_types SET action_name=?, estimated_minutes=?, sort_order=?, description=? WHERE id=?')
-                    ->execute([$actionName, $estMinutes, $sortOrder, $desc !== '' ? $desc : null, $actionId]);
-                flash('Tindakan perbaikan berhasil diperbarui.');
-            }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $manageDeskId]);
-        }
+            if ($groupId <= 0 || $typeId <= 0) {
+                flash('Pilih Komoditas (Asset Group) dan Kategori (Asset Type) terlebih dahulu.', 'err');
+            } elseif ($title === '') {
+                flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
+            } else {
+                // Generate action_code unik
+                $baseCode = strtolower(trim((string)preg_replace('/[^a-zA-Z0-9_]/', '_', $title)));
+                if ($baseCode === '') $baseCode = 'act';
+                $code = $baseCode . '_' . substr(md5(uniqid('', true)), 0, 4);
 
-        // --- TOGGLE STATUS AKTIF TINDAKAN ---
-        if ($action === 'toggle_action') {
-            require_regulation('corrective_job_desks', 'edit');
-            $actionId = (int)($_POST['id'] ?? 0);
-            $manageDeskId = (int)($_POST['manage_desk_id'] ?? 0);
-            if ($actionId > 0) {
-                $pdo->prepare('UPDATE corrective_action_types SET is_active = 1 - is_active WHERE id = ?')->execute([$actionId]);
-                flash('Status tindakan berhasil diubah.');
-            }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $manageDeskId]);
-        }
-
-        // --- HAPUS TINDAKAN / ACTION ---
-        if ($action === 'delete_action') {
-            require_regulation('corrective_job_desks', 'delete');
-            $actionId = (int)($_POST['id'] ?? 0);
-            $manageDeskId = (int)($_POST['manage_desk_id'] ?? 0);
-            if ($actionId > 0) {
-                $stmtGet = $pdo->prepare('SELECT action_code FROM corrective_action_types WHERE id = ?');
-                $stmtGet->execute([$actionId]);
-                $code = (string)$stmtGet->fetchColumn();
-
-                $checkStmt = $pdo->prepare('SELECT COUNT(*) FROM corrective_repairs WHERE action_type = ?');
-                $checkStmt->execute([$code]);
-                $usedCount = (int)$checkStmt->fetchColumn();
-
-                if ($usedCount > 0) {
-                    flash('Tindakan perbaikan tidak dapat dihapus karena sudah pernah digunakan pada ' . $usedCount . ' riwayat reparasi.', 'err');
-                } else {
-                    $pdo->prepare('DELETE FROM corrective_action_types WHERE id = ?')->execute([$actionId]);
-                    flash('Tindakan perbaikan berhasil dihapus.');
+                $gName = '';
+                foreach ($assetGroups as $ag) {
+                    if ((int)$ag['id'] === $groupId) { $gName = $ag['group_name']; break; }
                 }
-            }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $manageDeskId]);
-        }
+                $tName = '';
+                foreach ($allAssetTypes as $at) {
+                    if ((int)$at['id'] === $typeId) { $tName = $at['type_name']; break; }
+                }
+                $deskName = 'Job Desk Corrective ' . trim($gName . ' ' . $tName);
 
-        // --- SALIN TINDAKAN DARI IT COMP KE JOB DESK INI ---
-        if ($action === 'copy_default_actions') {
-            require_regulation('corrective_job_desks', 'create');
-            $manageDeskId = (int)($_POST['manage_desk_id'] ?? 0);
-            $stmtDesk = $pdo->prepare('SELECT * FROM corrective_job_desks WHERE id=?');
-            $stmtDesk->execute([$manageDeskId]);
-            $curDesk = $stmtDesk->fetch(PDO::FETCH_ASSOC);
+                $stmtIns = $pdo->prepare('INSERT INTO corrective_action_types (action_code, action_name, job_desk_name, asset_group_id, asset_type_id, estimated_minutes, description, is_active, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)');
+                $stmtIns->execute([
+                    $code,
+                    $title,
+                    $deskName,
+                    $groupId,
+                    $typeId,
+                    $estMinutes,
+                    $desc !== '' ? $desc : null,
+                ]);
 
-            if ($curDesk) {
-                $targetDeskName = $curDesk['job_desk_name'];
-                $defaultActions = $pdo->query("SELECT action_name, description, estimated_minutes, sort_order FROM corrective_action_types WHERE job_desk_name = 'Job Desk Corrective IT Comp' OR job_desk_name IS NULL OR job_desk_name = '' ORDER BY sort_order ASC, id ASC")->fetchAll(PDO::FETCH_ASSOC);
-                $ins = $pdo->prepare("INSERT INTO corrective_action_types (action_code, action_name, job_desk_name, asset_group_id, asset_type_id, estimated_minutes, sort_order, description, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)");
-                $copied = 0;
-                foreach ($defaultActions as $da) {
-                    $chkDup = $pdo->prepare("SELECT COUNT(*) FROM corrective_action_types WHERE job_desk_name = ? AND action_name = ?");
-                    $chkDup->execute([$targetDeskName, $da['action_name']]);
-                    if ((int)$chkDup->fetchColumn() === 0) {
-                        $code = strtolower(trim((string)preg_replace('/[^a-zA-Z0-9_]/', '_', $da['action_name']))) . '_' . substr(md5(uniqid('', true)), 0, 4);
-                        $ins->execute([
-                            $code,
-                            $da['action_name'],
-                            $targetDeskName,
-                            $curDesk['asset_group_id'] ?: null,
-                            $curDesk['asset_type_id'] ?: null,
-                            $da['estimated_minutes'] ?: 15,
-                            $da['sort_order'] ?: 10,
-                            $da['description'] ?: null,
-                        ]);
-                        $copied++;
+                // Pastikan tabel corrective_job_desks memiliki entri grup & tipe ini untuk kompatibilitas
+                try {
+                    $chkDesk = $pdo->prepare('SELECT id FROM corrective_job_desks WHERE job_desk_name = ? LIMIT 1');
+                    $chkDesk->execute([$deskName]);
+                    if (!$chkDesk->fetchColumn()) {
+                        $insDesk = $pdo->prepare('INSERT INTO corrective_job_desks (job_desk_name, asset_group_id, asset_type_id, description) VALUES (?, ?, ?, ?)');
+                        $insDesk->execute([$deskName, $groupId, $typeId, 'Job Desk Corrective ' . trim($gName . ' ' . $tName)]);
                     }
-                }
-                flash("Berhasil menyalin {$copied} tindakan standar ke '{$targetDeskName}'.");
+                } catch (Throwable $ignored) {}
+
+                flash("Pekerjaan '{$title}' berhasil ditambahkan ke Daftar Pekerjaan Corrective.");
             }
-            redirect_to('corrective_job_desks', ['manage_desk_id' => $manageDeskId]);
+            redirect_to('corrective_job_desks', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
-    }
 
-    render_header('Job Desk Corrective Maintenance', $user);
+        // --- EDIT PEKERJAAN / JOB TASK CORRECTIVE ---
+        if ($action === 'edit_task') {
+            require_regulation('corrective_job_desks', 'edit');
+            $taskId = (int)($_POST['task_id'] ?? 0);
+            $groupId = (int)($_POST['asset_group_id'] ?? 0);
+            $typeId = (int)($_POST['asset_type_id'] ?? 0);
+            $title = trim((string)($_POST['title'] ?? ''));
+            $estMinutes = max(1, (int)($_POST['estimated_minutes'] ?? 15));
+            $desc = trim((string)($_POST['description'] ?? ''));
 
-    // Ambil daftar job desk corrective
-    $desksQuery = 'SELECT 
-        d.id AS desk_id,
-        d.job_desk_name,
-        d.asset_group_id,
-        d.asset_type_id,
-        d.description,
-        g.group_code,
-        g.group_name,
-        t.type_code,
-        t.type_name,
-        COUNT(a.id) AS action_count,
-        COALESCE(SUM(a.estimated_minutes), 0) AS total_minutes,
-        COALESCE(cr_sub.repair_count, 0) AS repair_count
-    FROM corrective_job_desks d
-    LEFT JOIN asset_groups g ON g.id = d.asset_group_id
-    LEFT JOIN asset_types t ON t.id = d.asset_type_id
-    LEFT JOIN corrective_action_types a ON a.job_desk_name = d.job_desk_name
-    LEFT JOIN (
-        SELECT ca.job_desk_name, COUNT(*) AS repair_count 
-        FROM corrective_repairs cr 
-        JOIN corrective_action_types ca ON ca.action_code = cr.action_type 
-        GROUP BY ca.job_desk_name
-    ) cr_sub ON cr_sub.job_desk_name = d.job_desk_name
-    GROUP BY d.id, d.job_desk_name, d.asset_group_id, d.asset_type_id, d.description, g.group_code, g.group_name, t.type_code, t.type_name
-    ORDER BY g.group_name, t.type_name, d.job_desk_name';
-
-    $deskRows = $pdo->query($desksQuery)->fetchAll(PDO::FETCH_ASSOC);
-
-    // Tentukan Job Desk yang sedang aktif dipilih untuk pengelolaan tindakan / actions
-    $manageDeskId = (int)($_GET['manage_desk_id'] ?? 0);
-    if ($manageDeskId === 0) {
-        if ($editDeskId > 0) {
-            $manageDeskId = $editDeskId;
-        } elseif (!empty($deskRows)) {
-            $manageDeskId = (int)$deskRows[0]['desk_id'];
-        }
-    }
-
-    $activeDesk = null;
-    $activeDeskActions = [];
-    if ($manageDeskId > 0) {
-        foreach ($deskRows as $r) {
-            if ((int)$r['desk_id'] === $manageDeskId) {
-                $activeDesk = $r;
-                break;
+            if ($groupId <= 0 || $typeId <= 0) {
+                flash('Pilih Komoditas (Asset Group) dan Kategori (Asset Type) terlebih dahulu.', 'err');
+            } elseif ($title === '') {
+                flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
+            } elseif ($taskId > 0) {
+                $stmtUpd = $pdo->prepare('UPDATE corrective_action_types SET action_name=?, estimated_minutes=?, description=?, asset_group_id=?, asset_type_id=? WHERE id=?');
+                $stmtUpd->execute([
+                    $title,
+                    $estMinutes,
+                    $desc !== '' ? $desc : null,
+                    $groupId,
+                    $typeId,
+                    $taskId,
+                ]);
+                flash("Pekerjaan '{$title}' berhasil diperbarui.");
             }
+            redirect_to('corrective_job_desks', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
-        if ($activeDesk) {
-            $isITComp = ($activeDesk['job_desk_name'] === 'Job Desk Corrective IT Comp');
-            $sqlActions = $isITComp 
-                ? 'SELECT * FROM corrective_action_types WHERE job_desk_name = ? OR job_desk_name IS NULL OR job_desk_name = "" ORDER BY sort_order ASC, is_active DESC, id ASC'
-                : 'SELECT * FROM corrective_action_types WHERE job_desk_name = ? ORDER BY sort_order ASC, is_active DESC, id ASC';
-            $stmtActions = $pdo->prepare($sqlActions);
-            $stmtActions->execute([$activeDesk['job_desk_name']]);
-            $activeDeskActions = $stmtActions->fetchAll(PDO::FETCH_ASSOC);
+
+        // --- TOGGLE STATUS AKTIF / NON-AKTIF ---
+        if ($action === 'toggle_task') {
+            require_regulation('corrective_job_desks', 'edit');
+            $taskId = (int)($_POST['id'] ?? 0);
+            if ($taskId > 0) {
+                $pdo->prepare('UPDATE corrective_action_types SET is_active = 1 - is_active WHERE id = ?')->execute([$taskId]);
+                flash('Status pekerjaan berhasil diperbarui.');
+            }
+            redirect_to('corrective_job_desks', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
+        }
+
+        // --- HAPUS PEKERJAAN / JOB TASK (SOFT DELETE) ---
+        if ($action === 'delete_task') {
+            require_regulation('corrective_job_desks', 'delete');
+            $taskId = (int)($_POST['id'] ?? 0);
+            if ($taskId > 0) {
+                $pdo->prepare('UPDATE corrective_action_types SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$taskId]);
+                flash('Pekerjaan berhasil dihapus dari Master Jobdesk Corrective.');
+            }
+            redirect_to('corrective_job_desks', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
     }
 
-    // FORM TAMBAH / EDIT JOB DESK CM PER KATEGORI
-    $canCreateDesk = has_regulation('corrective_job_desks', 'create');
-    $canEditDesk = has_regulation('corrective_job_desks', 'edit');
-    $canDeleteDesk = has_regulation('corrective_job_desks', 'delete');
-    $showDeskForm = ($isEditing && $canEditDesk) || (!$isEditing && $canCreateDesk);
+    render_header('Master Jobdesk Corrective', $user);
 
-    $formTitle = $isEditing ? ('Edit Job Desk CM Per Kategori #' . $editDeskId) : 'Tambah Job Desk CM Per Kategori';
-    $formAction = $isEditing ? 'edit_desk' : 'add_desk';
-
-    echo '<section class="' . ($showDeskForm ? 'grid two' : '') . '">';
-    if ($showDeskForm) {
-        echo '<div class="panel">';
-        echo '<div class="split" style="align-items:center;margin-bottom:12px;">'
-            . '<h1 style="margin:0;font-size:18px;">' . e($formTitle) . '</h1>'
-            . ($isEditing ? '<a class="btn" href="' . route_url('corrective_job_desks') . '">+ Tambah Job Desk Baru</a>' : '')
-            . '</div>';
-
-        echo '<form method="post">'
-            . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-            . '<input type="hidden" name="action" value="' . $formAction . '">'
-            . ($isEditing ? '<input type="hidden" name="desk_id" value="' . $editDeskId . '">' : '')
-            . ($isEditing ? '<input type="hidden" name="original_desk_name" value="' . e($editDeskName) . '">' : '')
-            . '<div class="grid two">'
-            . '<label>ID Job Desk'
-            . '<input type="text" readonly value="' . ($isEditing ? ('#' . $editDeskId) : '(Otomatis setelah disimpan)') . '" style="background:#f8fafc;color:#64748b;font-weight:700;">'
-            . '</label>'
-            . '<label>Komoditas (Asset Group) *'
-            . '<select id="cJobAssetGroup" name="asset_group_id" required>'
-            . '<option value="">- Pilih Komoditas -</option>'
-            . asset_group_options($pdo, $editGroupId, false)
-            . '</select>'
-            . '</label>'
-            . '</div>'
-            . '<div class="grid two">'
-            . '<label>Kategori (Asset Type) *'
-            . '<select id="cJobAssetType" name="asset_type_id" required>'
-            . '<option value="">- Pilih Kategori -</option>'
-            . ($editGroupId > 0 ? asset_type_options($pdo, $editTypeId, $editGroupId) : '')
-            . '</select>'
-            . '</label>'
-            . '<label>Deskripsi / Catatan'
-            . '<input name="description" value="' . e($editDesc) . '" placeholder="Keterangan kategori corrective...">'
-            . '</label>'
-            . '</div>'
-            . '<label>Nama Job Desk Corrective Maintenance *'
-            . '<input id="cJobDeskName" name="job_desk_name" value="' . e($editDeskName) . '" required style="font-weight:700;color:#0f172a;" placeholder="Job Desk Corrective [Komoditas] [Kategori]">'
-            . '</label>'
-            . '<div class="actions" style="margin-top:14px;">'
-            . '<button class="btn primary">' . ($isEditing ? 'Perbarui Job Desk' : 'Simpan Job Desk') . '</button>'
-            . ($isEditing ? '<a class="btn" href="' . route_url('corrective_job_desks') . '">Batal Edit</a>' : '')
-            . '</div>'
-            . '</form>'
-            . '</div>';
+    // 5. QUERY DAFTAR PEKERJAAN (TIDAK MENAMPILKAN YANG DI-SOFT-DELETE)
+    $where = ['(cat.is_deleted = 0 OR cat.is_deleted IS NULL)'];
+    $params = [];
+    if ($filterGroupId > 0) {
+        $where[] = 'cat.asset_group_id = ?';
+        $params[] = $filterGroupId;
     }
+    if ($filterTypeId > 0) {
+        $where[] = 'cat.asset_type_id = ?';
+        $params[] = $filterTypeId;
+    }
+    $whereSql = implode(' AND ', $where);
 
-    // TABEL DAFTAR JOB DESK CM PER KATEGORI
-    echo '<div class="panel">'
-        . '<div class="split"><h2>Daftar Job Desk CM Per Kategori</h2></div>'
-        . '<p class="muted" style="margin-top:-6px;margin-bottom:12px;">Pilih Job Desk untuk mengisi atau mengelola daftar tindakan / pekerjaan perbaikannya.</p>';
+    $tasksQuery = "SELECT cat.*, g.group_code, g.group_name, t.type_code, t.type_name
+                   FROM corrective_action_types cat
+                   LEFT JOIN asset_groups g ON g.id = cat.asset_group_id
+                   LEFT JOIN asset_types t ON t.id = cat.asset_type_id
+                   WHERE {$whereSql}
+                   ORDER BY g.group_name ASC, t.type_name ASC, cat.action_name ASC";
+    $tasksStmt = $pdo->prepare($tasksQuery);
+    $tasksStmt->execute($params);
+    $tasksList = $tasksStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!$deskRows) {
-        echo '<p class="muted">Belum ada Job Desk tersimpan.' . ($canCreateDesk ? ' Silakan tambahkan pada form di samping.' : '') . '</p>';
+    // 6. TAMPILAN UTAMA: DAFTAR PEKERJAAN (TASKS) DI DEPAN
+    echo '<section class="panel">'
+        . '<div class="split" style="align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">'
+        . '  <div>'
+        . '    <h1 style="margin:0; font-size:20px; color:#0f172a;">📋 Daftar Pekerjaan (Tasks)</h1>'
+        . '    <p class="muted" style="margin:3px 0 0 0; font-size:13px;">Master Jobdesk Corrective: Kelola daftar rincian tugas dan tindakan perbaikan Corrective Maintenance per Komoditas dan Kategori aset.</p>'
+        . '  </div>'
+        . '  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">'
+        . ($canCreate ? ('<button type="button" class="btn primary" onclick="openCorrectiveJobModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah Pekerjaan / Job Task</button>') : '')
+        . '    <span class="badge ok" style="font-size:12px; padding:6px 12px;">Total: ' . count($tasksList) . ' Tasks</span>'
+        . '    <a class="btn" href="' . route_url('export_excel', array_filter(['type' => 'corrective_job_desks', 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="background:#fff;">📥 Export Excel</a>'
+        . '  </div>'
+        . '</div>';
+
+    // Form Filter Daftar Pekerjaan
+    echo '<div style="margin-bottom:16px; padding:12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">'
+        . '<form method="get" id="filterTasksForm" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:0;">'
+        . '  <input type="hidden" name="route" value="corrective_job_desks">'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Komoditas (Asset Group)'
+        . '    <select id="filterAssetGroup" name="filter_group_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
+        . '      <option value="">-- Semua Komoditas --</option>';
+    foreach ($assetGroups as $ag) {
+        $sel = ($filterGroupId === (int)$ag['id']) ? ' selected' : '';
+        echo '<option value="' . (int)$ag['id'] . '"' . $sel . '>' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Kategori (Asset Type)'
+        . '    <select id="filterAssetType" name="filter_type_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
+        . '      <option value="">-- Semua Kategori --</option>';
+    foreach ($allAssetTypes as $at) {
+        $sel = ($filterTypeId === (int)$at['id']) ? ' selected' : '';
+        echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '"' . $sel . '>' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <button type="submit" class="btn primary" style="padding:8px 16px; font-size:13px;">Filter</button>'
+        . (($filterGroupId > 0 || $filterTypeId > 0) ? ('<a class="btn" href="' . route_url('corrective_job_desks') . '" style="padding:8px 14px; font-size:13px;">✕ Reset Filter</a>') : '')
+        . '</form>'
+        . '</div>';
+
+    // Tabel Daftar Pekerjaan
+    if (empty($tasksList)) {
+        echo '<div style="padding:40px 20px; text-align:center; background:#fff; border:1px dashed #cbd5e1; border-radius:8px;">'
+            . '<p class="muted" style="margin:0 0 8px 0; font-size:14px; font-weight:600;">Tidak ada item pekerjaan / tasks yang sesuai dengan filter.</p>'
+            . '<p style="font-size:13px; color:#64748b; margin:0 0 16px 0;">Klik tombol di bawah untuk menambahkan pekerjaan baru ke daftar.</p>'
+            . ($canCreate ? ('<button type="button" class="btn primary" onclick="openCorrectiveJobModal()">+ Tambah Pekerjaan / Job Task</button>') : '')
+            . '</div>';
     } else {
-        echo '<div style="overflow-x:auto;"><table><tr><th>ID</th><th>Nama Job Desk</th><th>Komoditas / Kategori</th><th>Tindakan</th><th>Dipakai</th><th>Aksi</th></tr>';
-        foreach ($deskRows as $d) {
-            $dId = (int)$d['desk_id'];
-            $dName = $d['job_desk_name'];
-            $grpLabel = !empty($d['group_name']) ? ($d['group_code'] . ' - ' . $d['group_name']) : 'Umum';
-            $typLabel = !empty($d['type_name']) ? ($d['type_code'] . ' - ' . $d['type_name']) : 'Semua Tipe';
-            $rCount = (int)$d['repair_count'];
-            $isActive = ($manageDeskId === $dId);
+        echo '<div style="overflow-x:auto;"><table style="margin:0;">'
+            . '<thead><tr>'
+            . '<th style="width:40px; text-align:center;">No</th>'
+            . '<th style="width:160px;">Komoditas (Asset Group)</th>'
+            . '<th style="width:160px;">Kategori (Asset Type)</th>'
+            . '<th>Nama Pekerjaan / Job Task</th>'
+            . '<th style="width:110px; text-align:center;">Estimasi</th>'
+            . '<th>Keterangan / SOP</th>'
+            . ($canEdit || $canDelete ? '<th style="width:110px; text-align:center;">Aksi</th>' : '')
+            . '</tr></thead><tbody>';
 
-            $usageBadge = ($rCount > 0)
-                ? '<span class="badge ok" title="Digunakan pada ' . $rCount . ' riwayat perbaikan">' . $rCount . ' reparasi</span>'
-                : '<span class="muted" style="font-size:12px;">0</span>';
+        $no = 1;
+        foreach ($tasksList as $task) {
+            $tId = (int)$task['id'];
+            $tTitle = $task['action_name'];
+            $tEst = (int)$task['estimated_minutes'];
+            $tDesc = trim((string)($task['description'] ?? ''));
+            $tActive = !empty($task['is_active']);
+            $gId = (int)($task['asset_group_id'] ?? 0);
+            $tTypeId = (int)($task['asset_type_id'] ?? 0);
+            $gLabel = !empty($task['group_name']) ? ($task['group_code'] . ' - ' . $task['group_name']) : '<span class="muted">(Semua)</span>';
+            $tLabel = !empty($task['type_name']) ? ($task['type_code'] . ' - ' . $task['type_name']) : '<span class="muted">(Semua)</span>';
 
-            $confirmMsg = ($rCount > 0)
-                ? ('Job Desk Corrective &quot;' . e($dName) . '&quot; ini pernah digunakan pada ' . $rCount . ' data reparasi. Menghapusnya akan menghapus Job Desk ini dari daftar dan mengarsipkan tindakannya secara aman tanpa merusak riwayat perbaikan. Lanjutkan hapus?')
-                : ('Yakin hapus Job Desk Corrective &quot;' . e($dName) . '&quot; beserta seluruh tindakannya?');
-
-            $deleteBtn = $canDeleteDesk
-                ? ('<form method="post" style="display:inline" onsubmit="return confirm(\'' . $confirmMsg . '\')">'
-                    . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-                    . '<input type="hidden" name="action" value="delete_desk">'
-                    . '<input type="hidden" name="desk_id" value="' . $dId . '">'
-                    . '<input type="hidden" name="job_desk_name" value="' . e($dName) . '">'
-                    . '<button class="btn danger" style="padding:4px 8px;font-size:12px;">Hapus</button>'
-                    . '</form>')
+            $toggleBtn = $canEdit
+                ? ('<form method="post" style="display:inline; margin:0;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon" style="padding:6px; border:1px solid ' . ($tActive ? '#86efac' : '#cbd5e1') . '; border-radius:6px; background:' . ($tActive ? '#f0fdf4' : '#f8fafc') . '; color:' . ($tActive ? '#16a34a' : '#94a3b8') . '; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="' . ($tActive ? 'Nonaktifkan Pekerjaan' : 'Aktifkan Pekerjaan') . '">' . ($tActive ? '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' : '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>') . '</button></form>')
                 : '';
 
-            $editBtn = $canEditDesk
-                ? ('<a class="btn" style="padding:4px 8px;font-size:12px;" href="' . route_url('corrective_job_desks', ['edit_id' => $dId, 'manage_desk_id' => $dId]) . '">Edit</a>')
+            $editBtn = $canEdit
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="editCorrectiveJobModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
                 : '';
 
-            $trBg = $isActive ? ' style="background:#eff6ff;"' : '';
-            echo '<tr' . $trBg . '>'
-                . '<td><span class="badge" style="font-weight:700;">#' . $dId . '</span></td>'
-                . '<td>' . e($dName) . '' . ($isActive ? ' <span class="badge ok" style="font-size:10px;">Aktif Dikelola</span>' : '') . '</td>'
-                . '<td><span style="font-weight:600;">' . e($grpLabel) . '</span><br><span class="muted" style="font-size:12px;">' . e($typLabel) . '</span></td>'
-                . '<td><span class="badge">' . (int)$d['action_count'] . ' tindakan</span><br><span class="muted" style="font-size:11px;">~' . (int)$d['total_minutes'] . ' mnt</span></td>'
-                . '<td>' . $usageBadge . '</td>'
-                . '<td><div class="actions" style="display:flex;gap:4px;align-items:center;">'
-                . '<a class="btn ' . ($isActive ? 'primary' : '') . '" style="padding:4px 8px;font-size:12px;" href="' . route_url('corrective_job_desks', ['manage_desk_id' => $dId]) . '" title="Isi & Kelola Tindakan">📋 Isi Tindakan</a>'
-                . $editBtn
-                . $deleteBtn
-                . '</div></td>'
-                . '</tr>';
-        }
-        echo '</table></div>';
-    }
+            $delBtn = $canDelete
+                ? ('<form method="post" style="display:inline; margin:0;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini? Data akan diarsipkan (soft delete).&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="Hapus Pekerjaan (Soft Delete)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>')
+                : '';
 
-    echo '</div></section>';
+            echo '<tr' . (!$tActive ? ' style="opacity:0.55; background:#f8fafc;"' : '') . '>'
+                . '<td style="text-align:center; font-weight:600; color:#64748b;">' . $no++ . '</td>'
+                . '<td><strong>' . $gLabel . '</strong></td>'
+                . '<td>' . $tLabel . '</td>'
+                . '<td><strong>' . e($tTitle) . '</strong>' . (!$tActive ? ' <span class="badge" style="font-size:10px; background:#f1f5f9; color:#64748b; margin-left:6px;">Tidak Aktif</span>' : '') . '</td>'
+                . '<td style="text-align:center;"><span class="badge" style="font-size:11px; font-weight:600;">~' . $tEst . ' mnt</span></td>'
+                . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>';
 
-    // SECTION KELOLA TINDAKAN / ACTIONS DARI DAFTAR JOB DESK AKTIF
-    if ($activeDesk) {
-        $actId = (int)$activeDesk['desk_id'];
-        $actName = (string)$activeDesk['job_desk_name'];
-        $totMinutes = 0;
-        foreach ($activeDeskActions as $t) {
-            if (!empty($t['is_active'])) {
-                $totMinutes += (int)$t['estimated_minutes'];
+            if ($canEdit || $canDelete) {
+                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
             }
+            echo '</tr>';
         }
-
-        echo '<div class="panel" style="margin-top:20px;border-top:3px solid #0284c7;">';
-        $copyHeaderBtn = ($canCreateDesk && $actName !== 'Job Desk Corrective IT Comp')
-            ? '<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="copy_default_actions"><input type="hidden" name="manage_desk_id" value="' . $actId . '"><button class="btn" style="padding:5px 10px;font-size:12px;background:#f0fdf4;border:1px solid #86efac;color:#166534;font-weight:600;" title="Salin tindakan standar IT Comp yang belum ada ke Job Desk ini">+ Salin Tindakan Standar</button></form>'
-            : '';
-
-        echo '<div class="split" style="align-items:center;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">'
-            . '<div>'
-            . '<h2 style="margin:0;font-size:18px;">📋 Daftar Tindakan / Pekerjaan Perbaikan untuk: <span style="color:#0284c7;">' . e($actName) . '</span></h2>'
-            . '<p class="muted" style="margin:4px 0 0 0;font-size:13px;">Kelola opsi jenis tindakan perbaikan corrective maintenance yang akan muncul pada tiket & mobile field service untuk grup aset ini.</p>'
-            . '</div>'
-            . '<div class="actions" style="align-items:center;">'
-            . '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:6px 12px;font-size:13px;">Total ' . count($activeDeskActions) . ' Tindakan (~' . $totMinutes . ' Menit)</span>'
-            . $copyHeaderBtn
-            . '</div>'
-            . '</div>';
-
-        echo '<div class="' . ($canCreateDesk ? 'grid two' : '') . '" style="align-items:start;">';
-
-        // FORM TAMBAH TINDAKAN
-        if ($canCreateDesk) {
-            echo '<div style="background:#f8fafc;padding:16px;border-radius:8px;border:1px solid #e2e8f0;">'
-                . '<h3 style="margin-top:0;font-size:15px;">+ Tambah Tindakan Perbaikan Baru</h3>'
-                . '<form method="post">'
-                . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-                . '<input type="hidden" name="action" value="add_action">'
-                . '<input type="hidden" name="manage_desk_id" value="' . $actId . '">'
-                . '<label style="margin-top:4px;">Nama Tindakan / Solusi Perbaikan *'
-                . '<input name="action_name" required placeholder="Contoh: Penggantian Power Supply, Kalibrasi Sensor, Tune Up Mesin">'
-                . '</label>'
-                . '<div class="grid two">'
-                . '<label>Kode Sistem (Opsional)'
-                . '<input name="action_code" placeholder="Otomatis jika kosong">'
-                . '</label>'
-                . '<label>Estimasi Menit'
-                . '<input type="number" name="estimated_minutes" value="15" min="1">'
-                . '</label>'
-                . '</div>'
-                . '<label>Urutan Tampilan'
-                . '<input type="number" name="sort_order" value="10">'
-                . '</label>'
-                . '<label>Panduan / Keterangan Tindakan'
-                . '<textarea name="description" style="min-height:70px;" placeholder="Langkah-langkah atau catatan standar pengerjaan..."></textarea>'
-                . '</label>'
-                . '<button class="btn primary" style="margin-top:10px;">+ Tambah Tindakan ke Job Desk</button>'
-                . '</form>'
-                . '</div>';
-        }
-
-        // TABEL RINCIAN TINDAKAN
-        echo '<div>';
-        if (empty($activeDeskActions)) {
-            $copyEmptyBtn = ($canCreateDesk && $actName !== 'Job Desk Corrective IT Comp')
-                ? '<form method="post" style="margin-top:12px;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="copy_default_actions"><input type="hidden" name="manage_desk_id" value="' . $actId . '"><button class="btn primary" style="font-size:13px;">📥 Salin 6 Tindakan Standar dari IT Comp</button></form>'
-                : '';
-            echo '<div style="text-align:center;padding:32px 16px;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;">'
-                . '<p class="muted" style="margin:0 0 8px 0;">Belum ada tindakan perbaikan untuk Job Desk ' . e($actName) . '.</p>'
-                . '<p class="muted" style="font-size:12px;margin:0;">' . ($canCreateDesk ? ('Silakan tambahkan pada form di samping' . ($copyEmptyBtn ? ' atau klik tombol di bawah untuk menyalin tindakan standar:' : '.')) : 'Belum ada tindakan yang terdaftar.') . '</p>'
-                . $copyEmptyBtn
-                . '</div>';
-        } else {
-            echo '<div style="overflow-x:auto;"><table>'
-                . '<tr><th style="width:30px;">No</th><th>Nama Tindakan & Kode</th><th>Estimasi</th><th>Status</th>' . ($canEditDesk || $canDeleteDesk ? '<th>Aksi</th>' : '') . '</tr>';
-            $no = 1;
-            foreach ($activeDeskActions as $act) {
-                $tId = (int)$act['id'];
-                $isAct = !empty($act['is_active']);
-
-                $statusBadge = $isAct
-                    ? '<span class="badge ok">Aktif</span>'
-                    : '<span class="badge danger">Nonaktif</span>';
-
-                $toggleBtn = $canEditDesk
-                    ? ('<form method="post" style="display:inline">'
-                        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-                        . '<input type="hidden" name="action" value="toggle_action">'
-                        . '<input type="hidden" name="id" value="' . $tId . '">'
-                        . '<input type="hidden" name="manage_desk_id" value="' . $actId . '">'
-                        . '<button class="btn" style="padding:3px 7px;font-size:11px;" title="Aktif/Nonaktifkan">' . ($isAct ? 'Off' : 'On') . '</button>'
-                        . '</form>')
-                    : '';
-
-                $deleteActBtn = $canDeleteDesk
-                    ? ('<form method="post" style="display:inline" onsubmit="return confirm(\'Yakin ingin menghapus tindakan ini?\')">'
-                        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-                        . '<input type="hidden" name="action" value="delete_action">'
-                        . '<input type="hidden" name="id" value="' . $tId . '">'
-                        . '<input type="hidden" name="manage_desk_id" value="' . $actId . '">'
-                        . '<button class="btn danger" style="padding:3px 7px;font-size:11px;">Hapus</button>'
-                        . '</form>')
-                    : '';
-
-                $actionTd = ($canEditDesk || $canDeleteDesk)
-                    ? ('<td><div class="actions" style="display:flex;gap:4px;">' . $toggleBtn . $deleteActBtn . '</div></td>')
-                    : '';
-
-                echo '<tr' . (!$isAct ? ' style="opacity:0.6;background:#f8fafc;"' : '') . '>'
-                    . '<td>' . $no++ . '</td>'
-                    . '<td>'
-                    . '<strong style="font-size:14px;">' . e($act['action_name']) . '<br>'
-                    . '<code style="font-size:11px;color:#64748b;">' . e($act['action_code']) . '</code>'
-                    . (!empty($act['description']) ? ('<br><span class="muted" style="font-size:12px;">' . e($act['description']) . '</span>') : '')
-                    . '</td>'
-                    . '<td><span class="badge">' . (int)$act['estimated_minutes'] . ' mnt</span></td>'
-                    . '<td>' . $statusBadge . '</td>'
-                    . $actionTd
-                    . '</tr>';
-            }
-            echo '</table></div>';
-        }
-        echo '</div>';
-
-        echo '</section>';
-        echo '</div>';
+        echo '</tbody></table></div>';
     }
+    echo '</section>';
 
+    // 7. WINDOWS MODUL: TAMBAH / EDIT PEKERJAAN CORRECTIVE (MODAL POPUP)
+    echo '<div id="modalCorrectiveJob" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.65); backdrop-filter:blur(3px); z-index:99999; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">'
+        . '<div style="background:#fff; border-radius:12px; padding:24px; width:100%; max-width:620px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:92vh; overflow-y:auto; position:relative;">'
+        . '<button type="button" onclick="closeCorrectiveJobModal()" style="position:absolute; top:18px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:#64748b; line-height:1;" title="Tutup Window">&times;</button>'
+        . '<h2 id="modalCorrectiveJobTitle" style="margin:0 0 6px 0; font-size:18px; color:#1e40af;">+ Tambah Pekerjaan / Job Task</h2>'
+        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Pilih Komoditas dan Kategori aset, tentukan rincian pekerjaan dan estimasi waktu, lalu simpan pekerjaan.</p>'
+        . '<form method="post" id="formModalCorrectiveJob">'
+        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" name="action" id="modalCorrectiveJobAction" value="add_task">'
+        . '<input type="hidden" name="task_id" id="modalCorrectiveJobTaskId" value="">'
+        . '<input type="hidden" name="filter_group_id" value="' . $filterGroupId . '">'
+        . '<input type="hidden" name="filter_type_id" value="' . $filterTypeId . '">'
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
+        . '    <select id="formCorrectiveGroup" name="asset_group_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+        . '      <option value="">-- Pilih Komoditas --</option>';
+    foreach ($assetGroups as $ag) {
+        echo '<option value="' . (int)$ag['id'] . '">' . e($ag['group_code'] . ' - ' . $ag['group_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
+        . '    <select id="formCorrectiveType" name="asset_type_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
+        . '      <option value="">-- Pilih Kategori --</option>';
+    foreach ($allAssetTypes as $at) {
+        echo '<option value="' . (int)$at['id'] . '" data-group-id="' . (int)$at['asset_group_id'] . '">' . e($at['type_code'] . ' - ' . $at['type_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '</div>'
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Pekerjaan / Job Task *'
+        . '    <input type="text" id="modalCorrectiveTitleInput" name="title" required placeholder="Contoh: Penggantian Power Supply / Komponen" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; font-weight:600; box-sizing:border-box;">'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Estimasi Waktu (Menit) *'
+        . '    <input type="number" id="modalCorrectiveMinutesInput" min="1" max="1440" name="estimated_minutes" required value="15" style="width:100%; margin-top:4px; padding:9px 12px; font-size:14px; box-sizing:border-box;">'
+        . '  </label>'
+        . '</div>'
+        . '<label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:18px; display:block;">Keterangan / SOP (Opsional)'
+        . '  <textarea id="modalCorrectiveDescInput" name="description" rows="3" placeholder="Instruksi pengerjaan teknis atau SOP penanganan..." style="width:100%; margin-top:4px; padding:9px 12px; font-size:13px; box-sizing:border-box;"></textarea>'
+        . '</label>'
+        . '<div class="actions" style="display:flex; justify-content:flex-end; gap:10px;">'
+        . '  <button type="button" class="btn" onclick="closeCorrectiveJobModal()" style="padding:10px 18px;">Batal</button>'
+        . '  <button type="submit" id="modalCorrectiveSubmitBtn" class="btn primary" style="padding:10px 22px; font-size:14px; font-weight:700;">Simpan Pekerjaan</button>'
+        . '</div>'
+        . '</form>'
+        . '</div></div>';
+
+    // 8. JAVASCRIPT: LOGIKA MODAL POPUP & DINAMISASI KATEGORI
     echo '<script>
 (function(){
-    var groupSelect = document.getElementById("cJobAssetGroup");
-    var typeSelect = document.getElementById("cJobAssetType");
-    var nameInput = document.getElementById("cJobDeskName");
-    var isEditMode = ' . ($isEditing ? 'true' : 'false') . ';
+    var modal = document.getElementById("modalCorrectiveJob");
+    var modalTitle = document.getElementById("modalCorrectiveJobTitle");
+    var modalAction = document.getElementById("modalCorrectiveJobAction");
+    var modalTaskId = document.getElementById("modalCorrectiveJobTaskId");
+    var modalSubmitBtn = document.getElementById("modalCorrectiveSubmitBtn");
+    var formGroup = document.getElementById("formCorrectiveGroup");
+    var formType = document.getElementById("formCorrectiveType");
+    var taskTitleInput = document.getElementById("modalCorrectiveTitleInput");
+    var taskMinutesInput = document.getElementById("modalCorrectiveMinutesInput");
+    var taskDescInput = document.getElementById("modalCorrectiveDescInput");
 
-    function updateGeneratedJobDeskName() {
-        if (isEditMode && nameInput.value.trim() !== "") {
-            return;
+    function syncTypeOptions(gSel, tSel, autoReset) {
+        var selectedGid = gSel ? gSel.value : "";
+        var currentTid = tSel ? tSel.value : "";
+        var hasMatch = false;
+
+        if (!tSel) return;
+        Array.from(tSel.options).forEach(function(opt, idx) {
+            if (idx === 0) {
+                opt.style.display = "";
+                return;
+            }
+            var optGid = opt.getAttribute("data-group-id");
+            var show = (!selectedGid || optGid === selectedGid);
+            opt.style.display = show ? "" : "none";
+            if (show && opt.value === currentTid) {
+                hasMatch = true;
+            }
+        });
+
+        if (autoReset && !hasMatch && selectedGid !== "") {
+            tSel.value = "";
         }
-        var gText = groupSelect.options[groupSelect.selectedIndex] ? groupSelect.options[groupSelect.selectedIndex].text.replace(/^[A-Z0-9]+\s*-\s*/, "").trim() : "";
-        var tText = typeSelect.options[typeSelect.selectedIndex] ? typeSelect.options[typeSelect.selectedIndex].text.replace(/^[A-Z0-9]+\s*-\s*/, "").trim() : "";
-        if (!groupSelect.value) gText = "";
-        if (!typeSelect.value) tText = "";
-        
-        var name = "Job Desk Corrective";
-        if (gText) name += " " + gText;
-        if (tText) name += " " + tText;
-        nameInput.value = name;
     }
 
-    if (groupSelect && typeSelect && nameInput) {
-        groupSelect.addEventListener("change", function() {
-            var gid = this.value;
-            typeSelect.innerHTML = "<option value=\"\">- Memuat Kategori... -</option>";
-            fetch("index.php?route=api_asset_types&group_id=" + (gid || 0))
-                .then(function(r) { return r.json(); })
-                .then(function(types) {
-                    typeSelect.innerHTML = "<option value=\"\">- Pilih Kategori -</option>";
-                    types.forEach(function(t) {
-                        var opt = document.createElement("option");
-                        opt.value = t.id;
-                        opt.textContent = t.type_code + " - " + t.type_name;
-                        typeSelect.appendChild(opt);
-                    });
-                    updateGeneratedJobDeskName();
-                })
-                .catch(function() {
-                    typeSelect.innerHTML = "<option value=\"\">- Pilih Kategori -</option>";
-                    updateGeneratedJobDeskName();
-                });
-        });
-
-        typeSelect.addEventListener("change", function() {
-            updateGeneratedJobDeskName();
+    if (formGroup && formType) {
+        formGroup.addEventListener("change", function() {
+            syncTypeOptions(formGroup, formType, true);
         });
     }
+
+    var filterGroup = document.getElementById("filterAssetGroup");
+    var filterType = document.getElementById("filterAssetType");
+    if (filterGroup && filterType) {
+        filterGroup.addEventListener("change", function() {
+            syncTypeOptions(filterGroup, filterType, false);
+        });
+        syncTypeOptions(filterGroup, filterType, false);
+    }
+
+    window.openCorrectiveJobModal = function() {
+        if (!modal) return;
+        modalTitle.textContent = "+ Tambah Pekerjaan / Job Task";
+        modalAction.value = "add_task";
+        modalTaskId.value = "";
+        modalSubmitBtn.textContent = "Simpan Pekerjaan";
+
+        var currentFilterGid = "' . $filterGroupId . '";
+        var currentFilterTid = "' . $filterTypeId . '";
+        if (formGroup && currentFilterGid && currentFilterGid !== "0") {
+            formGroup.value = currentFilterGid;
+            syncTypeOptions(formGroup, formType, false);
+            if (formType && currentFilterTid && currentFilterTid !== "0") {
+                formType.value = currentFilterTid;
+            }
+        } else if (formGroup) {
+            formGroup.selectedIndex = 0;
+            syncTypeOptions(formGroup, formType, true);
+        }
+
+        if (taskTitleInput) taskTitleInput.value = "";
+        if (taskMinutesInput) taskMinutesInput.value = "15";
+        if (taskDescInput) taskDescInput.value = "";
+
+        modal.style.display = "flex";
+        if (formGroup) formGroup.focus();
+    };
+
+    window.editCorrectiveJobModal = function(btn) {
+        if (!modal || !btn) return;
+        var id = btn.getAttribute("data-id") || "";
+        var gid = btn.getAttribute("data-group-id") || "";
+        var tid = btn.getAttribute("data-type-id") || "";
+        var title = btn.getAttribute("data-title") || "";
+        var minutes = btn.getAttribute("data-minutes") || "15";
+        var desc = btn.getAttribute("data-desc") || "";
+
+        modalTitle.textContent = "Edit Pekerjaan / Job Task #" + id;
+        modalAction.value = "edit_task";
+        modalTaskId.value = id;
+        modalSubmitBtn.textContent = "Perbarui Pekerjaan";
+
+        if (formGroup) {
+            formGroup.value = gid;
+            syncTypeOptions(formGroup, formType, false);
+        }
+        if (formType) {
+            formType.value = tid;
+        }
+        if (taskTitleInput) taskTitleInput.value = title;
+        if (taskMinutesInput) taskMinutesInput.value = minutes;
+        if (taskDescInput) taskDescInput.value = desc;
+
+        modal.style.display = "flex";
+        if (taskTitleInput) taskTitleInput.focus();
+    };
+
+    window.closeCorrectiveJobModal = function() {
+        if (modal) modal.style.display = "none";
+    };
+
+    if (modal) {
+        modal.addEventListener("click", function(e) {
+            if (e.target === modal) {
+                closeCorrectiveJobModal();
+            }
+        });
+    }
+
+    document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape" && modal && modal.style.display === "flex") {
+            closeCorrectiveJobModal();
+        }
+    });
+
+    ' . ($editingTask ? '
+    var editBtnDummy = {
+        getAttribute: function(name) {
+            if (name === "data-id") return "' . (int)$editingTask['id'] . '";
+            if (name === "data-group-id") return "' . (int)$editingTask['asset_group_id'] . '";
+            if (name === "data-type-id") return "' . (int)$editingTask['asset_type_id'] . '";
+            if (name === "data-title") return ' . json_encode((string)$editingTask['action_name']) . ';
+            if (name === "data-minutes") return "' . (int)$editingTask['estimated_minutes'] . '";
+            if (name === "data-desc") return ' . json_encode((string)($editingTask['description'] ?? '')) . ';
+            return "";
+        }
+    };
+    window.editCorrectiveJobModal(editBtnDummy);
+    ' : '') . '
 })();
 </script>';
 
     render_footer();
 }
-
-
 
 /**
  * Modul: Bengkel / Workshop Master
@@ -3250,7 +3072,7 @@ function handle_route_api_corrective_data(PDO $pdo): void
             exit;
         }
 
-        $actStmt = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? ORDER BY action_name");
+        $actStmt = $pdo->prepare("SELECT id, action_name AS action_title FROM corrective_action_types WHERE job_desk_name = ? AND is_active = 1 AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY action_name");
         $actStmt->execute([$jdRow['job_desk_name']]);
         echo json_encode(['desk_name' => $jdRow['job_desk_name'], 'actions' => $actStmt->fetchAll(PDO::FETCH_ASSOC)]);
         exit;

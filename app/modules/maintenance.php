@@ -1386,11 +1386,11 @@ function handle_route_schedule_form(PDO $pdo): void
         $groupDisplay = $aiInfo ? ($aiInfo['group_code'] . ' - ' . $aiInfo['group_name']) : 'IT Asset';
 
         $groupIdForJobs = (int)($existingSchedule['asset_group_id'] ?: ($aiInfo['asset_group_id'] ?? 0));
-        $stJobs = $pdo->prepare("SELECT j.* FROM maintenance_jobs j WHERE (j.asset_group_id = ? OR j.id IN (SELECT job_id FROM schedule_jobs WHERE schedule_id = ?)) ORDER BY j.job_desk_name, j.title");
+        $stJobs = $pdo->prepare("SELECT j.* FROM maintenance_jobs j WHERE (j.is_deleted = 0 OR j.is_deleted IS NULL) AND (j.asset_group_id = ? OR j.id IN (SELECT job_id FROM schedule_jobs WHERE schedule_id = ?)) ORDER BY j.job_desk_name, j.title");
         $stJobs->execute([$groupIdForJobs, $editId]);
         $availableJobs = $stJobs->fetchAll(PDO::FETCH_ASSOC);
         if (empty($availableJobs)) {
-            $availableJobs = $pdo->query("SELECT j.* FROM maintenance_jobs j ORDER BY j.job_desk_name, j.title LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
+            $availableJobs = $pdo->query("SELECT j.* FROM maintenance_jobs j WHERE (j.is_deleted = 0 OR j.is_deleted IS NULL) ORDER BY j.job_desk_name, j.title LIMIT 100")->fetchAll(PDO::FETCH_ASSOC);
         }
 
         render_header('Edit Schedule Maintenance', $user);
@@ -2420,6 +2420,12 @@ function get_standard_preventive_tasks_catalog(PDO $pdo, ?int $groupId, ?int $ty
  *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
  *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
  */
+/**
+ * Modul: Master Jobdesk PM (Data Master)
+ * Proses: Mengelola SOP dan daftar item pekerjaan (Job Tasks) pemeliharaan preventif (Preventive Maintenance).
+ *         Daftar pekerjaan (Tasks) tampil di bagian depan (utama) dengan filter Komoditas & Kategori.
+ *         Penambahan pekerjaan dilakukan melalui jendela modul (Modal Popup) "+ Tambah Pekerjaan / Job Task".
+ */
 function handle_route_jobs(PDO $pdo): void
 {
     $user = require_regulation('jobs', 'view');
@@ -2466,7 +2472,7 @@ function handle_route_jobs(PDO $pdo): void
             } elseif ($title === '') {
                 flash('Nama Pekerjaan / Job Task wajib diisi.', 'err');
             } else {
-                $stmtIns = $pdo->prepare('INSERT INTO maintenance_jobs (title, description, asset_group_id, asset_type_id, estimated_minutes, is_active) VALUES (?, ?, ?, ?, ?, 1)');
+                $stmtIns = $pdo->prepare('INSERT INTO maintenance_jobs (title, description, asset_group_id, asset_type_id, estimated_minutes, is_active, is_deleted) VALUES (?, ?, ?, ?, ?, 1, 0)');
                 $stmtIns->execute([
                     $title,
                     $desc !== '' ? $desc : null,
@@ -2519,21 +2525,13 @@ function handle_route_jobs(PDO $pdo): void
             redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
 
-        // --- HAPUS PEKERJAAN / JOB TASK ---
+        // --- HAPUS PEKERJAAN / JOB TASK (SOFT DELETE) ---
         if ($action === 'delete_task') {
             require_regulation('jobs', 'delete');
             $taskId = (int)($_POST['id'] ?? 0);
             if ($taskId > 0) {
-                $checkStmt = $pdo->prepare('SELECT COUNT(*) FROM schedule_jobs WHERE job_id = ?');
-                $checkStmt->execute([$taskId]);
-                $usedCount = (int)$checkStmt->fetchColumn();
-                if ($usedCount > 0) {
-                    $pdo->prepare('UPDATE maintenance_jobs SET is_active = 0 WHERE id = ?')->execute([$taskId]);
-                    flash("Pekerjaan pernah digunakan pada {$usedCount} jadwal, sehingga dinonaktifkan (diarsipkan).", 'warn');
-                } else {
-                    $pdo->prepare('DELETE FROM maintenance_jobs WHERE id = ?')->execute([$taskId]);
-                    flash('Pekerjaan berhasil dihapus dari Master Jobdesk PM.');
-                }
+                $pdo->prepare('UPDATE maintenance_jobs SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$taskId]);
+                flash('Pekerjaan berhasil dihapus dari Master Jobdesk PM.');
             }
             redirect_to('jobs', array_filter(['filter_group_id' => $postFilterGid, 'filter_type_id' => $postFilterTid]));
         }
@@ -2541,8 +2539,8 @@ function handle_route_jobs(PDO $pdo): void
 
     render_header('Master Jobdesk PM', $user);
 
-    // 5. QUERY DAFTAR PEKERJAAN (MUNCUL SEMUA ATAU SESUAI FILTER)
-    $where = ['1=1'];
+    // 5. QUERY DAFTAR PEKERJAAN (TIDAK MENAMPILKAN YANG DI-SOFT-DELETE)
+    $where = ['(j.is_deleted = 0 OR j.is_deleted IS NULL)'];
     $params = [];
     if ($filterGroupId > 0) {
         $where[] = 'j.asset_group_id = ?';
@@ -2572,8 +2570,8 @@ function handle_route_jobs(PDO $pdo): void
         . '    <p class="muted" style="margin:3px 0 0 0; font-size:13px;">Master Jobdesk PM: Kelola daftar rincian tugas SOP Preventive Maintenance per Komoditas dan Kategori aset.</p>'
         . '  </div>'
         . '  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">'
+        . ($canCreate ? ('<button type="button" class="btn primary" onclick="openJobTaskModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah Pekerjaan / Job Task</button>') : '')
         . '    <span class="badge ok" style="font-size:12px; padding:6px 12px;">Total: ' . count($tasksList) . ' Tasks</span>'
-        . ($canCreate ? ('<button type="button" class="btn primary" onclick="openJobTaskModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg> + Tambah Pekerjaan / Job Task</button>') : '')
         . '    <a class="btn" href="' . route_url('export_excel', array_filter(['type' => 'jobs', 'filter_group_id' => $filterGroupId, 'filter_type_id' => $filterTypeId])) . '" style="background:#fff;">📥 Export Excel</a>'
         . '  </div>'
         . '</div>';
@@ -2621,8 +2619,7 @@ function handle_route_jobs(PDO $pdo): void
             . '<th>Nama Pekerjaan / Job Task</th>'
             . '<th style="width:110px; text-align:center;">Estimasi</th>'
             . '<th>Keterangan / SOP</th>'
-            . '<th style="width:90px; text-align:center;">Status</th>'
-            . ($canEdit || $canDelete ? '<th style="width:130px; text-align:center;">Aksi</th>' : '')
+            . ($canEdit || $canDelete ? '<th style="width:110px; text-align:center;">Aksi</th>' : '')
             . '</tr></thead><tbody>';
 
         $no = 1;
@@ -2637,33 +2634,28 @@ function handle_route_jobs(PDO $pdo): void
             $gLabel = !empty($task['group_name']) ? ($task['group_code'] . ' - ' . $task['group_name']) : '<span class="muted">(Semua)</span>';
             $tLabel = !empty($task['type_name']) ? ($task['type_code'] . ' - ' . $task['type_name']) : '<span class="muted">(Semua)</span>';
 
-            $statusBadge = $tActive
-                ? '<span class="badge ok" style="font-size:11px; font-weight:600;">Aktif</span>'
-                : '<span class="badge danger" style="font-size:11px; font-weight:600;">Tidak Aktif</span>';
-
             $toggleBtn = $canEdit
-                ? ('<form method="post" style="display:inline;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button class="btn" style="padding:3px 7px; font-size:11px;" title="Ubah status aktif/non-aktif">' . ($tActive ? 'Nonaktifkan' : 'Aktifkan') . '</button></form>')
+                ? ('<form method="post" style="display:inline; margin:0;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon" style="padding:6px; border:1px solid ' . ($tActive ? '#86efac' : '#cbd5e1') . '; border-radius:6px; background:' . ($tActive ? '#f0fdf4' : '#f8fafc') . '; color:' . ($tActive ? '#16a34a' : '#94a3b8') . '; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="' . ($tActive ? 'Nonaktifkan Pekerjaan' : 'Aktifkan Pekerjaan') . '">' . ($tActive ? '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' : '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>') . '</button></form>')
                 : '';
 
             $editBtn = $canEdit
-                ? ('<button type="button" class="btn" style="padding:3px 8px; font-size:11px;" onclick="editJobTaskModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '">Edit</button>')
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="editJobTaskModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
                 : '';
 
             $delBtn = $canDelete
-                ? ('<form method="post" style="display:inline;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini?&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button class="btn danger" style="padding:3px 7px; font-size:11px;">Hapus</button></form>')
+                ? ('<form method="post" style="display:inline; margin:0;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini? Data akan diarsipkan (soft delete).&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="Hapus Pekerjaan (Soft Delete)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>')
                 : '';
 
-            echo '<tr' . (!$tActive ? ' style="opacity:0.6;background:#f8fafc;"' : '') . '>'
+            echo '<tr' . (!$tActive ? ' style="opacity:0.55; background:#f8fafc;"' : '') . '>'
                 . '<td style="text-align:center; font-weight:600; color:#64748b;">' . $no++ . '</td>'
                 . '<td><strong>' . $gLabel . '</strong></td>'
                 . '<td>' . $tLabel . '</td>'
-                . '<td><strong>' . e($tTitle) . '</strong></td>'
+                . '<td><strong>' . e($tTitle) . '</strong>' . (!$tActive ? ' <span class="badge" style="font-size:10px; background:#f1f5f9; color:#64748b; margin-left:6px;">Tidak Aktif</span>' : '') . '</td>'
                 . '<td style="text-align:center;"><span class="badge" style="font-size:11px; font-weight:600;">~' . $tEst . ' mnt</span></td>'
-                . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>'
-                . '<td style="text-align:center;">' . $statusBadge . '</td>';
+                . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>';
 
             if ($canEdit || $canDelete) {
-                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:4px; justify-content:center;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
+                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
             }
             echo '</tr>';
         }
@@ -3132,7 +3124,7 @@ function export_excel(PDO $pdo, string $type): never
     if (!$user) {
         redirect_to('login');
     }
-    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'technicians', 'asset_movements', 'asset_mutations', 'asset_loans', 'corrective_repairs'];
+    $maintenanceTypes = ['reports', 'maintenance', 'maintenance_status', 'jobs', 'corrective_jobs', 'corrective_job_desks', 'technicians', 'asset_movements', 'asset_mutations', 'asset_loans', 'corrective_repairs'];
     
     if ($type === 'asset_items') {
         if (!is_full_admin($user) && !has_regulation('asset_items', 'view', $user)) {
@@ -3291,13 +3283,29 @@ function export_excel(PDO $pdo, string $type): never
     if ($type === 'jobs') {
         $filterGid = (int)($_GET['filter_group_id'] ?? ($_GET['group_id'] ?? 0));
         $filterTid = (int)($_GET['filter_type_id'] ?? ($_GET['type_id'] ?? 0));
-        $whereExp = ["1=1"];
+        $whereExp = ["(j.is_deleted = 0 OR j.is_deleted IS NULL)"];
         $paramsExp = [];
         if ($filterGid > 0) { $whereExp[] = "j.asset_group_id = ?"; $paramsExp[] = $filterGid; }
         if ($filterTid > 0) { $whereExp[] = "j.asset_type_id = ?"; $paramsExp[] = $filterTid; }
         $whereExpSql = implode(' AND ', $whereExp);
 
         $stmtExp = $pdo->prepare('SELECT j.title, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, j.estimated_minutes, j.description, CASE WHEN j.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, j.created_at FROM maintenance_jobs j LEFT JOIN asset_groups g ON g.id=j.asset_group_id LEFT JOIN asset_types t ON t.id=j.asset_type_id WHERE ' . $whereExpSql . ' ORDER BY g.group_name ASC, t.type_name ASC, j.title ASC');
+        $stmtExp->execute($paramsExp);
+        $rows = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
+        output_tsv(['Nama Pekerjaan / Job Task', 'Komoditas', 'Kategori', 'Estimasi (Menit)', 'Keterangan / SOP', 'Status', 'Dibuat'], $rows);
+        exit;
+    }
+
+    if ($type === 'corrective_jobs' || $type === 'corrective_job_desks') {
+        $filterGid = (int)($_GET['filter_group_id'] ?? ($_GET['group_id'] ?? 0));
+        $filterTid = (int)($_GET['filter_type_id'] ?? ($_GET['type_id'] ?? 0));
+        $whereExp = ["(cat.is_deleted = 0 OR cat.is_deleted IS NULL)"];
+        $paramsExp = [];
+        if ($filterGid > 0) { $whereExp[] = "cat.asset_group_id = ?"; $paramsExp[] = $filterGid; }
+        if ($filterTid > 0) { $whereExp[] = "cat.asset_type_id = ?"; $paramsExp[] = $filterTid; }
+        $whereExpSql = implode(' AND ', $whereExp);
+
+        $stmtExp = $pdo->prepare('SELECT cat.action_name, COALESCE(g.group_name, "Semua Komoditas") AS asset_group, COALESCE(t.type_name, "Semua Kategori") AS asset_type, cat.estimated_minutes, cat.description, CASE WHEN cat.is_active = 1 THEN "Aktif" ELSE "Tidak Aktif" END AS status_label, cat.created_at FROM corrective_action_types cat LEFT JOIN asset_groups g ON g.id=cat.asset_group_id LEFT JOIN asset_types t ON t.id=cat.asset_type_id WHERE ' . $whereExpSql . ' ORDER BY g.group_name ASC, t.type_name ASC, cat.action_name ASC');
         $stmtExp->execute($paramsExp);
         $rows = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
         output_tsv(['Nama Pekerjaan / Job Task', 'Komoditas', 'Kategori', 'Estimasi (Menit)', 'Keterangan / SOP', 'Status', 'Dibuat'], $rows);

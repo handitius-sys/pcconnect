@@ -263,7 +263,6 @@ function get_regulated_menus(): array
         'Maintenance Aset' => [
             'maintenance' => 'Schedule PM',
             'tickets' => 'Aset Corrective',
-            'corrective_job_desks' => 'Job Desk Corrective',
             'mobile_service' => 'Mobile Service',
         ],
         'Reports' => [
@@ -279,6 +278,7 @@ function get_regulated_menus(): array
             'asset_groups' => 'Master Komoditas',
             'asset_types' => 'Master Kategori',
             'jobs' => 'Master Jobdesk PM',
+            'corrective_job_desks' => 'Master Jobdesk Corrective',
             'asset_brands' => 'Master Brand / Merk',
             'asset_master_items' => 'Master Barang (Katalog Model)',
             'asset_identifiers' => 'Identifier Aset',
@@ -612,9 +612,9 @@ function render_header(string $title, ?array $user = null): void
         echo '</details>';
 
         // 2. Maintenance Aset Accordion
-        $maintRoutes = ['maintenance', 'tickets', 'jobs', 'corrective_job_desks'];
+        $maintRoutes = ['maintenance', 'tickets'];
         $isMaintOpen = in_array($curRoute, $maintRoutes, true);
-        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user) || has_regulation('jobs', 'view', $user) || has_regulation('corrective_job_desks', 'view', $user)) {
+        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user)) {
             echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
             echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▼</span></summary>';
             echo '  <div class="nav-submenu">';
@@ -623,9 +623,6 @@ function render_header(string $title, ?array $user = null): void
             }
             if ($isAdmin || has_regulation('tickets', 'view', $user)) {
                 echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
-            }
-            if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Job Desk Corrective</span></a>';
             }
             echo '  </div>';
             echo '</details>';
@@ -675,6 +672,9 @@ function render_header(string $title, ?array $user = null): void
         }
         if ($isAdmin || has_regulation('jobs', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk PM</span></a>';
+        }
+        if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
+            echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk Corrective</span></a>';
         }
         if ($isAdmin || has_regulation('asset_brands', 'view', $user)) {
             echo '<a class="nav-item' . ($curRoute === 'asset_brands' ? ' active' : '') . '" href="' . route_url('asset_brands') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Master Brand / Merk</span></a>';
@@ -2199,7 +2199,7 @@ if (!function_exists('corrective_action_type_options')) {
             $hasJobDesks = db_table_exists($pdo, 'corrective_job_desks');
 
             $params = [];
-            $where = ['cat.is_active = 1'];
+            $where = ['cat.is_active = 1', '(cat.is_deleted = 0 OR cat.is_deleted IS NULL)'];
 
             if ($jobDeskName !== null && $jobDeskName !== '') {
                 $where[] = "(cat.job_desk_name = ?" . ($hasJobDesks ? " OR cjd.job_desk_name = ?" : "") . ")";
@@ -2249,7 +2249,7 @@ if (!function_exists('corrective_action_type_options')) {
                                   cat.sort_order
                            FROM corrective_action_types cat
                            " . ($hasJobDesks ? "LEFT JOIN corrective_job_desks cjd ON cjd.job_desk_name = cat.job_desk_name" : "") . "
-                           WHERE cat.is_active = 1 
+                           WHERE cat.is_active = 1 AND (cat.is_deleted = 0 OR cat.is_deleted IS NULL) 
                            ORDER BY cat.sort_order ASC, cat.action_name ASC";
                 $rows = $pdo->query($sqlAll)->fetchAll(PDO::FETCH_ASSOC);
             }
