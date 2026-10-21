@@ -2580,7 +2580,7 @@ function handle_route_jobs(PDO $pdo): void
     echo '<div style="margin-bottom:16px; padding:12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">'
         . '<form method="get" id="filterTasksForm" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:0;">'
         . '  <input type="hidden" name="route" value="jobs">'
-        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Komoditas (Asset Group)'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Komoditas'
         . '    <select id="filterAssetGroup" name="filter_group_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
         . '      <option value="">-- Semua Komoditas --</option>';
     foreach ($assetGroups as $ag) {
@@ -2589,7 +2589,7 @@ function handle_route_jobs(PDO $pdo): void
     }
     echo '    </select>'
         . '  </label>'
-        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Kategori (Asset Type)'
+        . '  <label style="flex:1; min-width:200px; margin:0; font-weight:600; font-size:12px; color:#475569;">Filter Kategori'
         . '    <select id="filterAssetType" name="filter_type_id" style="width:100%; margin-top:4px; padding:7px 10px; font-size:13px; background:#fff;">'
         . '      <option value="">-- Semua Kategori --</option>';
     foreach ($allAssetTypes as $at) {
@@ -2614,12 +2614,12 @@ function handle_route_jobs(PDO $pdo): void
         echo '<div style="overflow-x:auto;"><table style="margin:0;">'
             . '<thead><tr>'
             . '<th style="width:40px; text-align:center;">No</th>'
-            . '<th style="width:160px;">Komoditas (Asset Group)</th>'
-            . '<th style="width:160px;">Kategori (Asset Type)</th>'
+            . '<th style="width:160px;">Komoditas</th>'
+            . '<th style="width:160px;">Kategori</th>'
             . '<th>Nama Pekerjaan / Job Task</th>'
             . '<th style="width:110px; text-align:center;">Estimasi</th>'
             . '<th>Keterangan / SOP</th>'
-            . ($canEdit || $canDelete ? '<th style="width:110px; text-align:center;">Aksi</th>' : '')
+            . ($canEdit || $canDelete ? '<th style="width:130px; text-align:center; white-space:nowrap;">Aksi</th>' : '')
             . '</tr></thead><tbody>';
 
         $no = 1;
@@ -2635,15 +2635,15 @@ function handle_route_jobs(PDO $pdo): void
             $tLabel = !empty($task['type_name']) ? ($task['type_code'] . ' - ' . $task['type_name']) : '<span class="muted">(Semua)</span>';
 
             $toggleBtn = $canEdit
-                ? ('<form method="post" style="display:inline; margin:0;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon" style="padding:6px; border:1px solid ' . ($tActive ? '#86efac' : '#cbd5e1') . '; border-radius:6px; background:' . ($tActive ? '#f0fdf4' : '#f8fafc') . '; color:' . ($tActive ? '#16a34a' : '#94a3b8') . '; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="' . ($tActive ? 'Nonaktifkan Pekerjaan' : 'Aktifkan Pekerjaan') . '">' . ($tActive ? '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' : '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>') . '</button></form>')
+                ? ('<form method="post" style="display:inline-flex; margin:0; padding:0; vertical-align:middle;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon" style="padding:6px; border:1px solid ' . ($tActive ? '#86efac' : '#cbd5e1') . '; border-radius:6px; background:' . ($tActive ? '#f0fdf4' : '#f8fafc') . '; color:' . ($tActive ? '#16a34a' : '#94a3b8') . '; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" title="' . ($tActive ? 'Nonaktifkan Pekerjaan' : 'Aktifkan Pekerjaan') . '">' . ($tActive ? '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' : '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>') . '</button></form>')
                 : '';
 
             $editBtn = $canEdit
-                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" onclick="editJobTaskModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0; vertical-align:middle;" onclick="editJobTaskModal(this)" data-id="' . $tId . '" data-group-id="' . $gId . '" data-type-id="' . $tTypeId . '" data-title="' . e($tTitle) . '" data-minutes="' . $tEst . '" data-desc="' . e($tDesc) . '" title="Edit Pekerjaan"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>')
                 : '';
 
             $delBtn = $canDelete
-                ? ('<form method="post" style="display:inline; margin:0;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini? Data akan diarsipkan (soft delete).&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="Hapus Pekerjaan (Soft Delete)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>')
+                ? ('<form method="post" style="display:inline-flex; margin:0; padding:0; vertical-align:middle;" onsubmit="return confirm(&quot;Yakin hapus pekerjaan ini? Data akan diarsipkan (soft delete).&quot;);"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="delete_task"><input type="hidden" name="id" value="' . $tId . '"><input type="hidden" name="filter_group_id" value="' . $filterGroupId . '"><input type="hidden" name="filter_type_id" value="' . $filterTypeId . '"><button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" title="Hapus Pekerjaan (Soft Delete)"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></form>')
                 : '';
 
             echo '<tr' . (!$tActive ? ' style="opacity:0.55; background:#f8fafc;"' : '') . '>'
@@ -2655,7 +2655,7 @@ function handle_route_jobs(PDO $pdo): void
                 . '<td>' . ($tDesc !== '' ? ('<span style="font-size:12px; color:#475569;">' . e($tDesc) . '</span>') : '<span class="muted">-</span>') . '</td>';
 
             if ($canEdit || $canDelete) {
-                echo '<td style="text-align:center;"><div class="actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
+                echo '<td style="text-align:center; white-space:nowrap;"><div style="display:inline-flex; flex-direction:row; flex-wrap:nowrap; gap:6px; justify-content:center; align-items:center; white-space:nowrap;">' . $editBtn . $toggleBtn . $delBtn . '</div></td>';
             }
             echo '</tr>';
         }
@@ -2676,7 +2676,7 @@ function handle_route_jobs(PDO $pdo): void
         . '<input type="hidden" name="filter_group_id" value="' . $filterGroupId . '">'
         . '<input type="hidden" name="filter_type_id" value="' . $filterTypeId . '">'
         . '<div class="grid two" style="margin-bottom:12px;">'
-        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas *'
         . '    <select id="formAssetGroup" name="asset_group_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
         . '      <option value="">-- Pilih Komoditas --</option>';
     foreach ($assetGroups as $ag) {
@@ -2684,7 +2684,7 @@ function handle_route_jobs(PDO $pdo): void
     }
     echo '    </select>'
         . '  </label>'
-        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori *'
         . '    <select id="formAssetType" name="asset_type_id" required style="width:100%; margin-top:4px; padding:9px 12px; font-weight:600; background:#fff;">'
         . '      <option value="">-- Pilih Kategori --</option>';
     foreach ($allAssetTypes as $at) {
