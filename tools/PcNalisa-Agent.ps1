@@ -572,35 +572,238 @@ function Get-BackgroundProcessAnalysis {
     }
 }
 
+function Test-ValidSerialNumber {
+    param([string]$sn)
+    if ([string]::IsNullOrWhiteSpace($sn)) { return $false }
+    $clean = $sn.Trim()
+    if ($clean.Length -lt 3) { return $false }
+    if ($clean -match '^(0+|\-+|\.+|x+|\?+|\*+)$') { return $false }
+    if ($clean -match '^(?i)(to be filled by o\.?e\.?m\.?|system serial number|default string|none|not applicable|n/a|na|null|unknown|123456789|1234567890|system manufacturer|chassis serial number|base board serial number|all series|serial number|standard manageability)$') {
+        return $false
+    }
+    return $true
+}
+
 function Get-HardwareSerialNumber {
     param($biosObj)
-    $sn = ""
-    if ($biosObj -and -not [string]::IsNullOrWhiteSpace($biosObj.SerialNumber)) {
-        $sn = [string]$biosObj.SerialNumber.Trim()
+
+    # 1. Check passed BIOS object
+    if ($biosObj -and (Test-ValidSerialNumber $biosObj.SerialNumber)) {
+        return [string]$biosObj.SerialNumber.Trim()
     }
-    $isInvalid = [string]::IsNullOrWhiteSpace($sn) -or $sn -match '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$'
-    if ($isInvalid) {
+
+    # 2. Query Win32_BIOS (CIM -> WMI)
+    try {
+        $b = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
+        if (!$b) { $b = Get-WmiObject Win32_BIOS -ErrorAction SilentlyContinue }
+        if ($b -and (Test-ValidSerialNumber $b.SerialNumber)) {
+            return [string]$b.SerialNumber.Trim()
+        }
+    } catch {}
+
+    # 3. Query Win32_ComputerSystemProduct (IdentifyingNumber)
+    try {
+        $csp = Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+        if (!$csp) { $csp = Get-WmiObject Win32_ComputerSystemProduct -ErrorAction SilentlyContinue }
+        if ($csp -and (Test-ValidSerialNumber $csp.IdentifyingNumber)) {
+            return [string]$csp.IdentifyingNumber.Trim()
+        }
+    } catch {}
+
+    # 4. Query Win32_BaseBoard (Motherboard Serial Number)
+    try {
+        $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
+        if (!$bb) { $bb = Get-WmiObject Win32_BaseBoard -ErrorAction SilentlyContinue }
+        if ($bb -and (Test-ValidSerialNumber $bb.SerialNumber)) {
+            return [string]$bb.SerialNumber.Trim()
+        }
+    } catch {}
+
+    # 5. Query Win32_SystemEnclosure (Chassis Serial Number)
+    try {
+        $se = Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue
+        if (!$se) { $se = Get-WmiObject Win32_SystemEnclosure -ErrorAction SilentlyContinue }
+        if ($se -and (Test-ValidSerialNumber $se.SerialNumber)) {
+            return [string]$se.SerialNumber.Trim()
+        }
+    } catch {}
+
+    # 6. Fallback command-line WMIC if WMI/CIM cmdlets had permission/policy issues
+    try {
+        $wmicBios = (cmd /c "wmic bios get serialnumber" 2>$null) | Where-Object { $_ -and $_ -notmatch 'SerialNumber' } | Select-Object -First 1
+        if ($wmicBios -and (Test-ValidSerialNumber $wmicBios)) {
+            return [string]$wmicBios.Trim()
+        }
+        $wmicCsp = (cmd /c "wmic csproduct get identifyingnumber" 2>$null) | Where-Object { $_ -and $_ -notmatch 'IdentifyingNumber' } | Select-Object -First 1
+        if ($wmicCsp -and (Test-ValidSerialNumber $wmicCsp)) {
+            return [string]$wmicCsp.Trim()
+        }
+        $wmicBb = (cmd /c "wmic baseboard get serialnumber" 2>$null) | Where-Object { $_ -and $_ -notmatch 'SerialNumber' } | Select-Object -First 1
+        if ($wmicBb -and (Test-ValidSerialNumber $wmicBb)) {
+            return [string]$wmicBb.Trim()
+        }
+    } catch {}
+
+    # 7. Fallback: Primary Disk Serial Number (common for assembled PCs where motherboard is unbranded OEM)
+    try {
+        $disk = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (!$disk) { $disk = Get-WmiObject Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object -First 1 }
+        if ($disk -and (Test-ValidSerialNumber $disk.SerialNumber)) {
+            return "DSK-" + [string]$disk.SerialNumber.Trim()
+        }
+    } catch {}
+
+    # 8. Fallback: System UUID
+    try {
+        $csp = Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+        if (!$csp) { $csp = Get-WmiObject Win32_ComputerSystemProduct -ErrorAction SilentlyContinue }
+        if ($csp -and (Test-ValidSerialNumber $csp.UUID) -and $csp.UUID -notmatch '^(00000000|FFFFFFFF)') {
+            return [string]$csp.UUID.Trim()
+        }
+    } catch {}
+
+    return ""
+}
+
+function Get-NetworkInfo {
+    $adapters = @()
+    $primaryMac = ""
+
+    # Tier 1: Try modern Get-NetAdapter (Windows 8 / 10 / 11 / Server 2012+)
+    try {
+        $netCmd = Get-NetAdapter -ErrorAction SilentlyContinue
+        if ($netCmd) {
+            foreach ($a in $netCmd) {
+                if ([string]::IsNullOrWhiteSpace($a.MacAddress)) { continue }
+                $cleanMac = $a.MacAddress.ToUpper().Replace("-", ":").Trim()
+                if ($cleanMac -match '^(00:00:00:00:00:00|FF:FF:FF:FF:FF:FF)$') { continue }
+
+                $ipStr = ""
+                try {
+                    $ipObj = Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                        Where-Object { $_.IPAddress -and $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+                        Select-Object -First 1
+                    if ($ipObj) { $ipStr = [string]$ipObj.IPAddress }
+                } catch {}
+
+                $isUp = ($a.Status -eq "Up")
+                $isPhys = ($a.HardwareInterface -eq $true)
+                $adapters += [ordered]@{
+                    Name = $a.Name + " (" + $a.InterfaceDescription + ")"
+                    MACAddress = $cleanMac
+                    IPAddress = $ipStr
+                    AdapterType = if ($a.PhysicalMediaType) { [string]$a.PhysicalMediaType } else { "Ethernet 802.3" }
+                    NetConnectionStatus = if ($isUp) { 2 } else { 7 }
+                    StatusText = if ($isUp) { "Connected" } else { "Disconnected" }
+                    Speed = if ($a.LinkSpeed) { [string]$a.LinkSpeed } else { "-" }
+                    IsPhysical = $isPhys
+                }
+            }
+        }
+    } catch {}
+
+    # Tier 2: Fallback to CIM/WMI Win32_NetworkAdapter & Win32_NetworkAdapterConfiguration
+    if ($adapters.Count -eq 0) {
         try {
-            $csp = Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
-            if ($csp -and -not [string]::IsNullOrWhiteSpace($csp.IdentifyingNumber)) {
-                $candidate = [string]$csp.IdentifyingNumber.Trim()
-                if ($candidate -notmatch '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$') {
-                    return $candidate
+            $wmiConfigs = Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue
+            if (!$wmiConfigs) { $wmiConfigs = Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue }
+            $wmiAdapters = Get-CimInstance Win32_NetworkAdapter -ErrorAction SilentlyContinue
+            if (!$wmiAdapters) { $wmiAdapters = Get-WmiObject Win32_NetworkAdapter -ErrorAction SilentlyContinue }
+
+            $configMap = @{}
+            if ($wmiConfigs) {
+                foreach ($c in $wmiConfigs) {
+                    if ($c.Index -ne $null) { $configMap[$c.Index] = $c }
+                }
+            }
+
+            if ($wmiAdapters) {
+                foreach ($na in $wmiAdapters) {
+                    $cfg = if ($na.Index -ne $null) { $configMap[$na.Index] } else { $null }
+                    $rawMac = if ($cfg -and $cfg.MACAddress) { $cfg.MACAddress } elseif ($na.MACAddress) { $na.MACAddress } else { "" }
+                    if ([string]::IsNullOrWhiteSpace($rawMac)) { continue }
+                    $cleanMac = $rawMac.ToUpper().Replace("-", ":").Trim()
+                    if ($cleanMac -match '^(00:00:00:00:00:00|FF:FF:FF:FF:FF:FF)$') { continue }
+
+                    $ipStr = ""
+                    if ($cfg -and $cfg.IPAddress) {
+                        $v4 = $cfg.IPAddress | Where-Object { $_ -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$' -and $_ -notlike "127.*" -and $_ -notlike "169.254.*" } | Select-Object -First 1
+                        if ($v4) { $ipStr = [string]$v4 }
+                    }
+
+                    $isUp = ($na.NetConnectionStatus -eq 2)
+                    $isPhys = ($na.PhysicalAdapter -eq $true)
+                    $speedStr = if ($na.Speed) { [string]([math]::Round($na.Speed / 1MB, 0)) + " Mbps" } else { "-" }
+
+                    $adapters += [ordered]@{
+                        Name = $na.Name
+                        MACAddress = $cleanMac
+                        IPAddress = $ipStr
+                        AdapterType = if ($na.AdapterType) { [string]$na.AdapterType } else { "Ethernet 802.3" }
+                        NetConnectionStatus = if ($isUp) { 2 } else { 7 }
+                        StatusText = if ($isUp) { "Connected" } else { "Disconnected" }
+                        Speed = $speedStr
+                        IsPhysical = $isPhys
+                    }
                 }
             }
         } catch {}
+    }
+
+    # Tier 3: Fallback getmac.exe / ipconfig if adapters list is still empty
+    if ($adapters.Count -eq 0) {
         try {
-            $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
-            if ($bb -and -not [string]::IsNullOrWhiteSpace($bb.SerialNumber)) {
-                $candidate = [string]$bb.SerialNumber.Trim()
-                if ($candidate -notmatch '^(To be filled by O\.E\.M\.|System Serial Number|Default string|None|Not Applicable|0|00000000|N/A)$') {
-                    return $candidate
+            $getmacLines = cmd /c "getmac /fo csv /nh /v" 2>$null
+            if ($getmacLines) {
+                foreach ($line in $getmacLines) {
+                    if ($line -match '"([^"]*)","([^"]*)","([^"]*)","([^"]*)"') {
+                        $adapterName = $matches[2]
+                        $mac = $matches[3].ToUpper().Replace("-", ":").Trim()
+                        if ($mac -match '^([0-9A-F]{2}:){5}[0-9A-F]{2}$' -and $mac -ne "00:00:00:00:00:00") {
+                            $adapters += [ordered]@{
+                                Name = $adapterName
+                                MACAddress = $mac
+                                IPAddress = ""
+                                AdapterType = "Ethernet"
+                                NetConnectionStatus = 2
+                                StatusText = "Connected"
+                                Speed = "-"
+                                IsPhysical = $true
+                            }
+                        }
+                    }
                 }
             }
         } catch {}
-        return ""
     }
-    return $sn
+
+    # Determine Primary MAC
+    $p1 = $adapters | Where-Object { $_.NetConnectionStatus -eq 2 -and $_.IsPhysical -eq $true -and -not [string]::IsNullOrWhiteSpace($_.IPAddress) }
+    if ($p1) { $primaryMac = ($p1 | Select-Object -First 1).MACAddress }
+
+    if ([string]::IsNullOrWhiteSpace($primaryMac)) {
+        $p2 = $adapters | Where-Object { $_.NetConnectionStatus -eq 2 -and $_.IsPhysical -eq $true }
+        if ($p2) { $primaryMac = ($p2 | Select-Object -First 1).MACAddress }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($primaryMac)) {
+        $p3 = $adapters | Where-Object { $_.NetConnectionStatus -eq 2 -and -not [string]::IsNullOrWhiteSpace($_.IPAddress) }
+        if ($p3) { $primaryMac = ($p3 | Select-Object -First 1).MACAddress }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($primaryMac)) {
+        $p4 = $adapters | Where-Object { $_.IsPhysical -eq $true }
+        if ($p4) { $primaryMac = ($p4 | Select-Object -First 1).MACAddress }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($primaryMac) -and $adapters.Count -gt 0) {
+        $primaryMac = ($adapters | Select-Object -First 1).MACAddress
+    }
+
+    return [ordered]@{
+        PrimaryMac = $primaryMac
+        Adapters = @($adapters)
+    }
 }
 
 Write-Status "Mulai analisa untuk $PcID pada komputer $env:COMPUTERNAME."
@@ -622,8 +825,15 @@ if ($serialNumber) {
 Write-Status "[2/7] Membaca penyimpanan, kartu grafis (GPU), dan jaringan..."
 $storage = Get-Storage
 $gpu = Get-GpuInfo
-$net = Get-CimInstance Win32_NetworkAdapter -ErrorAction SilentlyContinue | Where-Object { $_.PhysicalAdapter -eq $true } |
-    Select-Object Name, AdapterType, NetConnectionStatus, Speed, MACAddress
+$netInfo = Get-NetworkInfo
+$net = $netInfo.Adapters
+$primaryMac = $netInfo.PrimaryMac
+if ($primaryMac) {
+    Write-Status "    -> MAC Address utama: $primaryMac"
+} else {
+    Write-Status "    -> MAC Address: tidak terdeteksi"
+}
+Write-Status "    -> Total Network Adapter: $($net.Count)"
 
 Write-Status "[3/7] Membaca software terinstal dan status antivirus..."
 $officeApps = Get-OfficeApps
@@ -659,6 +869,7 @@ $payload = [ordered]@{
     owner = $Owner
     computer_name = $env:COMPUTERNAME
     serial_number = $serialNumber
+    mac_address = $primaryMac
     collected_at = (Get-Date).ToString("s")
     hardware = [ordered]@{
         processor = $cpu.Name
@@ -670,6 +881,7 @@ $payload = [ordered]@{
         manufacturer = $cs.Manufacturer
         model = $cs.Model
         serial_number = $serialNumber
+        mac_address = $primaryMac
         bios_version = $bios.SMBIOSBIOSVersion
     }
     software = [ordered]@{
@@ -682,6 +894,7 @@ $payload = [ordered]@{
     }
     devices = [ordered]@{
         network = $net
+        primary_mac = $primaryMac
         driver_warnings = $driverIntel.driver_warnings
         driver_risk = $driverIntel.driver_risk
         total_drivers = $driverIntel.total_drivers

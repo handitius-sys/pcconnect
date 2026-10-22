@@ -1964,6 +1964,15 @@ function render_analysis_section(string $title, array $data): string
 {
     if ($title === 'Spesifikasi Umum') {
         $html = ai_insight_box('AI Hardware Insight', hardware_ai_insights($data));
+        $primaryMac = !empty($data['mac_address']) ? $data['mac_address'] : (!empty($data['primary_mac']) ? $data['primary_mac'] : '');
+        if ($primaryMac === '' && !empty($data['network']) && is_array($data['network'])) {
+            foreach ($data['network'] as $netRow) {
+                if (!empty($netRow['MACAddress'])) {
+                    $primaryMac = $netRow['MACAddress'];
+                    break;
+                }
+            }
+        }
         $html .= kv_table([
             'Processor' => $data['processor'] ?? '-',
             'Core / Logical' => ($data['processor_cores'] ?? '-') . ' / ' . ($data['processor_logical'] ?? '-'),
@@ -1973,6 +1982,7 @@ function render_analysis_section(string $title, array $data): string
             'Manufacturer' => $data['manufacturer'] ?? '-',
             'Model' => $data['model'] ?? '-',
             'Serial Number' => !empty($data['serial_number']) ? $data['serial_number'] : '-',
+            'MAC Address' => $primaryMac !== '' ? $primaryMac : '-',
             'BIOS' => $data['bios_version'] ?? '-',
         ]);
         return $html;
@@ -1990,7 +2000,7 @@ function render_analysis_section(string $title, array $data): string
     }
     if ($title === 'Device Management') {
         $html = ai_insight_box('AI Device Insight', device_ai_insights($data));
-        $html .= '<h3>Network</h3>' . simple_table($data['network'] ?? [], ['Name', 'AdapterType', 'NetConnectionStatus', 'Speed']);
+        $html .= '<h3>Network</h3>' . simple_table($data['network'] ?? [], ['Name', 'MACAddress', 'IPAddress', 'AdapterType', 'NetConnectionStatus', 'Speed']);
         $warnings = $data['driver_warnings'] ?? [];
         $driverRisk = $data['driver_risk'] ?? [];
         $html .= '<h3>AI Driver Risk Priority</h3>' . ($driverRisk ? risk_cards($driverRisk, 'driver') : '<p>Tidak ada driver berisiko berdasarkan rule offline.</p>');
@@ -2044,7 +2054,15 @@ function simple_table(mixed $rows, array $columns): string
     foreach ($items as $row) {
         $html .= '<tr>';
         foreach ($columns as $column) {
-            $html .= '<td>' . e(format_value($row[$column] ?? '-')) . '</td>';
+            $val = $row[$column] ?? ($row[strtolower($column)] ?? ($row[str_replace('_', '', $column)] ?? '-'));
+            if ($column === 'NetConnectionStatus') {
+                if ($val == 2 || $val === '2' || $val === 'Up' || $val === 'Connected') {
+                    $val = 'Connected';
+                } elseif ($val == 7 || $val === '7' || $val === 'Disconnected') {
+                    $val = 'Disconnected';
+                }
+            }
+            $html .= '<td>' . e(format_value($val)) . '</td>';
         }
         $html .= '</tr>';
     }
@@ -2179,6 +2197,21 @@ function format_value(mixed $value): string
 
 function labelize(string $value): string
 {
+    $map = [
+        'MACAddress' => 'MAC Address',
+        'mac_address' => 'MAC Address',
+        'IPAddress' => 'IP Address',
+        'ip_address' => 'IP Address',
+        'NetConnectionStatus' => 'Status',
+        'AdapterType' => 'Tipe',
+        'DisplayName' => 'Nama Aplikasi',
+        'DisplayVersion' => 'Versi',
+        'Publisher' => 'Penerbit',
+        'ConfigManagerErrorCode' => 'Error Code',
+    ];
+    if (isset($map[$value])) {
+        return $map[$value];
+    }
     return trim(preg_replace('/(?<!^)[A-Z]/', ' $0', str_replace('_', ' ', $value)));
 }
 

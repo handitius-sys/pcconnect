@@ -495,7 +495,26 @@ function pc_table(array $rows, bool $actions = false): string
                 . '</button>'
                 . '</form>';
         }
-        $html .= '<tr><td><strong>' . e($row['pc_id']) . '</strong></td><td>' . e($row['employee_nik'] ?? '-') . '</td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?? '-') . '</td><td>' . $catBadge . '</td><td>' . nl2br(e(pc_asset_link_summary($pdo, $row))) . '</td><td>' . e($row['last_analyzed_at'] ?? '-') . '</td><td style="white-space:nowrap;">' . $rowActions . '</td></tr>';
+        $specsJson = json_decode((string)($row['general_specs'] ?? ''), true) ?: [];
+        $devJson = json_decode((string)($row['device_management'] ?? ''), true) ?: [];
+        $snText = !empty($specsJson['serial_number']) ? $specsJson['serial_number'] : '';
+        $macText = !empty($specsJson['mac_address']) ? $specsJson['mac_address'] : (!empty($devJson['primary_mac']) ? $devJson['primary_mac'] : '');
+        if ($macText === '' && !empty($devJson['network']) && is_array($devJson['network'])) {
+            foreach ($devJson['network'] as $nItem) {
+                if (!empty($nItem['MACAddress'])) {
+                    $macText = $nItem['MACAddress'];
+                    break;
+                }
+            }
+        }
+        $hardwareMeta = '';
+        if ($snText !== '' || $macText !== '') {
+            $parts = [];
+            if ($snText !== '') $parts[] = 'SN: ' . $snText;
+            if ($macText !== '') $parts[] = 'MAC: ' . $macText;
+            $hardwareMeta = '<br><small style="color:#64748b;font-size:11px;">' . e(implode(' | ', $parts)) . '</small>';
+        }
+        $html .= '<tr><td><strong>' . e($row['pc_id']) . '</strong></td><td>' . e($row['employee_nik'] ?? '-') . '</td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?? '-') . $hardwareMeta . '</td><td>' . $catBadge . '</td><td>' . nl2br(e(pc_asset_link_summary($pdo, $row))) . '</td><td>' . e($row['last_analyzed_at'] ?? '-') . '</td><td style="white-space:nowrap;">' . $rowActions . '</td></tr>';
     }
     return $html . '</table>';
 }
@@ -895,8 +914,46 @@ function ingest_analysis_payload(PDO $pdo, array $payload): array
 {
     ensure_pc_schema($pdo);
     $pcId = strtoupper(trim((string)($payload['pc_id'] ?? '')));
-    $owner = trim((string)($payload['owner_name'] ?? ''));
+    $owner = trim((string)($payload['owner_name'] ?? $payload['owner'] ?? ''));
     $computerName = trim((string)($payload['computer_name'] ?? ''));
+
+    // Ekstraksi Serial Number
+    $serialNumber = trim((string)($payload['serial_number'] ?? ''));
+    if ($serialNumber === '' && isset($payload['hardware']['serial_number'])) {
+        $serialNumber = trim((string)$payload['hardware']['serial_number']);
+    }
+    if ($serialNumber === '' && isset($payload['general_specs']['serial_number'])) {
+        $serialNumber = trim((string)$payload['general_specs']['serial_number']);
+    }
+
+    // Ekstraksi Primary MAC Address
+    $macAddress = trim((string)($payload['mac_address'] ?? ''));
+    if ($macAddress === '' && isset($payload['hardware']['mac_address'])) {
+        $macAddress = trim((string)$payload['hardware']['mac_address']);
+    }
+    if ($macAddress === '' && isset($payload['general_specs']['mac_address'])) {
+        $macAddress = trim((string)$payload['general_specs']['mac_address']);
+    }
+    if ($macAddress === '' && isset($payload['devices']['primary_mac'])) {
+        $macAddress = trim((string)$payload['devices']['primary_mac']);
+    }
+    if ($macAddress === '' && !empty($payload['devices']['network']) && is_array($payload['devices']['network'])) {
+        foreach ($payload['devices']['network'] as $netRow) {
+            if (!empty($netRow['MACAddress'])) {
+                $macAddress = trim((string)$netRow['MACAddress']);
+                break;
+            }
+        }
+    }
+    if ($macAddress === '' && !empty($payload['device_management']['network']) && is_array($payload['device_management']['network'])) {
+        foreach ($payload['device_management']['network'] as $netRow) {
+            if (!empty($netRow['MACAddress'])) {
+                $macAddress = trim((string)$netRow['MACAddress']);
+                break;
+            }
+        }
+    }
+
     $encode = function($val) {
         if (is_array($val)) return json_encode($val, JSON_UNESCAPED_UNICODE);
         if (is_string($val) && trim($val) !== '') {
@@ -907,16 +964,46 @@ function ingest_analysis_payload(PDO $pdo, array $payload): array
         return '{}';
     };
 
-    $specs = $encode($payload['general_specs'] ?? $payload['hardware'] ?? null);
+    // Pastikan general_specs memuat serial_number & mac_address
+    $rawSpecs = $payload['general_specs'] ?? $payload['hardware'] ?? null;
+    if (is_string($rawSpecs) && trim($rawSpecs) !== '') {
+        $specsArr = json_decode($rawSpecs, true) ?: [];
+    } elseif (is_array($rawSpecs)) {
+        $specsArr = $rawSpecs;
+    } else {
+        $specsArr = [];
+    }
+    if ($serialNumber !== '' && empty($specsArr['serial_number'])) {
+        $specsArr['serial_number'] = $serialNumber;
+    }
+    if ($macAddress !== '' && empty($specsArr['mac_address'])) {
+        $specsArr['mac_address'] = $macAddress;
+    }
+    $specs = $encode($specsArr);
+
     $software = $encode($payload['software'] ?? null);
-    $device = $encode($payload['device_management'] ?? $payload['devices'] ?? null);
+
+    // Pastikan devices memuat primary_mac
+    $rawDev = $payload['device_management'] ?? $payload['devices'] ?? null;
+    if (is_string($rawDev) && trim($rawDev) !== '') {
+        $devArr = json_decode($rawDev, true) ?: [];
+    } elseif (is_array($rawDev)) {
+        $devArr = $rawDev;
+    } else {
+        $devArr = [];
+    }
+    if ($macAddress !== '' && empty($devArr['primary_mac'])) {
+        $devArr['primary_mac'] = $macAddress;
+    }
+    $device = $encode($devArr);
+
     $benchmark = $encode($payload['benchmark'] ?? null);
     $startup = $encode($payload['startup_analysis'] ?? $payload['startup'] ?? null);
     
     $summaryArray = analytical_summary([
-        'hardware' => is_array($payload['general_specs'] ?? $payload['hardware'] ?? null) ? ($payload['general_specs'] ?? $payload['hardware']) : [],
+        'hardware' => $specsArr,
         'software' => is_array($payload['software'] ?? null) ? $payload['software'] : [],
-        'devices' => is_array($payload['device_management'] ?? $payload['devices'] ?? null) ? ($payload['device_management'] ?? $payload['devices']) : [],
+        'devices' => $devArr,
         'benchmark' => is_array($payload['benchmark'] ?? null) ? $payload['benchmark'] : [],
         'startup' => is_array($payload['startup_analysis'] ?? $payload['startup'] ?? null) ? ($payload['startup_analysis'] ?? $payload['startup']) : [],
     ]);
@@ -933,6 +1020,11 @@ function ingest_analysis_payload(PDO $pdo, array $payload): array
         $pdo->prepare('UPDATE pcs SET owner_name = COALESCE(NULLIF(owner_name,""), ?), computer_name = ?, general_specs = ?, software = ?, device_management = ?, benchmark = ?, startup_analysis = ?, ai_recommendation = ?, category = COALESCE(NULLIF(category, ""), ?), asset_group_id = COALESCE(NULLIF(asset_group_id, 0), ?), last_analyzed_at = NOW() WHERE pc_id = ?')->execute([
             $owner, $computerName, $specs, $software, $device, $benchmark, $startup, $summary, $detectedCat, $itGroupId, $pcId
         ]);
+        if (!empty($existing['asset_item_id']) && $serialNumber !== '' && !preg_match('/^(to be filled|default string|system serial|none|00000000)/i', $serialNumber)) {
+            $pdo->prepare('UPDATE asset_items SET serial_number = ? WHERE id = ? AND (serial_number IS NULL OR serial_number = "" OR serial_number = "-")')->execute([
+                $serialNumber, (int)$existing['asset_item_id']
+            ]);
+        }
     } else {
         $sec = pc_security_code_seed($pcId);
         $pdo->prepare('INSERT INTO pcs (pc_id, security_code, owner_name, computer_name, asset_group_id, category, general_specs, software, device_management, benchmark, startup_analysis, ai_recommendation, last_analyzed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())')->execute([
@@ -1227,7 +1319,7 @@ function handle_route_pc_form(PDO $pdo): void
                     throw new RuntimeException("Asset item '{$chkRow['asset_code']}' berstatus 'Bundle (Child Asset)' dan tidak dapat disinkronkan ke PC. Silakan pilih Parent Asset atau pisahkan asset ini terlebih dahulu.");
                 }
             }
-            $syncAssetItems = function(int $itemId) use ($pdo, $assetGroupId, $category): void {
+            $syncAssetItems = function(int $itemId) use ($pdo, $assetGroupId, $category, $pcData): void {
                 if ($itemId <= 0) return;
                 $typeId = null;
                 try {
@@ -1240,6 +1332,15 @@ function handle_route_pc_form(PDO $pdo): void
                 } catch (Throwable $ignored) {}
                 $pdo->prepare("UPDATE asset_items SET asset_group_id = COALESCE(?, asset_group_id), asset_type_id = COALESCE(?, asset_type_id), asset_category = COALESCE(?, asset_category) WHERE id = ?")
                     ->execute([$assetGroupId, $typeId, $category, $itemId]);
+
+                if (!empty($pcData['general_specs'])) {
+                    $sDecoded = json_decode((string)$pcData['general_specs'], true);
+                    $sn = trim((string)($sDecoded['serial_number'] ?? ''));
+                    if ($sn !== '' && $sn !== '-' && !preg_match('/^(to be filled|default string|system serial|none|00000000)/i', $sn)) {
+                        $pdo->prepare("UPDATE asset_items SET serial_number = ? WHERE id = ? AND (serial_number IS NULL OR serial_number = '' OR serial_number = '-')")
+                            ->execute([$sn, $itemId]);
+                    }
+                }
             };
 
             if ($editing) {
@@ -1329,11 +1430,25 @@ function handle_route_pc_detail(PDO $pdo): void
     echo '<style>.analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.analysis-grid .panel{min-width:0;overflow:hidden}.analysis-table{table-layout:auto}.analysis-table td,.analysis-table th{overflow-wrap:anywhere;word-break:normal}.wide-panel{grid-column:1/-1}@media(max-width:900px){.analysis-grid{grid-template-columns:1fr}}</style>';
     $assetCode = $hasSync ? asset_code($pc) : '';
     echo '<section class="panel"><div class="split"><div><h1>' . e($pc['pc_id']) . '</h1><p>' . e($pc['owner_name']) . ' - ' . e($pc['computer_name'] ?: 'Computer name belum ada') . '</p>';
+    $specsData = json_decode((string)($pc['general_specs'] ?? ''), true) ?: [];
+    $devData = json_decode((string)($pc['device_management'] ?? ''), true) ?: [];
+    $detailSn = !empty($specsData['serial_number']) ? $specsData['serial_number'] : '-';
+    $detailMac = !empty($specsData['mac_address']) ? $specsData['mac_address'] : (!empty($devData['primary_mac']) ? $devData['primary_mac'] : '');
+    if ($detailMac === '' && !empty($devData['network']) && is_array($devData['network'])) {
+        foreach ($devData['network'] as $netItem) {
+            if (!empty($netItem['MACAddress'])) {
+                $detailMac = $netItem['MACAddress'];
+                break;
+            }
+        }
+    }
     echo '<p>'
         . '<span class="badge ok">Komoditas: ' . e($groupName) . '</span> '
         . '<span class="badge ok">Kategori: ' . e($categoryLabel) . '</span> '
         . (!$hasSync ? '<span class="badge danger">Belum Sinkron ke Asset Item</span> ' : '')
-        . '<span class="badge">NIK ' . e($pc['employee_nik'] ?? '-') . '</span>'
+        . '<span class="badge">NIK ' . e($pc['employee_nik'] ?? '-') . '</span> '
+        . '<span class="badge" title="Nomor Seri Perangkat Keras">SN: ' . e($detailSn) . '</span> '
+        . '<span class="badge" title="MAC Address Utama">MAC: ' . e($detailMac !== '' ? $detailMac : '-') . '</span>'
         . '</p>';
     echo '</div><div class="actions">';
     if (has_regulation('pcs', 'edit')) {
