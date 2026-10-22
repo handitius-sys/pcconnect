@@ -3011,10 +3011,7 @@ function asset_master_page(PDO $pdo, string $route, array $user): void
         . '  </div>'
         . '  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">';
     if ($canCreateMaster) {
-        echo '<button type="button" class="btn primary" onclick="openMasterModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">'
-            . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>'
-            . '<span>+ Tambah ' . e($title) . '</span>'
-            . '</button>';
+        echo '<button type="button" class="btn primary" onclick="openMasterModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah ' . e($title) . '</button>';
     }
     echo '  </div>'
         . '</div>';
@@ -3314,6 +3311,12 @@ function asset_master_page(PDO $pdo, string $route, array $user): void
             }
         });
     }
+    window.openMasterModal = openMasterModal;
+    window.closeMasterModal = closeMasterModal;
+    window.editMasterItem = editMasterItem;
+    window.syncBrandModalTypes = syncBrandModalTypes;
+    window.onMasterNameInput = onMasterNameInput;
+    window.onMasterCodeManualEdit = onMasterCodeManualEdit;
     </script>';
 
     if ($edit) {
@@ -3460,10 +3463,7 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
 
     echo '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">';
     if ($canCreateIdf) {
-        echo '<button type="button" class="btn primary" onclick="openIdfModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">'
-            . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>'
-            . '<span>+ Tambah Identifier Aset</span>'
-            . '</button>';
+        echo '<button type="button" class="btn primary" onclick="openIdfModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah Identifier Aset</button>';
     }
     echo '</div>';
     echo '</div>';
@@ -3645,63 +3645,66 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
         . '</div></form></div></div>';
 
     // JAVASCRIPT IDENTIFIER
-    echo '<script>
+    ?>
+    <script>
     window.currentCategoryIdfs = [];
     var idfCodeUserEdited = false;
 
     function autoGenerateIdfCode(name) {
-        if (!name) return "";
+        if (!name) return '';
         var s = name.trim().toUpperCase();
         var presets = {
-            "SERIAL NUMBER": "SERIAL",
-            "NOMOR SERI": "SERIAL",
-            "NO SERI": "SERIAL",
-            "MAC ADDRESS": "MAC",
-            "ALAMAT MAC": "MAC",
-            "IP ADDRESS": "IP",
-            "ALAMAT IP": "IP",
-            "NOMOR POLISI": "PLAT",
-            "NO POLISI": "PLAT",
-            "PLAT NOMOR": "PLAT",
-            "NOMOR RANGKA": "VIN",
-            "NO RANGKA": "VIN",
-            "NOMOR MESIN": "ENGINE",
-            "NO MESIN": "ENGINE",
-            "TAHUN PEMBUATAN": "TAHUN",
-            "MASA BERLAKU STNK": "EXP_STNK",
-            "KIR": "KIR",
-            "IMEI": "IMEI",
-            "SERVICE TAG": "STAG",
-            "ASSET TAG": "ATAG",
-            "BARCODE": "BARCODE"
+            'SERIAL NUMBER': 'SERIAL',
+            'NOMOR SERI': 'SERIAL',
+            'NO SERI': 'SERIAL',
+            'MAC ADDRESS': 'MAC',
+            'ALAMAT MAC': 'MAC',
+            'IP ADDRESS': 'IP',
+            'ALAMAT IP': 'IP',
+            'NOMOR POLISI': 'PLAT',
+            'NO POLISI': 'PLAT',
+            'PLAT NOMOR': 'PLAT',
+            'NOMOR RANGKA': 'VIN',
+            'NO RANGKA': 'VIN',
+            'NOMOR MESIN': 'ENGINE',
+            'NO MESIN': 'ENGINE',
+            'TAHUN PEMBUATAN': 'TAHUN',
+            'MASA BERLAKU STNK': 'EXP_STNK',
+            'KIR': 'KIR',
+            'IMEI': 'IMEI',
+            'SERVICE TAG': 'STAG',
+            'ASSET TAG': 'ATAG',
+            'BARCODE': 'BARCODE'
         };
         if (presets[s]) return presets[s];
         
-        var clean = s.replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-        if (!clean) return "";
-        var words = clean.split(" ").filter(Boolean);
+        var clean = s.replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!clean) return '';
+        var words = clean.split(' ').filter(Boolean);
         if (words.length >= 2) {
-            var acronym = words.map(function(w){ return w[0]; }).join("");
+            var acronym = words.map(function(w){ return w[0]; }).join('');
             if (acronym.length >= 2 && acronym.length <= 5) return acronym;
             return acronym.substring(0, 4);
         }
         var w = words[0];
         if (w.length <= 4) return w;
         var firstChar = w[0];
-        var consonants = firstChar + w.substring(1).replace(/[AEIOU]/g, "");
+        var consonants = firstChar + w.substring(1).replace(/[AEIOU]/g, '');
         if (consonants.length >= 3 && consonants.length <= 6) return consonants;
         return w.substring(0, 4);
     }
 
     function onIdfCodeManualEdit() {
-        var val = (document.getElementById("modalIdfCodeInput") || {}).value || "";
-        idfCodeUserEdited = (val.trim() !== "");
+        var el = document.getElementById('modalIdfCodeInput');
+        var val = el ? el.value : '';
+        idfCodeUserEdited = (val.trim() !== '');
     }
 
     function onIdfNameInput() {
         if (idfCodeUserEdited) return;
-        var nameVal = (document.getElementById("modalIdfNameInput") || {}).value || "";
-        var codeInput = document.getElementById("modalIdfCodeInput");
+        var nameEl = document.getElementById('modalIdfNameInput');
+        var nameVal = nameEl ? nameEl.value : '';
+        var codeInput = document.getElementById('modalIdfCodeInput');
         if (codeInput) {
             codeInput.value = autoGenerateIdfCode(nameVal);
             checkModalIdfCodeDuplicate();
@@ -3710,148 +3713,158 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
 
     function openIdfModal() {
         idfCodeUserEdited = false;
-        document.getElementById("modalIdfEditId").value = "";
-        document.getElementById("modalIdfTitle").innerText = "+ Tambah Identifier Aset";
-        document.getElementById("modalIdfGroup").selectedIndex = 0;
-        document.getElementById("modalIdfType").innerHTML = "<option value="">- Pilih Komoditas Terlebih Dahulu -</option>";
-        document.getElementById("modalIdfCodeInput").value = "";
-        document.getElementById("modalIdfNameInput").value = "";
-        document.getElementById("modalIdfDataType").value = "text";
-        document.getElementById("modalIdfRequired").checked = false;
-        document.getElementById("modalIdfUnique").checked = false;
-        document.getElementById("modalIdfOrder").value = "1";
-        var notice = document.getElementById("modalIdfExistingNotice");
-        if (notice) { notice.style.display = "none"; notice.innerHTML = ""; }
-        var warn = document.getElementById("modalIdfCodeWarn");
-        if (warn) { warn.style.display = "none"; warn.innerText = ""; }
+        var editIdEl = document.getElementById('modalIdfEditId');
+        if (editIdEl) editIdEl.value = '';
+        var titleEl = document.getElementById('modalIdfTitle');
+        if (titleEl) titleEl.innerText = '+ Tambah Identifier Aset';
+        var grpEl = document.getElementById('modalIdfGroup');
+        if (grpEl) grpEl.selectedIndex = 0;
+        var typeEl = document.getElementById('modalIdfType');
+        if (typeEl) typeEl.innerHTML = '<option value="">- Pilih Komoditas Terlebih Dahulu -</option>';
+        var codeEl = document.getElementById('modalIdfCodeInput');
+        if (codeEl) codeEl.value = '';
+        var nameEl = document.getElementById('modalIdfNameInput');
+        if (nameEl) nameEl.value = '';
+        var dtEl = document.getElementById('modalIdfDataType');
+        if (dtEl) dtEl.value = 'text';
+        var reqEl = document.getElementById('modalIdfRequired');
+        if (reqEl) reqEl.checked = false;
+        var unqEl = document.getElementById('modalIdfUnique');
+        if (unqEl) unqEl.checked = false;
+        var ordEl = document.getElementById('modalIdfOrder');
+        if (ordEl) ordEl.value = '1';
+        var notice = document.getElementById('modalIdfExistingNotice');
+        if (notice) { notice.style.display = 'none'; notice.innerHTML = ''; }
+        var warn = document.getElementById('modalIdfCodeWarn');
+        if (warn) { warn.style.display = 'none'; warn.innerText = ''; }
         
-        var m = document.getElementById("modalIdf");
-        if (m) m.style.display = "flex";
+        var m = document.getElementById('modalIdf');
+        if (m) m.style.display = 'flex';
     }
 
     function closeIdfModal() {
-        var m = document.getElementById("modalIdf");
-        if (m) m.style.display = "none";
+        var m = document.getElementById('modalIdf');
+        if (m) m.style.display = 'none';
     }
 
     window.onModalIdfGroupChanged = async function() {
-        var gSel = document.getElementById("modalIdfGroup");
-        var tSel = document.getElementById("modalIdfType");
-        var notice = document.getElementById("modalIdfExistingNotice");
+        var gSel = document.getElementById('modalIdfGroup');
+        var tSel = document.getElementById('modalIdfType');
+        var notice = document.getElementById('modalIdfExistingNotice');
         window.currentCategoryIdfs = [];
-        if (notice) { notice.style.display = "none"; notice.innerHTML = ""; }
+        if (notice) { notice.style.display = 'none'; notice.innerHTML = ''; }
         if (!gSel || !tSel) return;
         var gid = parseInt(gSel.value, 10) || 0;
         if (gid === 0) {
-            tSel.innerHTML = "<option value="">- Pilih Komoditas Terlebih Dahulu -</option>";
+            tSel.innerHTML = '<option value="">- Pilih Komoditas Terlebih Dahulu -</option>';
             return;
         }
-        tSel.innerHTML = "<option value="">Memuat Kategori...</option>";
+        tSel.innerHTML = '<option value="">Memuat Kategori...</option>';
         try {
-            var r = await fetch("index.php?route=api_asset_types&group_id=" + gid);
+            var r = await fetch('index.php?route=api_asset_types&group_id=' + gid);
             var types = await r.json();
-            var h = "<option value="">- Pilih Kategori -</option>";
+            var h = '<option value="">- Pilih Kategori -</option>';
             if (Array.isArray(types) && types.length > 0) {
                 types.forEach(function(t) {
-                    h += "<option value="" + t.id + "">" + (t.type_code ? t.type_code + " - " : "") + t.type_name + "</option>";
+                    h += '<option value="' + t.id + '">' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
                 });
             } else {
-                h = "<option value="">- Belum ada kategori untuk komoditas ini -</option>";
+                h = '<option value="">- Belum ada kategori untuk komoditas ini -</option>';
             }
             tSel.innerHTML = h;
             onModalIdfTypeChanged();
         } catch (e) {
-            console.error("Gagal load kategori:", e);
+            console.error('Gagal load kategori:', e);
         }
     };
 
     window.onModalIdfTypeChanged = async function() {
-        var tSel = document.getElementById("modalIdfType");
-        var gSel = document.getElementById("modalIdfGroup");
-        var notice = document.getElementById("modalIdfExistingNotice");
+        var tSel = document.getElementById('modalIdfType');
+        var gSel = document.getElementById('modalIdfGroup');
+        var notice = document.getElementById('modalIdfExistingNotice');
         if (!tSel || !notice) return;
         var tid = parseInt(tSel.value, 10) || 0;
         var gid = gSel ? (parseInt(gSel.value, 10) || 0) : 0;
         if (tid <= 0) {
-            notice.style.display = "none";
-            notice.innerHTML = "";
+            notice.style.display = 'none';
+            notice.innerHTML = '';
             window.currentCategoryIdfs = [];
             checkModalIdfCodeDuplicate();
             return;
         }
         try {
-            var r = await fetch("index.php?route=api_asset_type_config&type_id=" + tid + "&group_id=" + gid);
+            var r = await fetch('index.php?route=api_asset_type_config&type_id=' + tid + '&group_id=' + gid);
             var data = await r.json();
             window.currentCategoryIdfs = (data && Array.isArray(data.identifiers)) ? data.identifiers : [];
             if (window.currentCategoryIdfs.length > 0) {
                 var badges = window.currentCategoryIdfs.map(function(item) {
-                    var reqMark = item.is_required == 1 ? " *" : "";
-                    return "<span class="badge" style="background:#e0f2fe;color:#0369a1;margin-right:5px;margin-bottom:4px;display:inline-block;padding:3px 8px;border:1px solid #bae6fd;font-size:11px;">" + 
-                           "<strong>" + (item.identifier_code || "") + "</strong>: " + (item.identifier_name || "") + reqMark + "</span>";
-                }).join(" ");
-                notice.innerHTML = "<div style="padding:8px 12px;background:#f0f9ff;border-left:3px solid #0284c7;border-radius:4px;">" +
-                                   "<strong style="color:#0369a1;font-size:12px;">Identifier yang sudah terdaftar di kategori ini:</strong>" +
-                                   "<div style="margin-top:5px;display:flex;flex-wrap:wrap;">" + badges + "</div>" +
-                                   "</div>";
-                notice.style.display = "block";
+                    var reqMark = item.is_required == 1 ? ' *' : '';
+                    return '<span class="badge" style="background:#e0f2fe;color:#0369a1;margin-right:5px;margin-bottom:4px;display:inline-block;padding:3px 8px;border:1px solid #bae6fd;font-size:11px;">' + 
+                           '<strong>' + (item.identifier_code || '') + '</strong>: ' + (item.identifier_name || '') + reqMark + '</span>';
+                }).join(' ');
+                notice.innerHTML = '<div style="padding:8px 12px;background:#f0f9ff;border-left:3px solid #0284c7;border-radius:4px;">' +
+                                   '<strong style="color:#0369a1;font-size:12px;">Identifier yang sudah terdaftar di kategori ini:</strong>' +
+                                   '<div style="margin-top:5px;display:flex;flex-wrap:wrap;">' + badges + '</div>' +
+                                   '</div>';
+                notice.style.display = 'block';
             } else {
-                notice.style.display = "none";
-                notice.innerHTML = "";
+                notice.style.display = 'none';
+                notice.innerHTML = '';
             }
         } catch (e) {
-            console.error("Gagal load identifier:", e);
+            console.error('Gagal load identifier:', e);
         }
         checkModalIdfCodeDuplicate();
     };
 
     window.checkModalIdfCodeDuplicate = function() {
-        var codeInp = document.getElementById("modalIdfCodeInput");
-        var warn = document.getElementById("modalIdfCodeWarn");
-        var editId = parseInt((document.getElementById("modalIdfEditId") || {}).value, 10) || 0;
+        var codeInp = document.getElementById('modalIdfCodeInput');
+        var warn = document.getElementById('modalIdfCodeWarn');
+        var editId = parseInt((document.getElementById('modalIdfEditId') || {}).value, 10) || 0;
         if (!codeInp || !warn) return;
         var val = codeInp.value.toUpperCase().trim();
-        if (val === "" || !Array.isArray(window.currentCategoryIdfs) || window.currentCategoryIdfs.length === 0) {
-            warn.style.display = "none";
-            warn.innerText = "";
+        if (val === '' || !Array.isArray(window.currentCategoryIdfs) || window.currentCategoryIdfs.length === 0) {
+            warn.style.display = 'none';
+            warn.innerText = '';
             return;
         }
         var found = window.currentCategoryIdfs.find(function(s) {
-            return (s.identifier_code || "").toUpperCase() === val && parseInt(s.id, 10) !== editId;
+            return (s.identifier_code || '').toUpperCase() === val && parseInt(s.id, 10) !== editId;
         });
         if (found) {
-            warn.innerText = "⚠️ Kode "" + val + "" sudah digunakan di kategori ini (" + found.identifier_name + "). Kode harus unik per kategori!";
-            warn.style.display = "block";
+            warn.innerText = '⚠️ Kode "' + val + '" sudah digunakan di kategori ini (' + found.identifier_name + '). Kode harus unik per kategori!';
+            warn.style.display = 'block';
         } else {
-            warn.style.display = "none";
-            warn.innerText = "";
+            warn.style.display = 'none';
+            warn.innerText = '';
         }
     };
 
     async function editIdfItem(btn) {
         idfCodeUserEdited = true;
-        var id = btn.getAttribute("data-id") || "";
-        var gid = btn.getAttribute("data-group-id") || "";
-        var tid = btn.getAttribute("data-type-id") || "";
-        var code = btn.getAttribute("data-code") || "";
-        var name = btn.getAttribute("data-name") || "";
-        var dt = btn.getAttribute("data-type") || "text";
-        var req = btn.getAttribute("data-required") === "1";
-        var unq = btn.getAttribute("data-unique") === "1";
-        var ord = btn.getAttribute("data-order") || "1";
+        var id = btn.getAttribute('data-id') || '';
+        var gid = btn.getAttribute('data-group-id') || '';
+        var tid = btn.getAttribute('data-type-id') || '';
+        var code = btn.getAttribute('data-code') || '';
+        var name = btn.getAttribute('data-name') || '';
+        var dt = btn.getAttribute('data-type') || 'text';
+        var req = btn.getAttribute('data-required') === '1';
+        var unq = btn.getAttribute('data-unique') === '1';
+        var ord = btn.getAttribute('data-order') || '1';
 
-        document.getElementById("modalIdfEditId").value = id;
-        document.getElementById("modalIdfTitle").innerText = "✏️ Edit Identifier Aset";
-        document.getElementById("modalIdfGroup").value = gid;
+        document.getElementById('modalIdfEditId').value = id;
+        document.getElementById('modalIdfTitle').innerText = '✏️ Edit Identifier Aset';
+        document.getElementById('modalIdfGroup').value = gid;
 
-        var tSel = document.getElementById("modalIdfType");
-        tSel.innerHTML = "<option value="">Memuat Kategori...</option>";
+        var tSel = document.getElementById('modalIdfType');
+        tSel.innerHTML = '<option value="">Memuat Kategori...</option>';
         try {
-            var r = await fetch("index.php?route=api_asset_types&group_id=" + gid);
+            var r = await fetch('index.php?route=api_asset_types&group_id=' + gid);
             var types = await r.json();
-            var h = "<option value="">- Pilih Kategori -</option>";
+            var h = '<option value="">- Pilih Kategori -</option>';
             if (Array.isArray(types)) {
                 types.forEach(function(t) {
-                    h += "<option value="" + t.id + """ + (String(t.id) === String(tid) ? " selected" : "") + ">" + (t.type_code ? t.type_code + " - " : "") + t.type_name + "</option>";
+                    h += '<option value="' + t.id + '"' + (String(t.id) === String(tid) ? ' selected' : '') + '>' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
                 });
             }
             tSel.innerHTML = h;
@@ -3860,58 +3873,58 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
             console.error(e);
         }
 
-        document.getElementById("modalIdfCodeInput").value = code;
-        document.getElementById("modalIdfNameInput").value = name;
-        document.getElementById("modalIdfDataType").value = dt;
-        document.getElementById("modalIdfRequired").checked = req;
-        document.getElementById("modalIdfUnique").checked = unq;
-        document.getElementById("modalIdfOrder").value = ord;
+        document.getElementById('modalIdfCodeInput').value = code;
+        document.getElementById('modalIdfNameInput').value = name;
+        document.getElementById('modalIdfDataType').value = dt;
+        document.getElementById('modalIdfRequired').checked = req;
+        document.getElementById('modalIdfUnique').checked = unq;
+        document.getElementById('modalIdfOrder').value = ord;
 
-        var m = document.getElementById("modalIdf");
-        if (m) m.style.display = "flex";
+        var m = document.getElementById('modalIdf');
+        if (m) m.style.display = 'flex';
     }
 
     window.filterIdfTableClient = function() {
-        var grpVal = (document.getElementById("filterTableGroup") || {}).value || "";
-        var typVal = (document.getElementById("filterTableType") || {}).value || "";
-        var qVal = ((document.getElementById("filterTableSearch") || {}).value || "").toLowerCase().trim();
-        var rows = document.querySelectorAll("#idfTableBody tr.idf-row");
-        var groupHeaders = document.querySelectorAll("#idfTableBody tr.idf-group-header");
+        var grpVal = (document.getElementById('filterTableGroup') || {}).value || '';
+        var typVal = (document.getElementById('filterTableType') || {}).value || '';
+        var qVal = ((document.getElementById('filterTableSearch') || {}).value || '').toLowerCase().trim();
+        var rows = document.querySelectorAll('#idfTableBody tr.idf-row');
+        var groupHeaders = document.querySelectorAll('#idfTableBody tr.idf-group-header');
 
         var visibleTypes = {};
 
         rows.forEach(function(row) {
-            var rGrp = row.getAttribute("data-group-id") || "";
-            var rTyp = row.getAttribute("data-type-id") || "";
-            var rText = (row.getAttribute("data-search") || "").toLowerCase();
+            var rGrp = row.getAttribute('data-group-id') || '';
+            var rTyp = row.getAttribute('data-type-id') || '';
+            var rText = (row.getAttribute('data-search') || '').toLowerCase();
             var matchGrp = (!grpVal || rGrp === grpVal);
             var matchTyp = (!typVal || rTyp === typVal);
             var matchQ = (!qVal || rText.indexOf(qVal) !== -1);
             var show = (matchGrp && matchTyp && matchQ);
-            row.style.display = show ? "" : "none";
+            row.style.display = show ? '' : 'none';
             if (show) {
                 visibleTypes[rTyp] = true;
             }
         });
 
         groupHeaders.forEach(function(gh) {
-            var gTyp = gh.getAttribute("data-type-id") || "";
-            gh.style.display = visibleTypes[gTyp] ? "" : "none";
+            var gTyp = gh.getAttribute('data-type-id') || '';
+            gh.style.display = visibleTypes[gTyp] ? '' : 'none';
         });
     };
 
     window.onFilterGroupChanged = async function(gid) {
-        var fType = document.getElementById("filterTableType");
+        var fType = document.getElementById('filterTableType');
         if (fType) {
             var sel = fType.value;
             for (var i = 0; i < fType.options.length; i++) {
                 var opt = fType.options[i];
-                if (!opt.value) { opt.style.display = ""; continue; }
-                var optG = opt.getAttribute("data-group") || "";
+                if (!opt.value) { opt.style.display = ''; continue; }
+                var optG = opt.getAttribute('data-group') || '';
                 if (!gid || optG === gid) {
-                    opt.style.display = "";
+                    opt.style.display = '';
                 } else {
-                    opt.style.display = "none";
+                    opt.style.display = 'none';
                     if (opt.selected) opt.selected = false;
                 }
             }
@@ -3919,24 +3932,30 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
         window.filterIdfTableClient();
     };
 
-    document.addEventListener("keydown", function(e) {
-        if (e.key === "Escape") {
+    window.openIdfModal = openIdfModal;
+    window.closeIdfModal = closeIdfModal;
+    window.editIdfItem = editIdfItem;
+    window.onIdfNameInput = onIdfNameInput;
+    window.onIdfCodeManualEdit = onIdfCodeManualEdit;
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
             closeIdfModal();
         }
     });
-    var modalIdf = document.getElementById("modalIdf");
+    var modalIdf = document.getElementById('modalIdf');
     if (modalIdf) {
-        modalIdf.addEventListener("click", function(e) {
+        modalIdf.addEventListener('click', function(e) {
             if (e.target === modalIdf) {
                 closeIdfModal();
             }
         });
     }
-    </script>';
-
+    </script>
+    <?php
     if ($edit) {
-        $editIdVal = (int)$edit["id"];
-        echo '<script>document.addEventListener("DOMContentLoaded", function(){ var b = document.querySelector(\'button[data-id="\' + $editIdVal + \'"]\'); if (b) editIdfItem(b); });</script>';
+        $editIdVal = (int)$edit['id'];
+        echo '<script>document.addEventListener("DOMContentLoaded", function(){ var b = document.querySelector(\'button[data-id="' . $editIdVal . '"]\'); if (b) editIdfItem(b); });</script>';
     }
 
     render_footer();
