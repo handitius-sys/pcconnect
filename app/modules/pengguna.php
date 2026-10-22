@@ -400,7 +400,7 @@ function handle_route_master_pengguna(PDO $pdo): void
     echo '<div class="actions">';
     if (has_regulation('master_pengguna', 'create')) {
         echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Sinkronisasi ulang seluruh data karyawan dari MariaDB portal?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="sync"><button class="btn" style="background:#0284c7;color:#fff;border-color:#0284c7;">🔄 Sinkronisasi dari Portal MariaDB</button></form>';
-        echo '<a class="btn primary" href="#formTambahPengguna">+ Tambah Pengguna Baru</a>';
+        echo '<button type="button" class="btn primary" onclick="openTambahPenggunaModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah Pengguna</button>';
     }
     echo '</div></div>';
 
@@ -489,7 +489,7 @@ function handle_route_master_pengguna(PDO $pdo): void
     }
     echo '</form>';
     if (has_regulation('master_pengguna', 'create')) {
-        echo btn_icon_add('#formTambahPengguna', 'Tambah Pengguna', 'Tambah Pengguna Baru');
+        echo '<button type="button" class="btn primary" onclick="openTambahPenggunaModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah Pengguna</button>';
     }
     echo '</div>';
 
@@ -562,32 +562,47 @@ function handle_route_master_pengguna(PDO $pdo): void
 
     echo '</section>';
 
-    // Panel Tambah Pengguna Baru
+    // Modal Window Tambah Pengguna Baru
     if (has_regulation('master_pengguna', 'create')) {
-        echo '<section class="panel" id="formTambahPengguna">';
-        echo '<h2>+ Tambah Pengguna Baru (Manual)</h2>';
-        echo '<p class="muted">Jika ada karyawan baru atau PIC yang belum tersinkronisasi dari portal MariaDB, tambahkan secara manual di bawah ini.</p>';
-        echo '<form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">';
-        echo '<div class="grid three">';
-        echo '<label>NIK (Nomor Induk Karyawan) *<input name="nik" required placeholder="Contoh: 2024001"></label>';
-        echo '<label>Nama Pengguna Lengkap *<input name="name" required placeholder="Nama Karyawan"></label>';
-        echo '<label>Departemen / Divisi<input name="department" placeholder="Contoh: Finance / Logistik"></label>';
-        echo '</div>';
+        echo '<div id="modalTambahPengguna" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
+        echo '<div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">';
+        echo '  <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">';
+        echo '    <div style="display:flex;align-items:center;gap:10px;">';
+        echo '      <span style="font-size:20px;">👤</span>';
+        echo '      <h3 style="margin:0;font-size:16px;font-weight:700;color:#1e293b;">+ Tambah Pengguna Baru (Manual)</h3>';
+        echo '    </div>';
+        echo '    <button type="button" onclick="closeTambahPenggunaModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;line-height:1;">✕</button>';
+        echo '  </div>';
+        echo '  <div style="padding:20px;overflow-y:auto;flex:1;">';
+        echo '    <p class="muted" style="margin-top:0;margin-bottom:14px;font-size:13px;">Jika ada karyawan baru atau PIC yang belum tersinkronisasi dari portal MariaDB, tambahkan secara manual di bawah ini.</p>';
+        echo '    <form method="post" id="formPenggunaBaru"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">';
+        echo '    <div class="grid three">';
+        echo '      <label>NIK (Nomor Induk Karyawan) *<input name="nik" id="modalInputNik" required placeholder="Contoh: 2024001"></label>';
+        echo '      <label>Nama Pengguna Lengkap *<input name="name" required placeholder="Nama Karyawan"></label>';
+        echo '      <label>Departemen / Divisi<input name="department" placeholder="Contoh: Finance / Logistik"></label>';
+        echo '    </div>';
         
-        echo '<div style="margin:12px 0 16px 0;padding:12px;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;">';
-        echo '<label style="margin-top:0;cursor:pointer;"><input type="checkbox" name="create_login" value="1" id="chkCreateLogin" onchange="toggleLoginInputs()" style="width:auto;"> Sekaligus buatkan Akun Login Sistem (Aplikasi PcConnect)</label>';
-        echo '<div id="loginInputs" style="display:none;margin-top:10px;" class="grid three">';
-        echo '<label>Username Login<input name="username" placeholder="Default sama dengan NIK"></label>';
-        echo '<label>Role Akun<select name="role"><option value="technician">Teknisi</option><option value="corrective_maintenance">Corrective Maintenance</option><option value="maintenance_admin">Admin Maintenance</option><option value="admin">Administrator</option></select></label>';
-        echo '<label>Password Awal (Min 6 Karakter)<input type="password" name="password" placeholder="Password"></label>';
-        echo '</div>';
-        echo '</div>';
+        echo '    <div style="margin:14px 0 16px 0;padding:12px;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;">';
+        echo '      <label style="margin-top:0;cursor:pointer;"><input type="checkbox" name="create_login" value="1" id="chkCreateLogin" onchange="toggleLoginInputs()" style="width:auto;"> Sekaligus buatkan Akun Login Sistem (Aplikasi PcConnect)</label>';
+        echo '      <div id="loginInputs" style="display:none;margin-top:10px;" class="grid three">';
+        echo '        <label>Username Login<input name="username" placeholder="Default sama dengan NIK"></label>';
+        echo '        <label>Role Akun<select name="role"><option value="technician">Teknisi</option><option value="corrective_maintenance">Corrective Maintenance</option><option value="maintenance_admin">Admin Maintenance</option><option value="admin">Administrator</option></select></label>';
+        echo '        <label>Password Awal (Min 6 Karakter)<input type="password" name="password" placeholder="Password"></label>';
+        echo '      </div>';
+        echo '    </div>';
 
-        echo '<button class="btn primary">Simpan Pengguna Baru</button>';
-        echo '</form>';
-        echo '</section>';
+        echo '    <div class="split" style="margin-top:14px;align-items:center;">';
+        echo '      <div></div>';
+        echo '      <div class="actions" style="display:flex;gap:8px;">';
+        echo '        <button type="button" class="btn" onclick="closeTambahPenggunaModal()">Batal</button>';
+        echo '        <button class="btn primary">Simpan Pengguna Baru</button>';
+        echo '      </div>';
+        echo '    </div>';
+        echo '    </form>';
+        echo '  </div>';
+        echo '</div>';
+        echo '</div>';
     }
-
     // Quick Modal Script for Create Login
     echo '<div id="modalLogin" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;">';
     echo '<div style="background:#fff;border-radius:8px;max-width:440px;width:90%;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,0.3);">';
@@ -600,6 +615,18 @@ function handle_route_master_pengguna(PDO $pdo): void
     echo '</form></div></div>';
 
     echo '<script>
+    function openTambahPenggunaModal(){
+        var m = document.getElementById("modalTambahPengguna");
+        if(m){
+            m.style.display = "flex";
+            var nikInp = document.getElementById("modalInputNik");
+            if(nikInp) nikInp.focus();
+        }
+    }
+    function closeTambahPenggunaModal(){
+        var m = document.getElementById("modalTambahPengguna");
+        if(m) m.style.display = "none";
+    }
     function toggleLoginInputs(){
         var chk = document.getElementById("chkCreateLogin");
         var div = document.getElementById("loginInputs");

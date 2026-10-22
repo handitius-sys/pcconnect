@@ -5684,6 +5684,25 @@ function handle_route_asset_master_items(PDO $pdo): void
         $params[] = "%{$filterQ}%";
     }
 
+    // Sorting params
+    $sortBy = (string)($_GET['sort'] ?? '');
+    $sortDir = strtolower((string)($_GET['dir'] ?? 'asc')) === 'desc' ? 'DESC' : 'ASC';
+    $sortColumns = [
+        'item_code' => 'ami.item_code',
+        'item_name' => 'ami.item_name',
+        'group_name' => 'ag.group_name',
+        'type_name' => 'at.type_name',
+        'brand_name' => 'ab.brand_name',
+        'total_units' => 'total_units',
+        'is_active' => 'ami.is_active',
+    ];
+
+    if ($sortBy !== '' && isset($sortColumns[$sortBy])) {
+        $orderClause = $sortColumns[$sortBy] . ' ' . $sortDir . ', ami.item_name ASC';
+    } else {
+        $orderClause = 'ag.group_name ASC, at.type_name ASC, ami.item_name ASC';
+    }
+
     $sql = "SELECT ami.*, ag.group_name, ag.group_code, at.type_name, at.type_code, ab.brand_name,
             (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id AND LOWER(ai.status) <> 'deleted') AS total_units,
             (SELECT COUNT(*) FROM asset_items ai WHERE ai.master_item_id = ami.id AND LOWER(ai.status) = 'active') AS active_units
@@ -5692,7 +5711,7 @@ function handle_route_asset_master_items(PDO $pdo): void
             LEFT JOIN asset_types at ON at.id = ami.asset_type_id
             LEFT JOIN asset_brands ab ON ab.id = ami.brand_id
             WHERE " . implode(" AND ", $where) . "
-            ORDER BY ag.group_name ASC, at.type_name ASC, ami.item_name ASC";
+            ORDER BY " . $orderClause;
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -5701,76 +5720,46 @@ function handle_route_asset_master_items(PDO $pdo): void
     render_header('Master Barang (Katalog Model)', $user);
     echo asset_nav_html();
 
-    // Form Section
     $canCreateMi = has_regulation('asset_master_items', 'create', $user);
     $canEditMi = has_regulation('asset_master_items', 'edit', $user);
     $canDeleteMi = has_regulation('asset_master_items', 'delete', $user);
 
-    if (($edit && $canEditMi) || (!$edit && $canCreateMi)) {
-        echo '<section class="panel">';
-        echo '<div class="split" style="align-items:center;"><div><h1 style="margin:0;">' . ($edit ? 'Edit Master Barang' : 'Tambah Master Barang (Katalog SKU)') . '</h1></div>';
-        echo '<div style="display:flex;gap:8px;">';
-        if ($canCreateMi) {
-            echo '<button type="button" class="btn warning" id="btnMiImportPc" onclick="openMiImportPcModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:16px;">📥</span> Import dari Data PC</button>';
+    $makeSortLink = function(string $colKey, string $label) use ($sortBy, $sortDir, $filterGroup, $filterType, $filterBrand, $filterQ): string {
+        $isCurrent = ($sortBy === $colKey);
+        $nextDir = ($isCurrent && $sortDir === 'ASC') ? 'desc' : 'asc';
+        $indicator = '';
+        if ($isCurrent) {
+            $indicator = $sortDir === 'ASC' ? ' ▲' : ' ▼';
         }
-        if ($edit && $canCreateMi) {
-            echo btn_icon_add(route_url('asset_master_items'), 'Tambah Barang Baru', 'Tambah Barang Baru');
-        }
-        echo '</div></div>';
+        $params = [
+            'sort' => $colKey,
+            'dir' => $nextDir,
+        ];
+        if ($filterGroup > 0) $params['group_id'] = $filterGroup;
+        if ($filterType > 0) $params['type_id'] = $filterType;
+        if ($filterBrand > 0) $params['brand_id'] = $filterBrand;
+        if ($filterQ !== '') $params['q'] = $filterQ;
+        $url = route_url('asset_master_items', $params);
+        return '<a href="' . $url . '" style="color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Klik untuk mengurutkan">' . e($label) . '<span style="font-size:10px;color:' . ($isCurrent ? '#0284c7' : '#94a3b8') . ';">' . ($indicator ?: ' ⇅') . '</span></a>';
+    };
 
-        echo '<form method="post" style="margin-top:14px"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . (int)($edit['id'] ?? 0) . '">';
-        $editBrandId = (int)($edit['brand_id'] ?? 0);
-        $editGroupId = (int)($edit['asset_group_id'] ?? 0);
-        $editTypeId = (int)($edit['asset_type_id'] ?? 0);
-        $brandLabel = ($editGroupId > 0 || $editTypeId > 0) ? '- Pilih Brand / Merk -' : '- Pilih Komoditas & Kategori Terlebih Dahulu -';
-        $brandHtml = ($editGroupId > 0 || $editTypeId > 0)
-            ? asset_brand_options($pdo, $editBrandId, true, $brandLabel, $editGroupId, $editTypeId)
-            : '<option value="">' . $brandLabel . '</option>';
-
-        echo '<div class="grid three">';
-        echo '<label>Komoditas (Grup Aset) *<select id="miGroup" name="asset_group_id" onchange="onMiGroupChanged()" required>' . asset_group_options($pdo, $editGroupId, true, '- Pilih Komoditas -') . '</select></label>';
-        echo '<label>Kategori (Tipe Aset) *<select id="miType" name="asset_type_id" onchange="onMiTypeChanged()" required>' . asset_type_options($pdo, $editTypeId, $editGroupId, true, '- Pilih Kategori -', true) . '</select></label>';
-        echo '<label style="display:flex;flex-direction:column;gap:4px;"><span style="display:flex;justify-content:space-between;align-items:center;"><span>Brand / Merk</span><a href="' . route_url('asset_brands', ($editGroupId > 0 ? ['group_id' => $editGroupId, 'type_id' => $editTypeId] : [])) . '" id="linkManageBrands" target="_blank" style="font-size:12px;color:#0284c7;text-decoration:none;font-weight:600;" title="Kelola Master Merk di tab baru">⚙️ Master Merk ↗</a></span><select id="miBrandId" name="brand_id">' . $brandHtml . '</select></label>';
-        echo '</div>';
-        echo '<div class="grid three">';
-        echo '<label style="display:flex;flex-direction:column;gap:4px;">'
-            . '<span style="display:flex;justify-content:space-between;align-items:center;">'
-            . '<span>Kode Barang / SKU</span>'
-            . '<span class="badge ok" style="font-size:11px;font-weight:600;padding:2px 8px;">Auto Generated</span>'
-            . '</span>'
-            . '<input id="miItemCode" name="item_code" value="' . e($edit['item_code'] ?? '') . '" readonly style="background:#f1f5f9;cursor:not-allowed;font-family:monospace;font-weight:700;color:#0369a1;border:1.5px solid #94a3b8;" placeholder="' . ($edit ? '' : '(Otomatis Dihasilkan Sistem)') . '">'
-            . '</label>';
-        echo '<label>Nama Barang / Model Lengkap *<input id="miItemName" name="item_name" required value="' . e($edit['item_name'] ?? '') . '" placeholder="Contoh: Lenovo ThinkPad T480 Core i5 8GB 256GB"></label>';
-        echo '<label>Model / Varian Spesifik<input id="miModelName" name="model_name" value="' . e($edit['model_name'] ?? '') . '" placeholder="Contoh: ThinkPad T480 / OptiPlex 3080"></label>';
-        echo '</div>';
-
-        // Dynamic Category Specifications container
-        echo '<div style="margin-top:14px;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">';
-        echo '<h3 style="margin:0 0 10px 0;font-size:14px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:6px;"><span>⚙️ Spesifikasi Standar Master Barang (Sesuai Komoditas & Kategori)</span></h3>';
-        echo '<div id="miSpecificationFields" class="grid three"><div class="muted" style="grid-column:1/-1;font-size:13px;padding:4px 0;">ℹ️ Pilih Komoditas dan Kategori di atas untuk memuat kolom spesifikasi standar.</div></div>';
-        echo '</div>';
-
-        echo '<div class="grid one" style="margin-top:12px;">';
-        echo '<label>Deskripsi / Keterangan Katalog<textarea name="description" placeholder="Catatan kegunaan, part pengganti, atau informasi garansi vendor" style="min-height:50px;">' . e($edit['description'] ?? '') . '</textarea></label>';
-        echo '</div>';
-
-        echo '<div class="split" style="margin-top:8px">';
-        echo '<label style="margin:0"><input style="width:auto" type="checkbox" name="is_active" ' . ((!$edit || (int)$edit['is_active']) ? 'checked' : '') . '> Aktif (Tampil di pemilihan unit aset fisik)</label>';
-        echo '<div class="actions">';
-        if ($edit) {
-            echo '<a class="btn" href="' . route_url('asset_master_items') . '">Batal</a>';
-        }
-        echo '<button class="btn primary">Simpan Master Barang</button>';
-        echo '</div>';
-        echo '</div>';
-        echo '</form></section>';
-    }
-
-    // List & Filter Section
+    // 1. List & Filter Section (NAIK KE ATAS)
     echo '<section class="panel">';
-    echo '<div class="split"><h2>Daftar Katalog Master Barang (' . count($items) . ')</h2>';
-    echo '<form method="get" class="actions" style="margin:0">';
+    echo '<div class="split" style="align-items:center;margin-bottom:12px;">';
+    echo '<div style="display:flex;align-items:center;gap:12px;">';
+    echo '<h2 style="margin:0;">Daftar Katalog Master Barang (' . count($items) . ')</h2>';
+    echo '</div>';
+    echo '<div style="display:flex;gap:8px;align-items:center;">';
+    if ($canCreateMi) {
+        echo '<button type="button" class="btn primary" onclick="openModalMasterItem()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah Master Barang</button>';
+    }
+    echo '</div>';
+    echo '</div>';
+
+    echo '<form method="get" class="actions" style="margin:0 0 16px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
     echo '<input type="hidden" name="route" value="asset_master_items">';
+    if ($sortBy !== '') echo '<input type="hidden" name="sort" value="' . e($sortBy) . '">';
+    if ($sortDir !== '') echo '<input type="hidden" name="dir" value="' . e(strtolower($sortDir)) . '">';
     echo '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $filterGroup, true, 'Semua Komoditas') . '</select>';
     echo '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $filterType, $filterGroup, true, 'Semua Kategori', true) . '</select>';
     echo '<select name="brand_id" onchange="this.form.submit()">' . asset_brand_options($pdo, $filterBrand, true, 'Semua Brand', $filterGroup, $filterType) . '</select>';
@@ -5780,12 +5769,20 @@ function handle_route_asset_master_items(PDO $pdo): void
         echo '<a class="btn" href="' . route_url('asset_master_items') . '">Reset</a>';
     }
     echo '</form>';
-    echo '</div>';
 
     if (!$items) {
         echo '<p class="muted" style="margin-top:16px">Belum ada Master Barang yang sesuai filter.</p>';
     } else {
-        echo '<table style="margin-top:16px"><thead><tr><th>SKU / Kode</th><th>Nama Barang & Model</th><th>Komoditas</th><th>Kategori</th><th>Brand</th><th>Total Unit Fisik</th><th>Status</th><th>Aksi</th></tr></thead><tbody>';
+        echo '<table style="margin-top:12px"><thead><tr>';
+        echo '<th>' . $makeSortLink('item_code', 'SKU / Kode') . '</th>';
+        echo '<th>' . $makeSortLink('item_name', 'Nama Barang & Model') . '</th>';
+        echo '<th>' . $makeSortLink('group_name', 'Komoditas') . '</th>';
+        echo '<th>' . $makeSortLink('type_name', 'Kategori') . '</th>';
+        echo '<th>' . $makeSortLink('brand_name', 'Brand') . '</th>';
+        echo '<th>' . $makeSortLink('total_units', 'Total Unit Fisik') . '</th>';
+        echo '<th>' . $makeSortLink('is_active', 'Status') . '</th>';
+        echo '<th>Aksi</th>';
+        echo '</tr></thead><tbody>';
         foreach ($items as $row) {
             $unitText = '<strong>' . (int)$row['total_units'] . ' Unit</strong>';
             if ((int)$row['total_units'] > 0) {
@@ -5820,6 +5817,75 @@ function handle_route_asset_master_items(PDO $pdo): void
     }
     echo '</section>';
 
+    // 2. Modal Popup Form Tambah / Edit Master Barang
+    $isModalOpen = ($edit && $canEditMi) ? true : false;
+    echo '
+    <div id="modalMasterItem" style="display:' . ($isModalOpen ? 'flex' : 'none') . ';position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:12px;width:100%;max-width:900px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">
+            <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:20px;">📦</span>
+                    <h3 style="margin:0;font-size:16px;font-weight:700;color:#1e293b;">' . ($edit ? 'Edit Master Barang' : 'Tambah Master Barang (Katalog SKU)') . '</h3>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">';
+    if ($canCreateMi && !$edit) {
+        echo '<button type="button" class="btn warning small" id="btnMiImportPc" onclick="openMiImportPcModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:14px;">📥</span> Import dari Data PC</button>';
+    }
+    echo '          <button type="button" onclick="closeModalMasterItem()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;line-height:1;">✕</button>
+                </div>
+            </div>
+            <div style="padding:20px;overflow-y:auto;flex:1;">
+                <form method="post" id="formMasterItem">
+                    <input type="hidden" name="csrf" value="' . csrf_token() . '">
+                    <input type="hidden" name="id" value="' . (int)($edit['id'] ?? 0) . '">';
+    
+    $editBrandId = (int)($edit['brand_id'] ?? 0);
+    $editGroupId = (int)($edit['asset_group_id'] ?? 0);
+    $editTypeId = (int)($edit['asset_type_id'] ?? 0);
+    $brandLabel = ($editGroupId > 0 || $editTypeId > 0) ? '- Pilih Brand / Merk -' : '- Pilih Komoditas & Kategori Terlebih Dahulu -';
+    $brandHtml = ($editGroupId > 0 || $editTypeId > 0)
+        ? asset_brand_options($pdo, $editBrandId, true, $brandLabel, $editGroupId, $editTypeId)
+        : '<option value="">' . $brandLabel . '</option>';
+
+    echo '<div class="grid three">';
+    echo '<label>Komoditas (Grup Aset) *<select id="miGroup" name="asset_group_id" onchange="onMiGroupChanged()" required>' . asset_group_options($pdo, $editGroupId, true, '- Pilih Komoditas -') . '</select></label>';
+    echo '<label>Kategori (Tipe Aset) *<select id="miType" name="asset_type_id" onchange="onMiTypeChanged()" required>' . asset_type_options($pdo, $editTypeId, $editGroupId, true, '- Pilih Kategori -', true) . '</select></label>';
+    echo '<label style="display:flex;flex-direction:column;gap:4px;"><span style="display:flex;justify-content:space-between;align-items:center;"><span>Brand / Merk</span><a href="' . route_url('asset_brands', ($editGroupId > 0 ? ['group_id' => $editGroupId, 'type_id' => $editTypeId] : [])) . '" id="linkManageBrands" target="_blank" style="font-size:12px;color:#0284c7;text-decoration:none;font-weight:600;" title="Kelola Master Merk di tab baru">⚙️ Master Merk ↗</a></span><select id="miBrandId" name="brand_id">' . $brandHtml . '</select></label>';
+    echo '</div>';
+
+    echo '<div class="grid three" style="margin-top:10px;">';
+    echo '<label style="display:flex;flex-direction:column;gap:4px;">'
+        . '<span style="display:flex;justify-content:space-between;align-items:center;">'
+        . '<span>Kode Barang / SKU</span>'
+        . '<span class="badge ok" style="font-size:11px;font-weight:600;padding:2px 8px;">Auto Generated</span>'
+        . '</span>'
+        . '<input id="miItemCode" name="item_code" value="' . e($edit['item_code'] ?? '') . '" readonly style="background:#f1f5f9;cursor:not-allowed;font-family:monospace;font-weight:700;color:#0369a1;border:1.5px solid #94a3b8;" placeholder="' . ($edit ? '' : '(Otomatis Dihasilkan Sistem)') . '">'
+        . '</label>';
+    echo '<label>Nama Barang / Model Lengkap *<input id="miItemName" name="item_name" required value="' . e($edit['item_name'] ?? '') . '" placeholder="Contoh: Lenovo ThinkPad T480 Core i5 8GB 256GB"></label>';
+    echo '<label>Model / Varian Spesifik<input id="miModelName" name="model_name" value="' . e($edit['model_name'] ?? '') . '" placeholder="Contoh: ThinkPad T480 / OptiPlex 3080"></label>';
+    echo '</div>';
+
+    // Dynamic Category Specifications container
+    echo '<div style="margin-top:14px;padding:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">';
+    echo '<h3 style="margin:0 0 10px 0;font-size:14px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:6px;"><span>⚙️ Spesifikasi Standar Master Barang (Sesuai Komoditas & Kategori)</span></h3>';
+    echo '<div id="miSpecificationFields" class="grid three"><div class="muted" style="grid-column:1/-1;font-size:13px;padding:4px 0;">ℹ️ Pilih Komoditas dan Kategori di atas untuk memuat kolom spesifikasi standar.</div></div>';
+    echo '</div>';
+
+    echo '<div class="grid one" style="margin-top:12px;">';
+    echo '<label>Deskripsi / Keterangan Katalog<textarea name="description" placeholder="Catatan kegunaan, part pengganti, atau informasi garansi vendor" style="min-height:50px;">' . e($edit['description'] ?? '') . '</textarea></label>';
+    echo '</div>';
+
+    echo '<div class="split" style="margin-top:14px;align-items:center;">';
+    echo '<label style="margin:0"><input style="width:auto" type="checkbox" name="is_active" ' . ((!$edit || (int)$edit['is_active']) ? 'checked' : '') . '> Aktif (Tampil di pemilihan unit aset fisik)</label>';
+    echo '<div class="actions" style="display:flex;gap:8px;">';
+    echo '<button type="button" class="btn" onclick="closeModalMasterItem()">Batal</button>';
+    echo '<button class="btn primary">Simpan Master Barang</button>';
+    echo '</div>';
+    echo '</div>';
+    echo '</form>';
+    echo '</div>';
+    echo '</div>';
+    echo '</div>';
     // PC Import Modal for Master Barang
     echo '
 <div id="miPcImportModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:999999;align-items:center;justify-content:center;padding:20px;">
@@ -5852,6 +5918,24 @@ function handle_route_asset_master_items(PDO $pdo): void
     // Script block for Master Barang
     $existingMiSpecsJson = json_encode($existingMiSpecs ?: new stdClass(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
     echo '<script>
+    window.openModalMasterItem = function(){
+        var m = document.getElementById("modalMasterItem");
+        if(m) {
+            m.style.display = "flex";
+            var inp = document.getElementById("miItemName");
+            if(inp) inp.focus();
+        }
+    };
+    window.closeModalMasterItem = function(){
+        var isEdit = true;
+        var curUrl = window.location.href;
+        if(curUrl.indexOf("id=") !== -1){
+            window.location.href = "index.php?route=asset_master_items";
+        } else {
+            var m = document.getElementById("modalMasterItem");
+            if(m) m.style.display = "none";
+        }
+    };
     window._existingMiSpecs = ' . $existingMiSpecsJson . ';
 
     window.loadMiSpecifications = async function(typeId, groupId, fillValues){

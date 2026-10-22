@@ -295,6 +295,167 @@ function get_regulated_menus(): array
     ];
 }
 
+function get_default_sidebar_structure(): array
+{
+    return [
+        'group_transaksi' => [
+            'label' => 'Transaksi Aset',
+            'icon' => 'box',
+            'order' => 10,
+            'items' => [
+                'asset_items' => ['label' => 'Unit Aset', 'icon' => 'box', 'order' => 10, 'reg' => 'asset_items'],
+                'asset_loans' => ['label' => 'Peminjaman Aset', 'icon' => 'loan', 'order' => 20, 'reg' => 'asset_loans'],
+                'asset_mutations' => ['label' => 'Mutasi Aset', 'icon' => 'move', 'order' => 30, 'reg' => 'asset_mutations'],
+            ],
+        ],
+        'group_maintenance' => [
+            'label' => 'Maintenance Aset',
+            'icon' => 'tool',
+            'order' => 20,
+            'items' => [
+                'maintenance' => ['label' => 'Schedule PM', 'icon' => 'tool', 'order' => 10, 'reg' => 'maintenance'],
+                'tickets' => ['label' => 'Aset Corrective', 'icon' => 'ticket', 'order' => 20, 'reg' => 'tickets'],
+            ],
+        ],
+        'group_reports' => [
+            'label' => 'Reports',
+            'icon' => 'chart',
+            'order' => 30,
+            'items' => [
+                'reports' => ['label' => 'Report Preventive Maintenance', 'icon' => 'chart', 'order' => 10, 'reg' => 'reports'],
+                'corrective_repairs' => ['label' => 'Report Corrective Maintenance', 'icon' => 'chart', 'order' => 20, 'reg' => 'corrective_repairs'],
+                'asset_movements' => ['label' => 'Report Mutasi Aset', 'icon' => 'chart', 'order' => 30, 'reg' => 'asset_movements'],
+                'report_asset_loans' => ['label' => 'Report Peminjaman Aset', 'icon' => 'chart', 'order' => 40, 'reg' => 'report_asset_loans'],
+                'report_asset_items' => ['label' => 'Report Unit Aset', 'icon' => 'chart', 'order' => 50, 'reg' => 'report_asset_items'],
+            ],
+        ],
+        'group_master' => [
+            'label' => 'Data Master',
+            'icon' => 'layers',
+            'order' => 40,
+            'items' => [
+                'pcs' => ['label' => 'Pendataan PC', 'icon' => 'pc', 'order' => 10, 'reg' => 'pcs'],
+                'asset_groups' => ['label' => 'Master Komoditas', 'icon' => 'layers', 'order' => 20, 'reg' => 'asset_groups'],
+                'corrective_workshops' => ['label' => 'Master Bengkel', 'icon' => 'cog', 'order' => 30, 'reg' => 'corrective_workshops'],
+                'asset_types' => ['label' => 'Master Kategori', 'icon' => 'layers', 'order' => 40, 'reg' => 'asset_types'],
+                'jobs' => ['label' => 'Master Jobdesk PM', 'icon' => 'layers', 'order' => 50, 'reg' => 'jobs'],
+                'corrective_job_desks' => ['label' => 'Master Jobdesk Corrective', 'icon' => 'layers', 'order' => 60, 'reg' => 'corrective_job_desks'],
+                'asset_brands' => ['label' => 'Master Brand / Merk', 'icon' => 'box', 'order' => 70, 'reg' => 'asset_brands'],
+                'asset_master_items' => ['label' => 'Master Barang', 'icon' => 'box', 'order' => 80, 'reg' => 'asset_master_items'],
+                'asset_identifiers' => ['label' => 'Identifier Aset', 'icon' => 'qr', 'order' => 90, 'reg' => 'asset_identifiers'],
+                'asset_specifications' => ['label' => 'Spesifikasi Aset', 'icon' => 'tool', 'order' => 100, 'reg' => 'asset_specifications'],
+                'asset_locations' => ['label' => 'Master Lokasi', 'icon' => 'patrol', 'order' => 110, 'reg' => 'asset_locations'],
+                'asset_companies' => ['label' => 'Company', 'icon' => 'shield', 'order' => 120, 'reg' => 'asset_companies'],
+                'master_pengguna' => ['label' => 'Master Pengguna', 'icon' => 'users', 'order' => 130, 'reg' => 'master_pengguna'],
+            ],
+        ],
+        'group_setup' => [
+            'label' => 'Pengaturan & Setup',
+            'icon' => 'cog',
+            'order' => 50,
+            'items' => [
+                'labels' => ['label' => 'QR Label Unit', 'icon' => 'qr', 'order' => 10, 'reg' => 'labels'],
+                'users' => ['label' => 'Akses Users', 'icon' => 'users', 'order' => 20, 'reg' => 'users'],
+                'setup_regulations' => ['label' => 'Regulasi Hak Akses', 'icon' => 'shield', 'order' => 30, 'reg' => 'admin_only'],
+                'employee_source' => ['label' => 'Employee Source', 'icon' => 'cog', 'order' => 40, 'reg' => 'admin_only'],
+            ],
+        ],
+    ];
+}
+
+function ensure_menu_orders_schema(PDO $pdo): void
+{
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS system_menu_orders (
+            item_key VARCHAR(60) NOT NULL PRIMARY KEY,
+            parent_group VARCHAR(60) NOT NULL DEFAULT '',
+            display_order INT NOT NULL DEFAULT 10,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) {}
+}
+
+function get_sidebar_menu_orders(?PDO $pdo = null): array
+{
+    $structure = get_default_sidebar_structure();
+    if (!$pdo) {
+        try {
+            $pdo = Database::pdo();
+        } catch (Throwable $e) {
+            return $structure;
+        }
+    }
+    ensure_menu_orders_schema($pdo);
+
+    try {
+        $stmt = $pdo->query("SELECT item_key, parent_group, display_order FROM system_menu_orders");
+        $savedOrders = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $savedOrders[$r['item_key']] = (int)$r['display_order'];
+        }
+
+        foreach ($structure as $gKey => &$gVal) {
+            if (isset($savedOrders[$gKey])) {
+                $gVal['order'] = $savedOrders[$gKey];
+            }
+            foreach ($gVal['items'] as $iKey => &$iVal) {
+                if (isset($savedOrders[$iKey])) {
+                    $iVal['order'] = $savedOrders[$iKey];
+                }
+            }
+            unset($iVal);
+            // Sort items inside group
+            uasort($gVal['items'], function($a, $b) {
+                return ($a['order'] <=> $b['order']);
+            });
+        }
+        unset($gVal);
+
+        // Sort groups
+        uasort($structure, function($a, $b) {
+            return ($a['order'] <=> $b['order']);
+        });
+    } catch (Throwable $e) {}
+
+    return $structure;
+}
+
+function save_sidebar_menu_orders(PDO $pdo, array $orders): void
+{
+    ensure_menu_orders_schema($pdo);
+    $stmt = $pdo->prepare("INSERT INTO system_menu_orders (item_key, parent_group, display_order, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE display_order = VALUES(display_order), updated_at = NOW()");
+    $structure = get_default_sidebar_structure();
+    
+    foreach ($orders as $key => $ordVal) {
+        $cleanKey = trim((string)$key);
+        $orderInt = max(1, min(999, (int)$ordVal));
+        if ($cleanKey === '') continue;
+
+        $pGroup = '';
+        if (str_starts_with($cleanKey, 'group_')) {
+            $pGroup = 'root';
+        } else {
+            foreach ($structure as $gK => $gV) {
+                if (isset($gV['items'][$cleanKey])) {
+                    $pGroup = $gK;
+                    break;
+                }
+            }
+        }
+        $stmt->execute([$cleanKey, $pGroup, $orderInt]);
+    }
+}
+
+function reset_sidebar_menu_orders(PDO $pdo): void
+{
+    ensure_menu_orders_schema($pdo);
+    try {
+        $pdo->exec("TRUNCATE TABLE system_menu_orders");
+    } catch (Throwable $e) {
+        $pdo->exec("DELETE FROM system_menu_orders");
+    }
+}
+
 function get_user_regulations(?string $role): array
 {
     static $cache = [];
@@ -592,131 +753,58 @@ function render_header(string $title, ?array $user = null): void
 
         echo '<nav class="sidebar-nav">';
 
-        // 1. Transaksi Aset Accordion (Unit Aset, Pinjam, Mutasi)
-        $transRoutes = ['asset_items', 'asset_loans', 'asset_mutations'];
-        $isTransOpen = in_array($curRoute, $transRoutes, true);
-        echo '<details class="nav-accordion"' . ($isTransOpen ? ' open' : '') . '>';
-        echo '  <summary class="nav-item" title="Transaksi Aset"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Transaksi Aset</span><span class="nav-chevron">▶</span></summary>';
-        echo '  <div class="nav-submenu">';
-        if ($isAdmin || has_regulation('asset_items', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_items' ? ' active' : '') . '" href="' . route_url('asset_items') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Unit Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_loans', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_loans' ? ' active' : '') . '" href="' . route_url('asset_loans') . '"><span class="nav-icon">' . $svgLoan . '</span><span class="nav-label">Peminjaman Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_mutations', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_mutations' ? ' active' : '') . '" href="' . route_url('asset_mutations') . '"><span class="nav-icon">' . $svgMove . '</span><span class="nav-label">Mutasi Aset</span></a>';
-        }
+        $svgIcons = [
+            'box' => $svgBox,
+            'layers' => $svgLayers,
+            'pc' => $svgPc,
+            'loan' => $svgLoan,
+            'move' => $svgMove,
+            'tool' => $svgTool,
+            'ticket' => $svgTicket,
+            'patrol' => $svgPatrol,
+            'chart' => $svgChart,
+            'users' => $svgUsers,
+            'shield' => $svgShield,
+            'cog' => $svgCog,
+            'qr' => $svgQr,
+        ];
 
-        echo '  </div>';
-        echo '</details>';
+        $menuStructure = get_sidebar_menu_orders($pdo ?? null);
+        foreach ($menuStructure as $gKey => $group) {
+            $visibleItems = [];
+            $isGroupOpen = false;
+            foreach ($group['items'] as $itemKey => $item) {
+                $canAccess = false;
+                if ($isAdmin) {
+                    $canAccess = true;
+                } elseif (($item['reg'] ?? '') === 'admin_only') {
+                    $canAccess = false;
+                } elseif (!empty($item['reg'])) {
+                    $canAccess = has_regulation($item['reg'], 'view', $user);
+                } else {
+                    $canAccess = true;
+                }
 
-        // 2. Maintenance Aset Accordion
-        $maintRoutes = ['maintenance', 'tickets'];
-        $isMaintOpen = in_array($curRoute, $maintRoutes, true);
-        if ($isAdmin || has_regulation('maintenance', 'view', $user) || has_regulation('tickets', 'view', $user)) {
-            echo '<details class="nav-accordion"' . ($isMaintOpen ? ' open' : '') . '>';
-            echo '  <summary class="nav-item" title="Maintenance Aset"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Maintenance Aset</span><span class="nav-chevron">▼</span></summary>';
+                if ($canAccess) {
+                    $visibleItems[$itemKey] = $item;
+                    if ($curRoute === $itemKey || ($itemKey === 'asset_movements' && $curRoute === 'report_asset_mutations')) {
+                        $isGroupOpen = true;
+                    }
+                }
+            }
+
+            if (empty($visibleItems)) {
+                continue;
+            }
+
+            $gIcon = $svgIcons[$group['icon'] ?? 'layers'] ?? $svgLayers;
+            echo '<details class="nav-accordion"' . ($isGroupOpen ? ' open' : '') . '>';
+            echo '  <summary class="nav-item" title="' . e($group['label']) . '"><span class="nav-icon">' . $gIcon . '</span><span class="nav-label">' . e($group['label']) . '</span><span class="nav-chevron">▶</span></summary>';
             echo '  <div class="nav-submenu">';
-            if ($isAdmin || has_regulation('maintenance', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'maintenance' ? ' active' : '') . '" href="' . route_url('maintenance') . '"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Schedule PM</span></a>';
-            }
-            if ($isAdmin || has_regulation('tickets', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'tickets' ? ' active' : '') . '" href="' . route_url('tickets') . '"><span class="nav-icon">' . $svgTicket . '</span><span class="nav-label">Aset Corrective</span></a>';
-            }
-            echo '  </div>';
-            echo '</details>';
-        }
-
-        // 3. Reports Accordion
-        $reportRoutes = ['reports', 'corrective_repairs', 'asset_movements', 'asset_mutations', 'report_asset_loans'];
-        $isReportOpen = in_array($curRoute, $reportRoutes, true);
-        echo '<details class="nav-accordion"' . ($isReportOpen ? ' open' : '') . '>';
-        echo '  <summary class="nav-item" title="Reports"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Reports</span><span class="nav-chevron">▶</span></summary>';
-        echo '  <div class="nav-submenu">';
-        if ($isAdmin || has_regulation('reports', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'reports' ? ' active' : '') . '" href="' . route_url('reports') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Preventive Maintenance</span></a>';
-        }
-        if ($isAdmin || has_regulation('corrective_repairs', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'corrective_repairs' ? ' active' : '') . '" href="' . route_url('corrective_repairs') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Corrective Maintenance</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_movements', 'view', $user) || has_regulation('asset_mutations', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_movements' || $curRoute === 'report_asset_mutations' ? ' active' : '') . '" href="' . route_url('asset_movements') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Mutasi Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_loans', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'report_asset_loans' ? ' active' : '') . '" href="' . route_url('report_asset_loans') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Peminjaman Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_items', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'report_asset_items' ? ' active' : '') . '" href="' . route_url('report_asset_items') . '"><span class="nav-icon">' . $svgChart . '</span><span class="nav-label">Report Unit Aset</span></a>';
-        }
-        echo '  </div>';
-        echo '</details>';
-
-        // 4. Data Master Accordion
-        $masterRoutes = ['pcs', 'asset_groups', 'asset_types', 'jobs', 'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications', 'asset_locations', 'asset_companies', 'master_pengguna', 'corrective_workshops'];
-        $isMasterOpen = in_array($curRoute, $masterRoutes, true);
-        echo '<details class="nav-accordion"' . ($isMasterOpen ? ' open' : '') . '>';
-        echo '  <summary class="nav-item" title="Data Master"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Data Master</span><span class="nav-chevron">▶</span></summary>';
-        echo '  <div class="nav-submenu">';
-        if ($isAdmin || has_regulation('pcs', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'pcs' ? ' active' : '') . '" href="' . route_url('pcs') . '"><span class="nav-icon">' . $svgPc . '</span><span class="nav-label">Pendataan PC</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_groups', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_groups' ? ' active' : '') . '" href="' . route_url('asset_groups') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Komoditas</span></a>';
-        }
-        if ($isAdmin || has_regulation('corrective_workshops', 'view', $user) || has_regulation('corrective_admin', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'corrective_workshops' ? ' active' : '') . '" href="' . route_url('corrective_workshops') . '"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Master Bengkel</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_types', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_types' ? ' active' : '') . '" href="' . route_url('asset_types') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Kategori</span></a>';
-        }
-        if ($isAdmin || has_regulation('jobs', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'jobs' ? ' active' : '') . '" href="' . route_url('jobs') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk PM</span></a>';
-        }
-        if ($isAdmin || has_regulation('corrective_job_desks', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'corrective_job_desks' ? ' active' : '') . '" href="' . route_url('corrective_job_desks') . '"><span class="nav-icon">' . $svgLayers . '</span><span class="nav-label">Master Jobdesk Corrective</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_brands', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_brands' ? ' active' : '') . '" href="' . route_url('asset_brands') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Master Brand / Merk</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_master_items', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_master_items' ? ' active' : '') . '" href="' . route_url('asset_master_items') . '"><span class="nav-icon">' . $svgBox . '</span><span class="nav-label">Master Barang</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_identifiers', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_identifiers' ? ' active' : '') . '" href="' . route_url('asset_identifiers') . '"><span class="nav-icon">' . $svgQr . '</span><span class="nav-label">Identifier Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_specifications', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_specifications' ? ' active' : '') . '" href="' . route_url('asset_specifications') . '"><span class="nav-icon">' . $svgTool . '</span><span class="nav-label">Spesifikasi Aset</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_locations', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_locations' ? ' active' : '') . '" href="' . route_url('asset_locations') . '"><span class="nav-icon">' . $svgPatrol . '</span><span class="nav-label">Master Lokasi</span></a>';
-        }
-        if ($isAdmin || has_regulation('asset_companies', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'asset_companies' ? ' active' : '') . '" href="' . route_url('asset_companies') . '"><span class="nav-icon">' . $svgShield . '</span><span class="nav-label">Company</span></a>';
-        }
-        if ($isAdmin || has_regulation('master_pengguna', 'view', $user)) {
-            echo '<a class="nav-item' . ($curRoute === 'master_pengguna' ? ' active' : '') . '" href="' . route_url('master_pengguna') . '"><span class="nav-icon">' . $svgUsers . '</span><span class="nav-label">Master Pengguna</span></a>';
-        }
-        echo '  </div>';
-        echo '</details>';
-
-        // 5. Setup Accordion
-        if ($isAdmin || has_regulation('users', 'view', $user) || has_regulation('labels', 'view', $user)) {
-            $setupRoutes = ['labels', 'users', 'setup_regulations', 'employee_source', 'system_orphan_cleanup'];
-            $isSetupOpen = in_array($curRoute, $setupRoutes, true);
-            echo '<details class="nav-accordion"' . ($isSetupOpen ? ' open' : '') . '>';
-            echo '  <summary class="nav-item" title="Pengaturan & Setup"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Pengaturan & Setup</span><span class="nav-chevron">▶</span></summary>';
-            echo '  <div class="nav-submenu">';
-            if ($isAdmin || has_regulation('labels', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'labels' ? ' active' : '') . '" href="' . route_url('labels') . '"><span class="nav-icon">' . $svgQr . '</span><span class="nav-label">QR Label Unit</span></a>';
-            }
-            if ($isAdmin || has_regulation('users', 'view', $user)) {
-                echo '<a class="nav-item' . ($curRoute === 'users' ? ' active' : '') . '" href="' . route_url('users') . '"><span class="nav-icon">' . $svgUsers . '</span><span class="nav-label">Akses Users</span></a>';
-            }
-            if ($isAdmin) {
-                echo '<a class="nav-item' . ($curRoute === 'setup_regulations' ? ' active' : '') . '" href="' . route_url('setup_regulations') . '"><span class="nav-icon">' . $svgShield . '</span><span class="nav-label">Regulasi Hak Akses</span></a>';
-                echo '<a class="nav-item' . ($curRoute === 'employee_source' ? ' active' : '') . '" href="' . route_url('employee_source') . '"><span class="nav-icon">' . $svgCog . '</span><span class="nav-label">Employee Source</span></a>';
-                echo '<a class="nav-item' . ($curRoute === 'system_orphan_cleanup' ? ' active' : '') . '" href="' . route_url('system_orphan_cleanup') . '"><span class="nav-icon" style="font-size:14px;">🧹</span><span class="nav-label">Pembersihan Orphan</span></a>';
+            foreach ($visibleItems as $itemKey => $item) {
+                $isActive = ($curRoute === $itemKey || ($itemKey === 'asset_movements' && $curRoute === 'report_asset_mutations'));
+                $itemIcon = $svgIcons[$item['icon'] ?? 'box'] ?? $svgBox;
+                echo '<a class="nav-item' . ($isActive ? ' active' : '') . '" href="' . route_url($itemKey) . '"><span class="nav-icon">' . $itemIcon . '</span><span class="nav-label">' . e($item['label']) . '</span></a>';
             }
             echo '  </div>';
             echo '</details>';

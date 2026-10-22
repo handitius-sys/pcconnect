@@ -120,7 +120,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
         'app/modules/asset_loan.php',
         'app/modules/mobile_loan.php',
     ];
-} elseif (str_starts_with($route, 'asset_') || str_starts_with($route, 'report_asset_') || $route === 'system_orphan_cleanup') {
+} elseif (str_starts_with($route, 'asset_') || str_starts_with($route, 'report_asset_') || $route === 'employee_source') {
     $modulesToLoad = [
         'app/lib/qr.php',
         'app/modules/pc.php',
@@ -170,7 +170,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
     $modulesToLoad = [
         'app/modules/regulations.php',
     ];
-} elseif (in_array($route, ['master_pengguna', 'employee_source'], true)) {
+} elseif ($route === 'master_pengguna') {
     $modulesToLoad = [
         'app/modules/pengguna.php',
     ];
@@ -377,7 +377,7 @@ switch ($route) {
     case 'system_orphan_cleanup':
         // Fitur Pembersihan & Audit Data Orphan Seluruh Sistem (All System)
         // Memeriksa dan merapikan relasi data terputus di PC, Printer, Unit Aset, Maintenance, Tiket, dan Mutasi
-        handle_route_system_orphan_cleanup($pdo);
+        redirect_to('dashboard');
         break;
     case 'asset_management_cleanup':
         // Pembersihan data master manajemen aset lama (khusus reset layer manajemen aset)
