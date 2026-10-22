@@ -120,7 +120,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
         'app/modules/asset_loan.php',
         'app/modules/mobile_loan.php',
     ];
-} elseif (str_starts_with($route, 'asset_') || str_starts_with($route, 'report_asset_') || $route === 'employee_source') {
+} elseif (str_starts_with($route, 'asset_') || str_starts_with($route, 'report_asset_')) {
     $modulesToLoad = [
         'app/lib/qr.php',
         'app/modules/pc.php',
@@ -384,7 +384,7 @@ switch ($route) {
         handle_route_asset_management_cleanup($pdo);
         break;
     case 'employee_source':
-        handle_route_employee_source($pdo);
+        redirect_to('master_pengguna', ['tab' => 'setting']);
         break;
     case 'asset_groups':
     case 'asset_types':

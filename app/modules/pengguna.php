@@ -83,12 +83,187 @@ function get_user_linked_assets(PDO $pdo, string $nik, string $name): array
     return $res;
 }
 
+if (!function_exists('employee_source_defaults')) {
+    function employee_source_defaults(): array
+    {
+        return [
+            'enabled' => '1',
+            'host' => '',
+            'port' => '3306',
+            'database' => '',
+            'username' => '',
+            'password' => '',
+            'table_name' => 'employees',
+            'nik_field' => 'NIK',
+            'name_field' => 'Nama',
+            'department_field' => '',
+            'limit_rows' => '5000',
+        ];
+    }
+}
+
+if (!function_exists('employee_source_config')) {
+    function employee_source_config(PDO $pdo): array
+    {
+        $config = employee_source_defaults();
+        try {
+            if (!db_table_exists($pdo, 'employee_source_config')) {
+                return $config;
+            }
+            foreach ($pdo->query('SELECT config_key, config_value FROM employee_source_config') as $row) {
+                $key = (string)$row['config_key'];
+                if (array_key_exists($key, $config)) {
+                    $config[$key] = (string)($row['config_value'] ?? '');
+                }
+            }
+        } catch (Throwable $ignored) {
+        }
+        return $config;
+    }
+}
+
+if (!function_exists('save_employee_source_config')) {
+    function save_employee_source_config(PDO $pdo, array $config): void
+    {
+        ensure_employee_source_schema($pdo);
+        $allowed = employee_source_defaults();
+        $stmt = $pdo->prepare('REPLACE INTO employee_source_config (config_key, config_value) VALUES (?, ?)');
+        foreach ($allowed as $key => $default) {
+            $stmt->execute([$key, (string)($config[$key] ?? $default)]);
+        }
+    }
+}
+
+if (!function_exists('mysql_identifier')) {
+    function mysql_identifier(string $identifier): string
+    {
+        $identifier = trim($identifier);
+        if (!preg_match('/^[A-Za-z0-9_ -]+(\.[A-Za-z0-9_ -]+)?$/', $identifier)) {
+            throw new RuntimeException('Nama table/field MariaDB tidak valid: ' . $identifier);
+        }
+        $parts = explode('.', $identifier);
+        return implode('.', array_map(static fn(string $part): string => '`' . str_replace('`', '``', $part) . '`', $parts));
+    }
+}
+
+if (!function_exists('employee_portal_connection_from_config')) {
+    function employee_portal_connection_from_config(array $config): PDO
+    {
+        $host = trim((string)($config['host'] ?? ''));
+        $database = trim((string)($config['database'] ?? ''));
+        if ($host === '' || $database === '') {
+            throw new RuntimeException('Host/IP dan database MariaDB portal wajib diisi.');
+        }
+        $port = (int)($config['port'] ?? 3306);
+        $dsn = 'mysql:host=' . $host . ';port=' . ($port > 0 ? $port : 3306) . ';dbname=' . $database . ';charset=utf8mb4';
+        return new PDO($dsn, (string)($config['username'] ?? ''), (string)($config['password'] ?? ''), [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_TIMEOUT => 8,
+        ]);
+    }
+}
+
+if (!function_exists('normalize_employee_rows')) {
+    function normalize_employee_rows(array $rows): array
+    {
+        $normalized = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $nik = trim((string)($row['nik'] ?? $row['NIK'] ?? ''));
+            $name = trim((string)($row['name'] ?? $row['Nama'] ?? $row['employee_name'] ?? ''));
+            if ($nik === '' || $name === '') {
+                continue;
+            }
+            $normalized[] = [
+                'nik' => $nik,
+                'name' => $name,
+                'department' => trim((string)($row['department'] ?? $row['Department'] ?? '')),
+            ];
+        }
+        return $normalized;
+    }
+}
+
+if (!function_exists('fetch_employee_portal_rows')) {
+    function fetch_employee_portal_rows(array $config, int $limit): array
+    {
+        $remote = employee_portal_connection_from_config($config);
+        $limit = max(1, min(50000, $limit));
+        $table = mysql_identifier((string)($config['table_name'] ?: 'employees'));
+        $nikField = mysql_identifier((string)($config['nik_field'] ?: 'NIK'));
+        $nameField = mysql_identifier((string)($config['name_field'] ?: 'Nama'));
+        $departmentFieldRaw = trim((string)($config['department_field'] ?? ''));
+        $departmentSelect = $departmentFieldRaw !== '' ? ', CAST(' . mysql_identifier($departmentFieldRaw) . ' AS CHAR) AS department' : ", CAST('' AS CHAR) AS department";
+        $sql = 'SELECT CAST(' . $nikField . ' AS CHAR) AS nik, CAST(' . $nameField . ' AS CHAR) AS name' . $departmentSelect . ' FROM ' . $table . ' WHERE ' . $nikField . ' IS NOT NULL AND ' . $nameField . ' IS NOT NULL ORDER BY ' . $nameField . ' LIMIT ' . (int)$limit;
+        return normalize_employee_rows($remote->query($sql)->fetchAll());
+    }
+}
+
+if (!function_exists('import_employee_directory')) {
+    function import_employee_directory(PDO $appPdo): int
+    {
+        ensure_employee_source_schema($appPdo);
+        $config = employee_source_config($appPdo);
+        $limit = max(1, min(50000, (int)($config['limit_rows'] ?? 5000)));
+        $rows = fetch_employee_portal_rows($config, $limit);
+        if (!$rows) {
+            return 0;
+        }
+        $appPdo->beginTransaction();
+        try {
+            $hasName = db_column_exists($appPdo, 'employee_directory', 'name');
+            $hasEmpName = db_column_exists($appPdo, 'employee_directory', 'employee_name');
+
+            if ($hasName && $hasEmpName) {
+                $stmt = $appPdo->prepare('REPLACE INTO employee_directory (nik, name, employee_name, department, is_active, synced_at) VALUES (?, ?, ?, ?, 1, NOW())');
+                foreach ($rows as $row) {
+                    $stmt->execute([$row['nik'], $row['name'], $row['name'], $row['department']]);
+                }
+            } elseif ($hasEmpName) {
+                $stmt = $appPdo->prepare('REPLACE INTO employee_directory (nik, employee_name, department, is_active, synced_at) VALUES (?, ?, ?, 1, NOW())');
+                foreach ($rows as $row) {
+                    $stmt->execute([$row['nik'], $row['name'], $row['department']]);
+                }
+            } else {
+                $stmt = $appPdo->prepare('REPLACE INTO employee_directory (nik, name, department, is_active, synced_at) VALUES (?, ?, ?, 1, NOW())');
+                foreach ($rows as $row) {
+                    $stmt->execute([$row['nik'], $row['name'], $row['department']]);
+                }
+            }
+            $appPdo->commit();
+        } catch (Throwable $e) {
+            if ($appPdo->inTransaction()) {
+                $appPdo->rollBack();
+            }
+            throw $e;
+        }
+        return count($rows);
+    }
+}
+
+if (!function_exists('sync_employee_directory')) {
+    function sync_employee_directory(PDO $appPdo): int
+    {
+        return import_employee_directory($appPdo);
+    }
+}
+
+
 function handle_route_master_pengguna(PDO $pdo): void
 {
     $user = require_regulation('master_pengguna', 'view');
 
     if (!db_table_exists($pdo, 'employee_directory')) {
         ensure_app_schema($pdo);
+    }
+    ensure_employee_source_schema($pdo);
+
+    $activeTab = (string)($_GET['tab'] ?? 'list');
+    if (!in_array($activeTab, ['list', 'setting'], true)) {
+        $activeTab = 'list';
     }
 
     // Pastikan kolom owner_name dan employee_nik ada di printers
@@ -107,19 +282,102 @@ function handle_route_master_pengguna(PDO $pdo): void
         verify_csrf();
         $action = (string)($_POST['action'] ?? '');
 
-        if ($action === 'sync') {
-            require_regulation('master_pengguna', 'create');
-            try {
-                if (function_exists('import_employee_directory')) {
-                    $cnt = import_employee_directory($pdo);
-                    flash("Berhasil mensinkronisasi {$cnt} data karyawan/pengguna dari MariaDB Portal.");
-                } else {
-                    flash('Fungsi sinkronisasi portal tidak ditemukan.', 'err');
-                }
-            } catch (Throwable $e) {
-                flash('Gagal sinkronisasi: ' . $e->getMessage(), 'err');
+        // 1. Simpan Konfigurasi Koneksi & Field MariaDB Portal
+        if ($action === 'save_import_config') {
+            require_regulation('master_pengguna', 'edit');
+            $config = [
+                'enabled' => '1',
+                'host' => trim((string)($_POST['host'] ?? '')),
+                'port' => trim((string)($_POST['port'] ?? '3306')),
+                'database' => trim((string)($_POST['database'] ?? '')),
+                'username' => trim((string)($_POST['username'] ?? '')),
+                'password' => (string)($_POST['password'] ?? ''),
+                'table_name' => trim((string)($_POST['table_name'] ?? 'employees')),
+                'nik_field' => trim((string)($_POST['nik_field'] ?? 'NIK')),
+                'name_field' => trim((string)($_POST['name_field'] ?? 'Nama')),
+                'department_field' => trim((string)($_POST['department_field'] ?? '')),
+                'limit_rows' => trim((string)($_POST['limit_rows'] ?? '5000')),
+            ];
+            if ($config['password'] === '') {
+                $oldConfig = employee_source_config($pdo);
+                $config['password'] = (string)($oldConfig['password'] ?? '');
             }
-            redirect_to('master_pengguna');
+            save_employee_source_config($pdo, $config);
+            flash('Konfigurasi koneksi MariaDB portal dan pemetaan field berhasil disimpan.');
+            redirect_to('master_pengguna', ['tab' => 'setting']);
+        }
+
+        // 2. Test Koneksi MariaDB Portal
+        if ($action === 'test_import_config') {
+            require_regulation('master_pengguna', 'view');
+            $config = [
+                'enabled' => '1',
+                'host' => trim((string)($_POST['host'] ?? '')),
+                'port' => trim((string)($_POST['port'] ?? '3306')),
+                'database' => trim((string)($_POST['database'] ?? '')),
+                'username' => trim((string)($_POST['username'] ?? '')),
+                'password' => (string)($_POST['password'] ?? ''),
+                'table_name' => trim((string)($_POST['table_name'] ?? 'employees')),
+                'nik_field' => trim((string)($_POST['nik_field'] ?? 'NIK')),
+                'name_field' => trim((string)($_POST['name_field'] ?? 'Nama')),
+                'department_field' => trim((string)($_POST['department_field'] ?? '')),
+                'limit_rows' => trim((string)($_POST['limit_rows'] ?? '5000')),
+            ];
+            if ($config['password'] === '') {
+                $oldConfig = employee_source_config($pdo);
+                $config['password'] = (string)($oldConfig['password'] ?? '');
+            }
+            try {
+                $remoteRows = fetch_employee_portal_rows($config, 5);
+                flash('Koneksi MariaDB portal berhasil! Sample terbaca ' . count($remoteRows) . ' karyawan (misal: ' . (!empty($remoteRows[0]['name']) ? $remoteRows[0]['name'] : 'OK') . ').');
+            } catch (Throwable $e) {
+                flash('Test koneksi MariaDB portal gagal: ' . $e->getMessage(), 'err');
+            }
+            redirect_to('master_pengguna', ['tab' => 'setting']);
+        }
+
+        // 3. Import / Sinkronisasi Data Karyawan dari MariaDB Portal
+        if ($action === 'import_portal_employees' || $action === 'sync') {
+            require_regulation('master_pengguna', 'create');
+            if (!empty($_POST['host'])) {
+                $config = [
+                    'enabled' => '1',
+                    'host' => trim((string)($_POST['host'] ?? '')),
+                    'port' => trim((string)($_POST['port'] ?? '3306')),
+                    'database' => trim((string)($_POST['database'] ?? '')),
+                    'username' => trim((string)($_POST['username'] ?? '')),
+                    'password' => (string)($_POST['password'] ?? ''),
+                    'table_name' => trim((string)($_POST['table_name'] ?? 'employees')),
+                    'nik_field' => trim((string)($_POST['nik_field'] ?? 'NIK')),
+                    'name_field' => trim((string)($_POST['name_field'] ?? 'Nama')),
+                    'department_field' => trim((string)($_POST['department_field'] ?? '')),
+                    'limit_rows' => trim((string)($_POST['limit_rows'] ?? '5000')),
+                ];
+                if ($config['password'] === '') {
+                    $oldConfig = employee_source_config($pdo);
+                    $config['password'] = (string)($oldConfig['password'] ?? '');
+                }
+                save_employee_source_config($pdo, $config);
+            }
+            try {
+                $cnt = import_employee_directory($pdo);
+                flash("Berhasil mengimpor/sinkronisasi {$cnt} data karyawan dari MariaDB Portal ke database lokal.");
+            } catch (Throwable $e) {
+                flash('Gagal impor/sinkronisasi: ' . $e->getMessage(), 'err');
+            }
+            redirect_to('master_pengguna', $action === 'import_portal_employees' ? ['tab' => 'setting'] : []);
+        }
+
+        // 4. Kosongkan Database Lokal
+        if ($action === 'truncate_local_employees') {
+            require_regulation('master_pengguna', 'delete');
+            try {
+                $pdo->exec('DELETE FROM employee_directory');
+                flash('Seluruh data karyawan di database lokal berhasil dikosongkan.');
+            } catch (Throwable $e) {
+                flash('Gagal mengosongkan data karyawan: ' . $e->getMessage(), 'err');
+            }
+            redirect_to('master_pengguna', ['tab' => 'setting']);
         }
 
         if ($action === 'add') {
@@ -251,6 +509,108 @@ function handle_route_master_pengguna(PDO $pdo): void
         }
     }
 
+    $totalUsers = (int)$pdo->query("SELECT COUNT(*) FROM employee_directory")->fetchColumn();
+    $activeUsers = (int)$pdo->query("SELECT COUNT(*) FROM employee_directory WHERE is_active=1")->fetchColumn();
+    $lastSync = (string)$pdo->query("SELECT MAX(synced_at) FROM employee_directory")->fetchColumn();
+    $config = employee_source_config($pdo);
+
+    render_header('Master Pengguna', $user);
+
+    echo '<section class="panel">';
+    echo '<div class="split"><div><h1 style="margin-bottom:4px;">Master Pengguna (Karyawan & Pemakai Aset)</h1><p class="muted">Master terpusat untuk semua pengguna dan pemakai aset pada seluruh form (PC, Printer, Unit Aset, Maintenance, Tiket Corrective).</p></div>';
+    echo '<div class="actions" style="display:flex;gap:8px;align-items:center;">';
+    if (has_regulation('master_pengguna', 'create')) {
+        if ($activeTab === 'setting') {
+            echo '<a class="btn" href="' . route_url('master_pengguna', ['tab' => 'list']) . '">← Kembali ke Daftar Pengguna</a>';
+        } else {
+            echo '<a class="btn" href="' . route_url('master_pengguna', ['tab' => 'setting']) . '" style="background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600;">⚙️ Setting Koneksi Import Pengguna</a>';
+        }
+        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Sinkronisasi ulang seluruh data karyawan dari MariaDB portal?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="sync"><button class="btn" style="background:#0284c7;color:#fff;border-color:#0284c7;">🔄 Sinkronisasi dari Portal</button></form>';
+        echo '<button type="button" class="btn primary" onclick="openTambahPenggunaModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah Pengguna</button>';
+    }
+    echo '</div></div>';
+
+    // Tab Navigation Switcher
+    echo '<div style="display:flex;gap:10px;margin-top:16px;border-bottom:2px solid #e2e8f0;padding-bottom:1px;">';
+    echo '<a href="' . route_url('master_pengguna', ['tab' => 'list']) . '" class="btn ' . ($activeTab === 'list' ? 'primary' : '') . '" style="padding:8px 18px;font-weight:700;font-size:13px;border-radius:8px 8px 0 0;margin-bottom:-2px;border-bottom:none;">👥 Daftar Master Pengguna</a>';
+    echo '<a href="' . route_url('master_pengguna', ['tab' => 'setting']) . '" class="btn ' . ($activeTab === 'setting' ? 'primary' : '') . '" style="padding:8px 18px;font-weight:700;font-size:13px;border-radius:8px 8px 0 0;margin-bottom:-2px;border-bottom:none;">⚙️ Setting Koneksi Import Pengguna</a>';
+    echo '</div>';
+    echo '</section>';
+
+    // =========================================================================
+    // TAB 2: SETTING KONEKSI IMPORT PENGGUNA
+    // =========================================================================
+    if ($activeTab === 'setting') {
+        $portalTarget = (!empty($config['host']) && !empty($config['database']))
+            ? (e($config['host']) . ' / ' . e($config['database']))
+            : 'Belum diatur';
+
+        echo '<section class="panel">';
+        echo '<h2>Ringkasan Integrasi MariaDB Portal</h2>';
+        echo '<p class="muted">Konfigurasi ini digunakan untuk mengimpor seluruh master data karyawan dari server MariaDB portal ke dalam database lokal PcConnect.</p>';
+        echo '<div class="grid three" style="margin-top:14px;">';
+        echo '<div class="stat"><strong style="color:#0284c7;">' . e((string)$totalUsers) . '</strong><span>Total Karyawan di Database Lokal</span></div>';
+        echo '<div class="stat"><strong style="color:#166534;">' . e((string)$activeUsers) . '</strong><span>Karyawan Aktif</span></div>';
+        echo '<div class="stat"><strong style="font-size:15px;padding-top:8px;">' . $portalTarget . '</strong><span>Target Host / Database Portal</span></div>';
+        echo '</div>';
+        echo '</section>';
+
+        echo '<section class="panel">';
+        echo '<form method="post">';
+        echo '<input type="hidden" name="csrf" value="' . csrf_token() . '">';
+
+        echo '<h2 style="margin-top:0;">1. Konfigurasi Koneksi MariaDB Portal</h2>';
+        echo '<div class="grid three">';
+        echo '<label>IP / Host MariaDB Portal<input name="host" value="' . e($config['host']) . '" placeholder="Contoh: 192.168.1.10 atau portal.domain.com" required></label>';
+        echo '<label>Port<input name="port" value="' . e($config['port'] ?: '3306') . '" placeholder="3306"></label>';
+        echo '<label>Database<input name="database" value="' . e($config['database']) . '" placeholder="Contoh: portal_hrd" required></label>';
+        echo '<label>Username<input name="username" value="' . e($config['username']) . '" placeholder="Contoh: user_mariadb"></label>';
+        echo '<label>Password<input type="password" name="password" placeholder="Kosongkan jika tidak diubah"></label>';
+        echo '<label>Maksimal Baris Import<input type="number" min="1" max="50000" name="limit_rows" value="' . e($config['limit_rows'] ?: '5000') . '"></label>';
+        echo '</div>';
+
+        echo '<h2 style="margin-top:20px;">2. Pemetaan Field Tabel MariaDB</h2>';
+        echo '<div class="grid four">';
+        echo '<label>Table / View Karyawan<input name="table_name" value="' . e($config['table_name'] ?: 'employees') . '" placeholder="Contoh: employees" required></label>';
+        echo '<label>Field NIK<input name="nik_field" value="' . e($config['nik_field'] ?: 'NIK') . '" placeholder="Contoh: NIK" required></label>';
+        echo '<label>Field Nama Karyawan<input name="name_field" value="' . e($config['name_field'] ?: 'Nama') . '" placeholder="Contoh: Nama" required></label>';
+        echo '<label>Field Departemen<input name="department_field" value="' . e($config['department_field'] ?? '') . '" placeholder="Contoh: Department"></label>';
+        echo '</div>';
+
+        echo '<div class="split" style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;align-items:center;">';
+        echo '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+        echo '<button class="btn ok" style="font-weight:700;padding:10px 20px;font-size:14px;" name="action" value="import_portal_employees">📥 Import Data Karyawan ke Database Lokal</button>';
+        echo '<button class="btn" name="action" value="test_import_config">🔌 Test Koneksi MariaDB</button>';
+        echo '<button class="btn primary" name="action" value="save_import_config">💾 Simpan Konfigurasi</button>';
+        echo '<a class="btn" href="' . route_url('master_pengguna', ['tab' => 'list']) . '">Batal / Kembali</a>';
+        echo '</div>';
+        if ($totalUsers > 0) {
+            echo '<div>';
+            echo '<button class="btn danger" name="action" value="truncate_local_employees" onclick="return confirm(\'Yakin ingin mengosongkan seluruh data karyawan di database lokal?\');">🗑️ Kosongkan Database Lokal</button>';
+            echo '</div>';
+        }
+        echo '</div>';
+        echo '</form>';
+        echo '</section>';
+
+        // Render modal tambah pengguna & create login tetap ada agar tombol header selalu bekerja
+        render_user_modals();
+        render_footer();
+        return;
+    }
+
+    // =========================================================================
+    // TAB 1: DAFTAR MASTER PENGGUNA
+    // =========================================================================
+    // Summary stats
+    echo '<section class="panel">';
+    echo '<div class="grid three" style="margin:4px 0 0 0;">';
+    echo '<div class="stat"><strong style="color:#0284c7;">' . e((string)$totalUsers) . '</strong><span>Total Terdaftar di Master</span></div>';
+    echo '<div class="stat"><strong style="color:#166534;">' . e((string)$activeUsers) . '</strong><span>Pengguna Aktif</span></div>';
+    echo '<div class="stat"><strong style="font-size:20px;padding-top:8px;">' . ($lastSync ? e(date('d M Y H:i', strtotime($lastSync))) : 'Belum pernah') . '</strong><span>Terakhir Sinkronisasi Portal</span></div>';
+    echo '</div>';
+    echo '</section>';
+
     $q = trim((string)($_GET['q'] ?? ''));
     $statusFilter = (string)($_GET['status'] ?? 'all');
     $viewNik = trim((string)($_GET['view_nik'] ?? ''));
@@ -275,142 +635,6 @@ function handle_route_master_pengguna(PDO $pdo): void
             $viewAssets = get_user_linked_assets($pdo, $viewUser['nik'], $viewUser['name']);
         }
     }
-
-    // Query Pengguna List with linked user account & asset counts
-    $where = ["1=1"];
-    $params = [];
-    if ($q !== '') {
-        $where[] = "(ed.nik LIKE ? OR ed.$nameCol LIKE ? OR ed.department LIKE ?)";
-        $params[] = "%{$q}%";
-        $params[] = "%{$q}%";
-        $params[] = "%{$q}%";
-    }
-    if ($statusFilter === 'active') {
-        $where[] = "ed.is_active = 1";
-    } elseif ($statusFilter === 'inactive') {
-        $where[] = "ed.is_active = 0";
-    }
-
-    // Fetch users mapping in memory to avoid cross-table collation conflicts (Illegal mix of collations 1267)
-    $usersMap = [];
-    if (db_table_exists($pdo, 'users')) {
-        try {
-            $uRows = $pdo->query("SELECT id, name, username, role, is_active FROM users")->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($uRows as $ur) {
-                $un = strtolower(trim((string)$ur['username']));
-                $nm = strtolower(trim((string)$ur['name']));
-                if ($un !== '') {
-                    $usersMap['u_' . $un] = $ur;
-                }
-                if ($nm !== '') {
-                    $usersMap['n_' . $nm] = $ur;
-                }
-            }
-        } catch (Throwable $ignored) {
-        }
-    }
-
-    $sql = "SELECT ed.nik, ed.$nameCol AS name, ed.department, ed.is_active, ed.synced_at
-            FROM employee_directory ed
-            WHERE " . implode(" AND ", $where) . "
-            ORDER BY ed.is_active DESC, ed.$nameCol ASC
-            LIMIT 300";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($rows as &$r) {
-        $nikKey = 'u_' . strtolower(trim((string)$r['nik']));
-        $nameKey = 'n_' . strtolower(trim((string)$r['name']));
-        $matchedUser = $usersMap[$nikKey] ?? $usersMap[$nameKey] ?? null;
-        $r['user_account_id'] = $matchedUser['id'] ?? null;
-        $r['username'] = $matchedUser['username'] ?? null;
-        $r['user_role'] = $matchedUser['role'] ?? null;
-        $r['user_account_active'] = $matchedUser['is_active'] ?? null;
-    }
-    unset($r);
-
-    // Eager count assets for this page
-    $pcCounts = [];
-    $assetCounts = [];
-    $printerCounts = [];
-    if ($rows) {
-        // Count PC by employee_nik or owner_name
-        if (db_table_exists($pdo, 'pcs')) {
-            $qPcs = $pdo->query("SELECT p.employee_nik, p.owner_name, COUNT(*) as cnt FROM pcs p GROUP BY p.employee_nik, p.owner_name");
-            while ($r = $qPcs->fetch(PDO::FETCH_ASSOC)) {
-                $en = trim((string)($r['employee_nik'] ?? ''));
-                $on = strtolower(trim((string)($r['owner_name'] ?? '')));
-                $cnt = (int)$r['cnt'];
-                if ($en !== '') {
-                    $pcCounts['nik_' . $en] = ($pcCounts['nik_' . $en] ?? 0) + $cnt;
-                }
-                if ($on !== '') {
-                    $pcCounts['name_' . $on] = ($pcCounts['name_' . $on] ?? 0) + $cnt;
-                }
-            }
-        }
-
-        // Count Unit Aset by custodian_nik or custodian_name
-        if (db_table_exists($pdo, 'asset_items')) {
-            $qAi = $pdo->query("SELECT ai.custodian_nik, ai.custodian_name, COUNT(*) as cnt FROM asset_items ai GROUP BY ai.custodian_nik, ai.custodian_name");
-            while ($r = $qAi->fetch(PDO::FETCH_ASSOC)) {
-                $cn = trim((string)($r['custodian_nik'] ?? ''));
-                $cname = strtolower(trim((string)($r['custodian_name'] ?? '')));
-                $cnt = (int)$r['cnt'];
-                if ($cn !== '') {
-                    $assetCounts['nik_' . $cn] = ($assetCounts['nik_' . $cn] ?? 0) + $cnt;
-                }
-                if ($cname !== '') {
-                    $assetCounts['name_' . $cname] = ($assetCounts['name_' . $cname] ?? 0) + $cnt;
-                }
-            }
-        }
-
-        // Count Printer by employee_nik or owner_name
-        if (db_table_exists($pdo, 'printers') && (db_column_exists($pdo, 'printers', 'employee_nik') || db_column_exists($pdo, 'printers', 'owner_name'))) {
-            $hasNik = db_column_exists($pdo, 'printers', 'employee_nik');
-            $hasOwner = db_column_exists($pdo, 'printers', 'owner_name');
-            $nikPart = $hasNik ? 'pr.employee_nik' : '"" AS employee_nik';
-            $ownerPart = $hasOwner ? 'pr.owner_name' : '"" AS owner_name';
-            $qPr = $pdo->query("SELECT $nikPart, $ownerPart, COUNT(*) as cnt FROM printers pr GROUP BY pr.employee_nik, pr.owner_name");
-            while ($r = $qPr->fetch(PDO::FETCH_ASSOC)) {
-                $en = trim((string)($r['employee_nik'] ?? ''));
-                $on = strtolower(trim((string)($r['owner_name'] ?? '')));
-                $cnt = (int)$r['cnt'];
-                if ($en !== '') {
-                    $printerCounts['nik_' . $en] = ($printerCounts['nik_' . $en] ?? 0) + $cnt;
-                }
-                if ($on !== '') {
-                    $printerCounts['name_' . $on] = ($printerCounts['name_' . $on] ?? 0) + $cnt;
-                }
-            }
-        }
-    }
-
-    $totalUsers = (int)$pdo->query("SELECT COUNT(*) FROM employee_directory")->fetchColumn();
-    $activeUsers = (int)$pdo->query("SELECT COUNT(*) FROM employee_directory WHERE is_active=1")->fetchColumn();
-    $lastSync = (string)$pdo->query("SELECT MAX(synced_at) FROM employee_directory")->fetchColumn();
-
-    render_header('Master Pengguna', $user);
-
-    echo '<section class="panel">';
-    echo '<div class="split"><div><h1 style="margin-bottom:4px;">Master Pengguna (Karyawan & Pemakai Aset)</h1><p class="muted">Master terpusat untuk semua pengguna dan pemakai aset pada seluruh form (PC, Printer, Unit Aset, Maintenance, Tiket Corrective).</p></div>';
-    echo '<div class="actions">';
-    if (has_regulation('master_pengguna', 'create')) {
-        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Sinkronisasi ulang seluruh data karyawan dari MariaDB portal?\')"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="sync"><button class="btn" style="background:#0284c7;color:#fff;border-color:#0284c7;">🔄 Sinkronisasi dari Portal MariaDB</button></form>';
-        echo '<button type="button" class="btn primary" onclick="openTambahPenggunaModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah Pengguna</button>';
-    }
-    echo '</div></div>';
-
-    // Summary stats
-    echo '<div class="grid three" style="margin:18px 0 10px 0;">';
-    echo '<div class="stat"><strong style="color:#0284c7;">' . e((string)$totalUsers) . '</strong><span>Total Terdaftar di Master</span></div>';
-    echo '<div class="stat"><strong style="color:#166534;">' . e((string)$activeUsers) . '</strong><span>Pengguna Aktif</span></div>';
-    echo '<div class="stat"><strong style="font-size:20px;padding-top:8px;">' . ($lastSync ? e(date('d M Y H:i', strtotime($lastSync))) : 'Belum pernah') . '</strong><span>Terakhir Sinkronisasi Portal</span></div>';
-    echo '</div>';
-    echo '</section>';
 
     // Modal / View Linked Assets
     if ($viewUser && $viewAssets) {
@@ -472,11 +696,108 @@ function handle_route_master_pengguna(PDO $pdo): void
         echo '</div></form></section>';
     }
 
+    // Query Pengguna List with linked user account & asset counts
+    $where = ["1=1"];
+    $params = [];
+    if ($q !== '') {
+        $where[] = "(ed.nik LIKE ? OR ed.$nameCol LIKE ? OR ed.department LIKE ?)";
+        $params[] = "%{$q}%";
+        $params[] = "%{$q}%";
+        $params[] = "%{$q}%";
+    }
+    if ($statusFilter === 'active') {
+        $where[] = "ed.is_active = 1";
+    } elseif ($statusFilter === 'inactive') {
+        $where[] = "ed.is_active = 0";
+    }
+
+    $usersMap = [];
+    if (db_table_exists($pdo, 'users')) {
+        try {
+            $uRows = $pdo->query("SELECT id, name, username, role, is_active FROM users")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($uRows as $ur) {
+                $un = strtolower(trim((string)$ur['username']));
+                $nm = strtolower(trim((string)$ur['name']));
+                if ($un !== '') {
+                    $usersMap['u_' . $un] = $ur;
+                }
+                if ($nm !== '') {
+                    $usersMap['n_' . $nm] = $ur;
+                }
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
+
+    $sql = "SELECT ed.nik, ed.$nameCol AS name, ed.department, ed.is_active, ed.synced_at
+            FROM employee_directory ed
+            WHERE " . implode(" AND ", $where) . "
+            ORDER BY ed.is_active DESC, ed.$nameCol ASC
+            LIMIT 300";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$r) {
+        $nikKey = 'u_' . strtolower(trim((string)$r['nik']));
+        $nameKey = 'n_' . strtolower(trim((string)$r['name']));
+        $matchedUser = $usersMap[$nikKey] ?? $usersMap[$nameKey] ?? null;
+        $r['user_account_id'] = $matchedUser['id'] ?? null;
+        $r['username'] = $matchedUser['username'] ?? null;
+        $r['user_role'] = $matchedUser['role'] ?? null;
+        $r['user_account_active'] = $matchedUser['is_active'] ?? null;
+    }
+    unset($r);
+
+    $pcCounts = [];
+    $assetCounts = [];
+    $printerCounts = [];
+    if ($rows) {
+        if (db_table_exists($pdo, 'pcs')) {
+            $qPcs = $pdo->query("SELECT p.employee_nik, p.owner_name, COUNT(*) as cnt FROM pcs p GROUP BY p.employee_nik, p.owner_name");
+            while ($r = $qPcs->fetch(PDO::FETCH_ASSOC)) {
+                $en = trim((string)($r['employee_nik'] ?? ''));
+                $on = strtolower(trim((string)($r['owner_name'] ?? '')));
+                $cnt = (int)$r['cnt'];
+                if ($en !== '') $pcCounts['nik_' . $en] = ($pcCounts['nik_' . $en] ?? 0) + $cnt;
+                if ($on !== '') $pcCounts['name_' . $on] = ($pcCounts['name_' . $on] ?? 0) + $cnt;
+            }
+        }
+
+        if (db_table_exists($pdo, 'asset_items')) {
+            $qAi = $pdo->query("SELECT ai.custodian_nik, ai.custodian_name, COUNT(*) as cnt FROM asset_items ai GROUP BY ai.custodian_nik, ai.custodian_name");
+            while ($r = $qAi->fetch(PDO::FETCH_ASSOC)) {
+                $cn = trim((string)($r['custodian_nik'] ?? ''));
+                $cname = strtolower(trim((string)($r['custodian_name'] ?? '')));
+                $cnt = (int)$r['cnt'];
+                if ($cn !== '') $assetCounts['nik_' . $cn] = ($assetCounts['nik_' . $cn] ?? 0) + $cnt;
+                if ($cname !== '') $assetCounts['name_' . $cname] = ($assetCounts['name_' . $cname] ?? 0) + $cnt;
+            }
+        }
+
+        if (db_table_exists($pdo, 'printers') && (db_column_exists($pdo, 'printers', 'employee_nik') || db_column_exists($pdo, 'printers', 'owner_name'))) {
+            $hasNik = db_column_exists($pdo, 'printers', 'employee_nik');
+            $hasOwner = db_column_exists($pdo, 'printers', 'owner_name');
+            $nikPart = $hasNik ? 'pr.employee_nik' : '"" AS employee_nik';
+            $ownerPart = $hasOwner ? 'pr.owner_name' : '"" AS owner_name';
+            $qPr = $pdo->query("SELECT $nikPart, $ownerPart, COUNT(*) as cnt FROM printers pr GROUP BY pr.employee_nik, pr.owner_name");
+            while ($r = $qPr->fetch(PDO::FETCH_ASSOC)) {
+                $en = trim((string)($r['employee_nik'] ?? ''));
+                $on = strtolower(trim((string)($r['owner_name'] ?? '')));
+                $cnt = (int)$r['cnt'];
+                if ($en !== '') $printerCounts['nik_' . $en] = ($printerCounts['nik_' . $en] ?? 0) + $cnt;
+                if ($on !== '') $printerCounts['name_' . $on] = ($printerCounts['name_' . $on] ?? 0) + $cnt;
+            }
+        }
+    }
+
     // Filter & Table Master Pengguna
     echo '<section class="panel">';
     echo '<div class="split" style="margin-bottom:16px;">';
     echo '<form method="get" class="actions" style="margin:0;">';
     echo '<input type="hidden" name="route" value="master_pengguna">';
+    echo '<input type="hidden" name="tab" value="list">';
     echo '<input name="q" value="' . e($q) . '" placeholder="Cari NIK, Nama, atau Departemen..." style="width:260px;">';
     echo '<select name="status" onchange="this.form.submit()">';
     echo '<option value="all"' . ($statusFilter === 'all' ? ' selected' : '') . '>Semua Status</option>';
@@ -505,7 +826,6 @@ function handle_route_master_pengguna(PDO $pdo): void
             $name = (string)$r['name'];
             $statusBadge = !empty($r['is_active']) ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Non-aktif</span>';
 
-            // Check login account
             $accountBadge = '<span class="muted" style="font-size:12px;">Belum Ada</span>';
             if (!empty($r['user_account_id'])) {
                 $roleBadge = match((string)$r['user_role']) {
@@ -517,7 +837,6 @@ function handle_route_master_pengguna(PDO $pdo): void
                 $accountBadge = '<strong>' . e($r['username']) . '</strong><br>' . $roleBadge;
             }
 
-            // Asset count badges
             $pCnt = ($pcCounts['nik_' . $nik] ?? 0) + ($pcCounts['name_' . strtolower($name)] ?? 0);
             $aCnt = ($assetCounts['nik_' . $nik] ?? 0) + ($assetCounts['name_' . strtolower($name)] ?? 0);
             $prCnt = ($printerCounts['nik_' . $nik] ?? 0) + ($printerCounts['name_' . strtolower($name)] ?? 0);
@@ -545,7 +864,6 @@ function handle_route_master_pengguna(PDO $pdo): void
                 echo '<form method="post" style="display:inline-block;margin:0;"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="nik" value="' . e($nik) . '"><button type="submit" class="btn-icon toggle" title="' . (!empty($r['is_active']) ? 'Nonaktifkan Pengguna' : 'Aktifkan Pengguna') . '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg></button></form>';
             }
             
-            // Tombol buat akun login jika belum punya akun
             if (empty($r['user_account_id']) && has_regulation('users', 'create')) {
                 echo '<button type="button" class="btn-icon add" title="Buat Akun Login Sistem" onclick="openCreateLoginModal(' . htmlspecialchars(json_encode(['nik' => $nik, 'name' => $name]), ENT_QUOTES) . ')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></button>';
             }
@@ -562,6 +880,12 @@ function handle_route_master_pengguna(PDO $pdo): void
 
     echo '</section>';
 
+    render_user_modals();
+    render_footer();
+}
+
+function render_user_modals(): void
+{
     // Modal Window Tambah Pengguna Baru
     if (has_regulation('master_pengguna', 'create')) {
         echo '<div id="modalTambahPengguna" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
@@ -603,6 +927,7 @@ function handle_route_master_pengguna(PDO $pdo): void
         echo '</div>';
         echo '</div>';
     }
+
     // Quick Modal Script for Create Login
     echo '<div id="modalLogin" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;">';
     echo '<div style="background:#fff;border-radius:8px;max-width:440px;width:90%;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,0.3);">';
@@ -643,6 +968,4 @@ function handle_route_master_pengguna(PDO $pdo): void
         document.getElementById("modalLogin").style.display = "none";
     }
     </script>';
-
-    render_footer();
 }

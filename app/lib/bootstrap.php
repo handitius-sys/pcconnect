@@ -357,7 +357,6 @@ function get_default_sidebar_structure(): array
                 'labels' => ['label' => 'QR Label Unit', 'icon' => 'qr', 'order' => 10, 'reg' => 'labels'],
                 'users' => ['label' => 'Akses Users', 'icon' => 'users', 'order' => 20, 'reg' => 'users'],
                 'setup_regulations' => ['label' => 'Regulasi Hak Akses', 'icon' => 'shield', 'order' => 30, 'reg' => 'admin_only'],
-                'employee_source' => ['label' => 'Employee Source', 'icon' => 'cog', 'order' => 40, 'reg' => 'admin_only'],
             ],
         ],
     ];
