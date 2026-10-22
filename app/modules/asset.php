@@ -3482,7 +3482,7 @@ function asset_identifier_master_page(PDO $pdo, array $user): void
     echo asset_type_options($pdo, $filterType, $filterGroup, true, 'Semua Kategori', true);
     echo '</select>';
     echo '<input id="filterTableSearch" name="q" value="' . e($filterQ) . '" placeholder="Cari kode / nama identifier..." style="width:200px; padding:6px 10px; font-size:13px;" oninput="filterIdfTableClient()">';
-    echo '<button type="submit" class="btn" style="padding:6px 14px; font-size:13px;">Filter</button>';
+    echo '<button type="submit" class="btn primary" style="padding:6px 14px; font-size:13px;">Filter</button>';
     if ($filterGroup || $filterType || $filterQ !== '') {
         echo '<a class="btn" href="' . route_url('asset_identifiers') . '" style="padding:6px 12px; font-size:13px;">✕ Reset</a>';
     }
@@ -4115,7 +4115,7 @@ function asset_specification_master_page(PDO $pdo, array $user): void
     echo asset_type_options($pdo, $filterType, $filterGroup, true, 'Semua Kategori', true);
     echo '</select>';
     echo '<input id="filterTableSearch" name="q" value="' . e($filterQ) . '" placeholder="Cari kode/nama spesifikasi..." style="width:200px; padding:6px 10px; font-size:13px;" oninput="filterSpecTableClient()">';
-    echo '<button type="submit" class="btn" style="padding:6px 14px; font-size:13px;">Filter</button>';
+    echo '<button type="submit" class="btn primary" style="padding:6px 14px; font-size:13px;">Filter</button>';
     if ($filterGroup || $filterType || $filterQ !== '') {
         echo '<a class="btn" href="' . route_url('asset_specifications') . '" style="padding:6px 12px; font-size:13px;">✕ Reset</a>';
     }
@@ -5747,7 +5747,7 @@ function handle_route_asset_master_items(PDO $pdo): void
     echo '<section class="panel">';
     echo '<div class="split" style="align-items:center;margin-bottom:12px;">';
     echo '<div style="display:flex;align-items:center;gap:12px;">';
-    echo '<h2 style="margin:0;">Daftar Katalog Master Barang (' . count($items) . ')</h2>';
+    echo '<h2 style="margin:0;">Daftar Master Barang</h2>';
     echo '</div>';
     echo '<div style="display:flex;gap:8px;align-items:center;">';
     if ($canCreateMi) {
@@ -5764,7 +5764,7 @@ function handle_route_asset_master_items(PDO $pdo): void
     echo '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $filterType, $filterGroup, true, 'Semua Kategori', true) . '</select>';
     echo '<select name="brand_id" onchange="this.form.submit()">' . asset_brand_options($pdo, $filterBrand, true, 'Semua Brand', $filterGroup, $filterType) . '</select>';
     echo '<input name="q" value="' . e($filterQ) . '" placeholder="Cari nama / model / SKU..." style="width:200px">';
-    echo '<button class="btn">Filter</button>';
+    echo '<button class="btn primary">Filter</button>';
     if ($filterGroup || $filterType || $filterBrand || $filterQ !== '') {
         echo '<a class="btn" href="' . route_url('asset_master_items') . '">Reset</a>';
     }

@@ -602,7 +602,11 @@ function handle_route_users(PDO $pdo): void
         }
     }
     render_header('Users', $user);
-    echo '<section class="panel"><div class="split"><div><h1>User & Password</h1><p class="muted">Kelola akun administrator, staf, teknisi, dan petugas peminjaman aset.</p></div><a class="btn" href="' . route_url('technicians') . '">Lihat Teknisi</a></div></section>';
+    $canCreateUser = has_regulation('users', 'create', $user);
+    $addUserBtn = $canCreateUser
+        ? '<button type="button" class="btn primary" onclick="openTambahUserModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah User</button>'
+        : '';
+    echo '<section class="panel"><div class="split"><div><h1>User & Password</h1><p class="muted">Kelola akun administrator, staf, teknisi, dan petugas peminjaman aset.</p></div><div class="actions" style="display:flex;gap:8px;align-items:center;"><a class="btn" href="' . route_url('technicians') . '">Lihat Teknisi</a>' . $addUserBtn . '</div></div></section>';
     if (!$maintenanceRoleReady) {
         echo '<section class="panel"><div class="flash err">Database belum siap untuk role tambahan. Silakan refresh halaman ini untuk auto-migration.</div></section>';
     }
@@ -624,11 +628,21 @@ function handle_route_users(PDO $pdo): void
         }
         echo '<section class="panel"><div class="split"><h2>Edit User</h2><a class="btn" href="' . route_url('users') . '">Batal Edit</a></div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="' . e($editUser['id']) . '"><div class="grid three"><label>Nama<input name="name" value="' . e($editUser['name']) . '" required></label><label>Username<input name="username" value="' . e($editUser['username']) . '" required></label><label>Role<select name="role" required>' . $roleOptions . '</select></label></div><button class="btn primary">Simpan Perubahan</button></form></section>';
     }
-    if (has_regulation('users', 'create', $user)) {
-        echo '<div class="panel"><h2>Tambah User</h2><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add"><label>Nama<input id="userNameInput" name="name" required></label><label>Username<input id="userUsernameInput" name="username" required></label><label>Role<select name="role"><option value="admin">Admin Full</option><option value="maintenance_admin">Admin Maintenance (Preventive)</option><option value="technician">Teknisi - Preventive Maintenance</option><option value="corrective_maintenance">Corrective Maintenance - Field Service & Reparasi</option><option value="loan_officer" selected>Petugas Peminjaman Aset (Mobile & Web)</option></select></label><label>Password<input type="password" name="password" required minlength="8"></label><button class="btn primary">Tambah User</button></form></div>';
-        echo '<div class="panel"><h2>Catatan Hak Akses Role</h2><ul><li><strong>Admin Full:</strong> Akses penuh ke seluruh menu & sistem.</li><li><strong>Admin Maintenance:</strong> Manajemen jadwal & checklist preventive maintenance.</li><li><strong>Teknisi:</strong> Akses aplikasi mobile scan Preventive Maintenance.</li><li><strong>Corrective Maintenance:</strong> Akses aplikasi mobile "AsetConnect Field Service" (Troubleshoot, Service QR, Part Replacement).</li><li><strong>Petugas Peminjaman Aset:</strong> Akses serah-terima alat kerja & unit aset, pencatatan peminjaman (scan QR/kode), dan konfirmasi pengembalian melalui Mobile Peminjaman & Web Desktop.</li></ul></div></section>';
-    }
-    echo '<section class="panel"><h2>Daftar User</h2><table><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Reset Password</th><th>Aksi</th></tr>';
+
+    // Catatan Hak Akses Role (diperkecil)
+    echo '<section class="panel" style="padding:10px 16px;margin-bottom:12px;background:#f8fafc;border-left:4px solid #0284c7;">';
+    echo '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><strong style="font-size:12px;color:#0f172a;">Catatan Hak Akses Role:</strong></div>';
+    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));gap:6px;font-size:11.5px;color:#475569;line-height:1.35;">';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Full:</strong> Akses penuh ke seluruh menu & sistem.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Maintenance:</strong> Jadwal & checklist preventive maintenance.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Teknisi:</strong> Mobile scan Preventive Maintenance.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Corrective Maintenance:</strong> Mobile Field Service & Reparasi.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Petugas Peminjaman:</strong> Serah-terima & scan peminjaman aset.</div>';
+    echo '</div></section>';
+
+    // Panel Daftar User (naik ke atas)
+    echo '<section class="panel"><div class="split" style="align-items:center;margin-bottom:12px;"><h2 style="margin:0;">Daftar User</h2><div class="actions">' . $addUserBtn . '</div></div>';
+    echo '<table><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Reset Password</th><th>Aksi</th></tr>';
     $canEdit = has_regulation('users', 'edit', $user);
     $canDelete = has_regulation('users', 'delete', $user);
     foreach ($pdo->query('SELECT * FROM users ORDER BY role, name') as $row) {
@@ -645,6 +659,73 @@ function handle_route_users(PDO $pdo): void
         echo '<td><div class="actions">' . ($actions ?: '-') . '</div></td></tr>';
     }
     echo '</table></section>';
+
+    // Modal Window Tambah User
+    if ($canCreateUser) {
+        echo '<div id="modalTambahUser" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
+        echo '<div style="background:#fff;border-radius:12px;width:100%;max-width:620px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">';
+        echo '  <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">';
+        echo '    <div style="display:flex;align-items:center;gap:10px;">';
+        echo '      <span style="font-size:20px;">👤</span>';
+        echo '      <h3 style="margin:0;font-size:16px;font-weight:700;color:#1e293b;">+ Tambah User Baru</h3>';
+        echo '    </div>';
+        echo '    <button type="button" onclick="closeTambahUserModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;line-height:1;">✕</button>';
+        echo '  </div>';
+        echo '  <div style="padding:20px;overflow-y:auto;flex:1;">';
+        echo '    <form method="post" id="formTambahUser"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">';
+        echo '    <div class="grid two">';
+        echo '      <label>Nama *<input id="userNameInput" name="name" required placeholder="Nama Lengkap"></label>';
+        echo '      <label>Username *<input id="userUsernameInput" name="username" required placeholder="Username unik"></label>';
+        echo '    </div>';
+        echo '    <div class="grid two" style="margin-top:10px;">';
+        echo '      <label>Role *<select name="role"><option value="admin">Admin Full</option><option value="maintenance_admin">Admin Maintenance (Preventive)</option><option value="technician">Teknisi - Preventive Maintenance</option><option value="corrective_maintenance">Corrective Maintenance - Field Service & Reparasi</option><option value="loan_officer" selected>Petugas Peminjaman Aset (Mobile & Web)</option></select></label>';
+        echo '      <label>Password *<input type="password" name="password" required minlength="8" placeholder="Minimal 8 karakter"></label>';
+        echo '    </div>';
+        echo '    <div style="margin:16px 0 10px 0;padding:10px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:11.5px;color:#475569;line-height:1.4;">';
+        echo '      <strong style="color:#1e293b;display:block;margin-bottom:4px;">Catatan Hak Akses Role:</strong>';
+        echo '      <ul style="margin:0;padding-left:18px;">';
+        echo '        <li><strong>Admin Full:</strong> Akses penuh ke seluruh menu & sistem.</li>';
+        echo '        <li><strong>Admin Maintenance:</strong> Manajemen jadwal & checklist preventive maintenance.</li>';
+        echo '        <li><strong>Teknisi:</strong> Akses aplikasi mobile scan Preventive Maintenance.</li>';
+        echo '        <li><strong>Corrective Maintenance:</strong> Akses aplikasi mobile "AsetConnect Field Service" (Troubleshoot, Service QR, Part Replacement).</li>';
+        echo '        <li><strong>Petugas Peminjaman Aset:</strong> Akses serah-terima alat kerja & unit aset, pencatatan peminjaman (scan QR/kode), dan konfirmasi pengembalian melalui Mobile Peminjaman & Web Desktop.</li>';
+        echo '      </ul>';
+        echo '    </div>';
+        echo '    <div class="split" style="margin-top:16px;align-items:center;">';
+        echo '      <div></div>';
+        echo '      <div class="actions" style="display:flex;gap:8px;">';
+        echo '        <button type="button" class="btn" onclick="closeTambahUserModal()">Batal</button>';
+        echo '        <button class="btn primary">Tambah User</button>';
+        echo '      </div>';
+        echo '    </div>';
+        echo '    </form>';
+        echo '  </div>';
+        echo '</div>';
+        echo '</div>';
+        echo '<script>\n';
+        echo 'function openTambahUserModal(){\n';
+        echo '    var m = document.getElementById("modalTambahUser");\n';
+        echo '    if(m){\n';
+        echo '        m.style.display = "flex";\n';
+        echo '        var inp = document.getElementById("userNameInput");\n';
+        echo '        if(inp) inp.focus();\n';
+        echo '    }\n';
+        echo '}\n';
+        echo 'function closeTambahUserModal(){\n';
+        echo '    var m = document.getElementById("modalTambahUser");\n';
+        echo '    if(m) m.style.display = "none";\n';
+        echo '}\n';
+        echo 'window.addEventListener("keydown", function(e){\n';
+        echo '    if(e.key === "Escape") closeTambahUserModal();\n';
+        echo '});\n';
+        echo 'var mElem = document.getElementById("modalTambahUser");\n';
+        echo 'if(mElem){\n';
+        echo '    mElem.addEventListener("click", function(e){\n';
+        echo '        if(e.target === mElem) closeTambahUserModal();\n';
+        echo '    });\n';
+        echo '}\n';
+        echo '</script>';
+    }
     render_footer();
 }
 
