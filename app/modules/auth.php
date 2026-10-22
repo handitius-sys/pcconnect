@@ -604,7 +604,7 @@ function handle_route_users(PDO $pdo): void
     render_header('Users', $user);
     $canCreateUser = has_regulation('users', 'create', $user);
     $addUserBtn = $canCreateUser
-        ? '<button type="button" class="btn primary" onclick="openTambahUserModal()" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah User</button>'
+        ? '<button type="button" class="btn primary" onclick="if(window.openTambahUserModal){openTambahUserModal();}else{var m=document.getElementById(\'modalTambahUser\');if(m){m.style.display=\'flex\';var i=document.getElementById(\'userNameInput\');if(i)i.focus();}}" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="font-size:15px;font-weight:700;">+</span> Tambah User</button>'
         : '';
     echo '<section class="panel"><div class="split"><div><h1>User & Password</h1><p class="muted">Kelola akun administrator, staf, teknisi, dan petugas peminjaman aset.</p></div><div class="actions" style="display:flex;gap:8px;align-items:center;"><a class="btn" href="' . route_url('technicians') . '">Lihat Teknisi</a>' . $addUserBtn . '</div></div></section>';
     if (!$maintenanceRoleReady) {
@@ -662,7 +662,7 @@ function handle_route_users(PDO $pdo): void
 
     // Modal Window Tambah User
     if ($canCreateUser) {
-        echo '<div id="modalTambahUser" onclick="if(event.target===this)closeTambahUserModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
+        echo '<div id="modalTambahUser" onclick="if(event.target===this)closeTambahUserModal()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;background:rgba(15,23,42,0.65);backdrop-filter:blur(3px);z-index:999999;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">';
         echo '<div style="background:#fff;border-radius:12px;width:100%;max-width:620px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">';
         echo '  <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">';
         echo '    <div style="display:flex;align-items:center;gap:10px;">';
@@ -672,7 +672,7 @@ function handle_route_users(PDO $pdo): void
         echo '    <button type="button" onclick="closeTambahUserModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;line-height:1;">✕</button>';
         echo '  </div>';
         echo '  <div style="padding:20px;overflow-y:auto;flex:1;">';
-        echo '    <form method="post" id="formTambahUser"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">';
+        echo '    <form method="post" id="formTambahUser" action="' . route_url('users') . '"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="add">';
         echo '    <div class="grid two">';
         echo '      <label>Nama *<input id="userNameInput" name="name" required placeholder="Nama Lengkap"></label>';
         echo '      <label>Username *<input id="userUsernameInput" name="username" required placeholder="Username unik"></label>';
@@ -695,18 +695,30 @@ function handle_route_users(PDO $pdo): void
         echo '      <div></div>';
         echo '      <div class="actions" style="display:flex;gap:8px;">';
         echo '        <button type="button" class="btn" onclick="closeTambahUserModal()">Batal</button>';
-        echo '        <button class="btn primary">Tambah User</button>';
+        echo '        <button type="submit" class="btn primary">Tambah User</button>';
         echo '      </div>';
         echo '    </div>';
         echo '    </form>';
         echo '  </div>';
         echo '</div>';
         echo '</div>';
-        echo '<script>\n'
-            . 'function openTambahUserModal(){ var m = document.getElementById("modalTambahUser"); if(m){ m.style.display = "flex"; var inp = document.getElementById("userNameInput"); if(inp) inp.focus(); } }\n'
-            . 'function closeTambahUserModal(){ var m = document.getElementById("modalTambahUser"); if(m) m.style.display = "none"; }\n'
-            . 'window.addEventListener("keydown", function(e){ if(e.key === "Escape") closeTambahUserModal(); });\n'
-            . '</script>';
+        echo '<script>
+window.openTambahUserModal = function(){
+    var m = document.getElementById("modalTambahUser");
+    if(m){
+        m.style.display = "flex";
+        var inp = document.getElementById("userNameInput");
+        if(inp) inp.focus();
+    }
+};
+window.closeTambahUserModal = function(){
+    var m = document.getElementById("modalTambahUser");
+    if(m) m.style.display = "none";
+};
+window.addEventListener("keydown", function(e){
+    if(e.key === "Escape") closeTambahUserModal();
+});
+</script>';
     }
     render_footer();
 }
