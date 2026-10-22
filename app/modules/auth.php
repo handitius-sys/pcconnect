@@ -641,7 +641,7 @@ function handle_route_users(PDO $pdo): void
     echo '</div></section>';
 
     // Panel Daftar User (naik ke atas)
-    echo '<section class="panel"><div class="split" style="align-items:center;margin-bottom:12px;"><h2 style="margin:0;">Daftar User</h2><div class="actions">' . $addUserBtn . '</div></div>';
+    echo '<section class="panel"><h2 style="margin-top:0;margin-bottom:12px;">Daftar User</h2>';
     echo '<table><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th><th>Reset Password</th><th>Aksi</th></tr>';
     $canEdit = has_regulation('users', 'edit', $user);
     $canDelete = has_regulation('users', 'delete', $user);
@@ -662,7 +662,7 @@ function handle_route_users(PDO $pdo): void
 
     // Modal Window Tambah User
     if ($canCreateUser) {
-        echo '<div id="modalTambahUser" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
+        echo '<div id="modalTambahUser" onclick="if(event.target===this)closeTambahUserModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:99999;align-items:center;justify-content:center;padding:20px;">';
         echo '<div style="background:#fff;border-radius:12px;width:100%;max-width:620px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;">';
         echo '  <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">';
         echo '    <div style="display:flex;align-items:center;gap:10px;">';
@@ -702,29 +702,11 @@ function handle_route_users(PDO $pdo): void
         echo '  </div>';
         echo '</div>';
         echo '</div>';
-        echo '<script>\n';
-        echo 'function openTambahUserModal(){\n';
-        echo '    var m = document.getElementById("modalTambahUser");\n';
-        echo '    if(m){\n';
-        echo '        m.style.display = "flex";\n';
-        echo '        var inp = document.getElementById("userNameInput");\n';
-        echo '        if(inp) inp.focus();\n';
-        echo '    }\n';
-        echo '}\n';
-        echo 'function closeTambahUserModal(){\n';
-        echo '    var m = document.getElementById("modalTambahUser");\n';
-        echo '    if(m) m.style.display = "none";\n';
-        echo '}\n';
-        echo 'window.addEventListener("keydown", function(e){\n';
-        echo '    if(e.key === "Escape") closeTambahUserModal();\n';
-        echo '});\n';
-        echo 'var mElem = document.getElementById("modalTambahUser");\n';
-        echo 'if(mElem){\n';
-        echo '    mElem.addEventListener("click", function(e){\n';
-        echo '        if(e.target === mElem) closeTambahUserModal();\n';
-        echo '    });\n';
-        echo '}\n';
-        echo '</script>';
+        echo '<script>\n'
+            . 'function openTambahUserModal(){ var m = document.getElementById("modalTambahUser"); if(m){ m.style.display = "flex"; var inp = document.getElementById("userNameInput"); if(inp) inp.focus(); } }\n'
+            . 'function closeTambahUserModal(){ var m = document.getElementById("modalTambahUser"); if(m) m.style.display = "none"; }\n'
+            . 'window.addEventListener("keydown", function(e){ if(e.key === "Escape") closeTambahUserModal(); });\n'
+            . '</script>';
     }
     render_footer();
 }
