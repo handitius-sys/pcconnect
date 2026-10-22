@@ -9,8 +9,10 @@ function asset_nav_html(): string
 
 function asset_company_form_html(?array $company): string
 {
-    $addBtn = (int)$company['id'] > 0 ? btn_icon_add(route_url('asset_companies'), 'Tambah Company Baru', 'Tambah Company Baru') : '';
-    return '<section class="panel"><div class="split"><h1>' . ((int)$company['id'] > 0 ? 'Edit Company' : 'Tambah Company') . '</h1>' . $addBtn . '</div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($company['id']) . '"><div class="grid two"><label>Company Code<input name="company_code" value="' . e($company['company_code']) . '" required></label><label>Company Name<input name="company_name" value="' . e($company['company_name']) . '" required></label></div><label>Legal Name<input name="legal_name" value="' . e($company['legal_name']) . '"></label><label>Address<textarea name="address">' . e($company['address']) . '</textarea></label><label><input style="width:auto" type="checkbox" name="is_active" value="1" ' . ((int)$company['is_active'] ? 'checked' : '') . '> Aktif</label><div class="actions"><button class="btn primary">Simpan Company</button>' . ((int)$company['id'] > 0 ? ' <a class="btn" href="' . route_url('asset_companies') . '">Batal</a>' : '') . '</div></form></section>';
+    $company = $company ?: ['id' => 0, 'company_code' => '', 'company_name' => '', 'legal_name' => '', 'address' => '', 'is_active' => 1];
+    $isEdit = (int)($company['id'] ?? 0) > 0;
+    $addBtn = $isEdit ? btn_icon_add(route_url('asset_companies'), 'Tambah Company Baru', 'Tambah Company Baru') : '';
+    return '<section class="panel"><div class="split"><h1>' . ($isEdit ? 'Edit Company' : 'Tambah Company') . '</h1>' . $addBtn . '</div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($company['id']) . '"><div class="grid two"><label>Company Code<input name="company_code" value="' . e($company['company_code']) . '" required></label><label>Company Name<input name="company_name" value="' . e($company['company_name']) . '" required></label></div><label>Legal Name<input name="legal_name" value="' . e($company['legal_name']) . '"></label><label>Address<textarea name="address">' . e($company['address']) . '</textarea></label><label><input style="width:auto" type="checkbox" name="is_active" value="1" ' . ((int)$company['is_active'] ? 'checked' : '') . '> Aktif</label><div class="actions"><button class="btn primary">Simpan Company</button>' . ($isEdit ? ' <a class="btn" href="' . route_url('asset_companies') . '">Batal</a>' : '') . '</div></form></section>';
 }
 
 function asset_category_form_html(?array $category): string
@@ -3991,9 +3993,12 @@ function asset_specification_master_page(PDO $pdo, array $user): void
         $type = (int)($_POST['asset_type_id'] ?? 0);
         $code = strtoupper(trim((string)($_POST['specification_code'] ?? '')));
         $name = trim((string)($_POST['specification_name'] ?? ''));
-        if (!$groupId || !$type || $code === '' || $name === '') {
-            flash('Komoditas, Kategori, Kode Spesifikasi, dan Nama Spesifikasi wajib diisi.', 'err');
+        if (!$groupId || !$type || $name === '') {
+            flash('Komoditas, Kategori, dan Nama Spesifikasi wajib diisi.', 'err');
             redirect_to('asset_specifications', $id ? ['id' => $id] : []);
+        }
+        if ($code === '') {
+            $code = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $name), 0, 8));
         }
         // Cek duplikasi kode spesifikasi pada kategori yang sama
         $checkStmt = $pdo->prepare('SELECT ats.id, t.type_name, ats.specification_name 
@@ -4003,7 +4008,7 @@ function asset_specification_master_page(PDO $pdo, array $user): void
         $checkStmt->execute([$type, $code, $id]);
         $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
         if ($existing) {
-            flash('Gagal: Kode spesifikasi "' . e($code) . '" sudah ada pada kategori ' . e($existing['type_name']) . ' (' . e($existing['specification_name']) . '). Berbeda kategori diperbolehkan, namun dalam satu kategori yang sama kode spesifikasi harus unik. Silakan edit spesifikasi yang sudah ada atau gunakan kode lain.', 'err');
+            flash('Gagal: Kode spesifikasi "' . e($code) . '" sudah ada pada kategori ' . e($existing['type_name']) . ' (' . e($existing['specification_name']) . '). Berbeda kategori diperbolehkan, namun dalam satu kategori yang sama kode spesifikasi harus unik.', 'err');
             redirect_to('asset_specifications', $id ? ['id' => $id] : []);
         }
 
@@ -4033,222 +4038,6 @@ function asset_specification_master_page(PDO $pdo, array $user): void
             $editGroupId = (int)$edit['asset_group_id'];
         }
     }
-
-    render_header('Spesifikasi Aset', $user);
-    echo asset_nav_html();
-
-    $canCreateSpec = has_regulation('asset_specifications', 'create');
-    $canEditSpec = has_regulation('asset_specifications', 'edit');
-    $canDeleteSpec = has_regulation('asset_specifications', 'delete');
-    $showSpecForm = ($edit && $canEditSpec) || (!$edit && $canCreateSpec);
-
-    if ($showSpecForm) {
-        echo '<section class="panel"><div class="split"><h1>' . ($edit ? 'Edit' : 'Tambah') . ' Spesifikasi Aset</h1>';
-        if ($edit) {
-            echo btn_icon_add(route_url('asset_specifications'), 'Tambah Spesifikasi Baru', 'Tambah Spesifikasi Baru');
-        }
-        echo '</div><form method="post" style="margin-top:14px"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" id="specEditId" name="id" value="' . (int)($edit['id'] ?? 0) . '">';
-        
-        // Harus isi Komoditas dan Kategori terlebih dahulu
-        echo '<div class="grid two">';
-        echo '<label>Komoditas (Grup Aset) *<select id="specGroup" name="asset_group_id" onchange="onSpecGroupChanged()" required>' . asset_group_options($pdo, $editGroupId, true, '- Pilih Komoditas (Grup Aset) -') . '</select></label>';
-        echo '<label>Kategori (Tipe Aset) *<select id="specType" name="asset_type_id" onchange="onSpecTypeChanged()" required>' . asset_type_options($pdo, (int)($edit['asset_type_id'] ?? 0), $editGroupId, true, $editGroupId ? '- Pilih Kategori -' : '- Pilih Komoditas Terlebih Dahulu -') . '</select></label>';
-        echo '</div>';
-        echo '<div id="specExistingNotice" style="display:none;margin-bottom:12px"></div>';
-
-        echo '<div class="grid two">';
-        echo '<label>Kode Spesifikasi *<input id="specCodeInput" name="specification_code" required value="' . e($edit['specification_code'] ?? '') . '" placeholder="Contoh: PROCESSOR, RAM, STORAGE, RESOLUSI, WARNA, CC" oninput="checkSpecCodeDuplicate()"><div id="specCodeWarn" style="display:none;color:#dc2626;font-size:12px;margin-top:4px;font-weight:600;"></div></label>';
-        echo '<label>Nama Spesifikasi *<input name="specification_name" required value="' . e($edit['specification_name'] ?? '') . '" placeholder="Contoh: Processor / CPU, Kapasitas RAM, Tipe Storage, Kapasitas Mesin"></label>';
-        echo '</div>';
-
-        echo '<div class="grid four">';
-        echo '<label>Tipe Data<select name="data_type">';
-        $currDt = $edit['data_type'] ?? 'text';
-        foreach (['text', 'number', 'date'] as $dt) {
-            echo '<option value="' . $dt . '"' . ($currDt === $dt ? ' selected' : '') . '>' . $dt . '</option>';
-        }
-        echo '</select></label>';
-        echo '<label><input style="width:auto" type="checkbox" name="is_required" ' . (!empty($edit['is_required']) ? 'checked' : '') . '> Wajib Diisi (Required)</label>';
-        echo '<label><input style="width:auto" type="checkbox" name="is_searchable" ' . (!isset($edit['is_searchable']) || !empty($edit['is_searchable']) ? 'checked' : '') . '> Searchable</label>';
-        echo '<label>Urutan Tampil<input type="number" name="display_order" value="' . (int)($edit['display_order'] ?? 1) . '" min="1"></label>';
-        echo '</div>';
-
-        echo '<div class="actions" style="margin-top:14px">';
-        if ($edit) {
-            echo '<a class="btn" href="' . route_url('asset_specifications') . '">Batal</a> ';
-        }
-        echo '<button class="btn primary" id="specSubmitBtn">Simpan Spesifikasi</button>';
-        echo '</div></form></section>';
-    }
-
-    // JavaScript to dynamically populate Kategori and inspect existing specs
-    echo '<script>
-    window.currentCategorySpecs = [];
-    window.onSpecGroupChanged = async function(){
-        var specGroup = document.getElementById("specGroup");
-        var specType = document.getElementById("specType");
-        var notice = document.getElementById("specExistingNotice");
-        window.currentCategorySpecs = [];
-        if(notice) notice.style.display = "none";
-        if(!specGroup || !specType) return;
-        var gid = parseInt(specGroup.value, 10) || 0;
-        if(gid === 0){
-            specType.innerHTML = "<option value=\"\">- Pilih Komoditas Terlebih Dahulu -</option>";
-            return;
-        }
-        specType.innerHTML = "<option value=\"\">Memuat Kategori...</option>";
-        try {
-            var r = await fetch("index.php?route=api_asset_types&group_id=" + gid);
-            var types = await r.json();
-            var h = "<option value=\"\">- Pilih Kategori -</option>";
-            if(Array.isArray(types) && types.length > 0){
-                types.forEach(function(t){
-                    h += "<option value=\"" + t.id + "\">" + (t.type_code ? t.type_code + " - " : "") + t.type_name + "</option>";
-                });
-            } else {
-                h = "<option value=\"\">- Belum ada kategori untuk komoditas ini -</option>";
-            }
-            specType.innerHTML = h;
-            onSpecTypeChanged();
-        } catch(e){
-            console.error("Gagal load kategori:", e);
-        }
-    };
-
-    window.onSpecTypeChanged = async function(){
-        var specType = document.getElementById("specType");
-        var notice = document.getElementById("specExistingNotice");
-        if(!specType || !notice) return;
-        var tid = parseInt(specType.value, 10) || 0;
-        if(tid <= 0){
-            notice.style.display = "none";
-            notice.innerHTML = "";
-            window.currentCategorySpecs = [];
-            checkSpecCodeDuplicate();
-            return;
-        }
-        try {
-            var r = await fetch("index.php?route=api_asset_type_config&type_id=" + tid);
-            var data = await r.json();
-            window.currentCategorySpecs = (data && data.specifications) ? data.specifications : [];
-            if(window.currentCategorySpecs.length > 0){
-                var badges = window.currentCategorySpecs.map(function(s){
-                    return "<span class=\"badge\" style=\"background:#e0f2fe;color:#0369a1;margin-right:5px;margin-bottom:4px;display:inline-block;padding:3px 8px;border:1px solid #bae6fd;font-size:11px;\">" + 
-                           "<strong>" + (s.specification_code || "") + "</strong>: " + (s.specification_name || "") + "</span>";
-                }).join(" ");
-                notice.innerHTML = "<div style=\"padding:8px 12px;background:#f0f9ff;border-left:3px solid #0284c7;border-radius:4px;\">" +
-                                   "<strong style=\"color:#0369a1;font-size:12px;\">Spesifikasi yang sudah terdaftar di kategori ini:</strong>" +
-                                   "<div style=\"margin-top:5px;display:flex;flex-wrap:wrap;\">" + badges + "</div>" +
-                                   "<div style=\"font-size:11px;color:#64748b;margin-top:4px;\"><em>Tips: Kode spesifikasi di atas sudah terdaftar. Jika ingin mengubahnya, silakan gunakan tombol Edit di tabel bawah.</em></div>" +
-                                   "</div>";
-                notice.style.display = "block";
-            } else {
-                notice.innerHTML = "<div style=\"padding:6px 10px;background:#f8fafc;color:#64748b;font-size:12px;border-radius:4px;\"><em>Belum ada spesifikasi terdaftar untuk kategori ini.</em></div>";
-                notice.style.display = "block";
-            }
-            checkSpecCodeDuplicate();
-        } catch(e){
-            console.error("Gagal load spesifikasi kategori:", e);
-        }
-    };
-
-    window.checkSpecCodeDuplicate = function(){
-        var codeInp = document.getElementById("specCodeInput");
-        var warn = document.getElementById("specCodeWarn");
-        var editId = parseInt((document.getElementById("specEditId") || {}).value, 10) || 0;
-        if(!codeInp || !warn) return;
-        var val = codeInp.value.toUpperCase().trim();
-        if(val === "" || !Array.isArray(window.currentCategorySpecs) || window.currentCategorySpecs.length === 0){
-            warn.style.display = "none";
-            warn.innerText = "";
-            return;
-        }
-        var found = window.currentCategorySpecs.find(function(s){
-            return (s.specification_code || "").toUpperCase() === val && parseInt(s.id, 10) !== editId;
-        });
-        if(found){
-            warn.innerText = "⚠️ Kode \"" + val + "\" sudah digunakan di kategori ini (" + found.specification_name + "). Kode harus unik per kategori!";
-            warn.style.display = "block";
-        } else {
-            warn.style.display = "none";
-            warn.innerText = "";
-        }
-    };
-
-    window.onFilterSpecGroupChanged = async function(gid){
-        var typeSel = document.getElementById("filterTableType");
-        if(!typeSel) return;
-        gid = parseInt(gid, 10) || 0;
-        if(gid === 0){
-            typeSel.innerHTML = "<option value=\"\">Semua Kategori</option>";
-            try {
-                var r = await fetch("index.php?route=api_asset_types");
-                var types = await r.json();
-                if(Array.isArray(types)){
-                    types.forEach(function(t){
-                        typeSel.innerHTML += "<option value=\"" + t.id + "\">" + (t.type_code ? t.type_code + " - " : "") + t.type_name + "</option>";
-                    });
-                }
-            } catch(e){}
-            filterSpecTableClient();
-            return;
-        }
-        typeSel.innerHTML = "<option value=\"\">Semua Kategori</option>";
-        try {
-            var r = await fetch("index.php?route=api_asset_types&group_id=" + gid);
-            var types = await r.json();
-            if(Array.isArray(types)){
-                types.forEach(function(t){
-                    typeSel.innerHTML += "<option value=\"" + t.id + "\">" + (t.type_code ? t.type_code + " - " : "") + t.type_name + "</option>";
-                });
-            }
-        } catch(e){}
-        filterSpecTableClient();
-    };
-
-    window.filterSpecTableClient = function(){
-        var grpVal = (document.getElementById("filterTableGroup") || {}).value || "";
-        var typVal = (document.getElementById("filterTableType") || {}).value || "";
-        var qVal = ((document.getElementById("filterTableSearch") || {}).value || "").toLowerCase().trim();
-
-        var rows = document.querySelectorAll("#specTableBody tr.spec-row");
-        var visibleCatCount = {};
-
-        rows.forEach(function(row){
-            var rGrp = row.getAttribute("data-group-id") || "";
-            var rTyp = row.getAttribute("data-type-id") || "";
-            var rText = (row.getAttribute("data-search") || "").toLowerCase();
-
-            var matchGrp = (!grpVal || rGrp === grpVal);
-            var matchTyp = (!typVal || rTyp === typVal);
-            var matchQ = (!qVal || rText.indexOf(qVal) !== -1);
-
-            if(matchGrp && matchTyp && matchQ){
-                row.style.display = "";
-                visibleCatCount[rTyp] = (visibleCatCount[rTyp] || 0) + 1;
-            } else {
-                row.style.display = "none";
-            }
-        });
-
-        var headers = document.querySelectorAll("#specTableBody tr.spec-group-header");
-        headers.forEach(function(hdr){
-            var hTyp = hdr.getAttribute("data-type-id") || "";
-            if(visibleCatCount[hTyp] && visibleCatCount[hTyp] > 0){
-                hdr.style.display = "";
-            } else {
-                hdr.style.display = "none";
-            }
-        });
-    };
-
-    document.addEventListener("DOMContentLoaded", function(){
-        var specType = document.getElementById("specType");
-        if(specType && specType.value){
-            onSpecTypeChanged();
-        }
-    });
-    </script>';
 
     $filterGroup = (int)($_GET['group_id'] ?? 0);
     $filterType = (int)($_GET['type_id'] ?? 0);
@@ -4291,29 +4080,52 @@ function asset_specification_master_page(PDO $pdo, array $user): void
         $catCounts[$tid] = ($catCounts[$tid] ?? 0) + 1;
     }
 
+    render_header('Spesifikasi Aset', $user);
+    echo asset_nav_html();
+
+    $canCreateSpec = has_regulation('asset_specifications', 'create');
+    $canEditSpec = has_regulation('asset_specifications', 'edit');
+    $canDeleteSpec = has_regulation('asset_specifications', 'delete');
+
+    // TAMPILAN PANEL DAFTAR SPESIFIKASI ASET (NAIK KE ATAS / DEPAN)
     echo '<section class="panel">';
-    echo '<div class="split" style="margin-bottom:12px;gap:10px;flex-wrap:wrap;">';
-    echo '<h2>Daftar Spesifikasi Aset (' . count($rows) . ')</h2>';
-    echo '<form method="get" class="actions" style="margin:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+    echo '<div class="split" style="margin-bottom:14px; align-items:center; flex-wrap:wrap; gap:10px;">';
+    echo '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">';
+    echo '<h1 style="margin:0; font-size:20px; color:#0f172a;">📋 Daftar Spesifikasi Aset</h1>';
+    echo '<span class="badge ok" style="font-size:12px; padding:5px 10px;">' . count($rows) . ' Spesifikasi</span>';
+    echo '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:12px; padding:5px 10px;">' . count($catCounts) . ' Kategori</span>';
+    echo '</div>';
+
+    echo '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">';
+    if ($canCreateSpec) {
+        echo '<button type="button" class="btn primary" onclick="openSpecModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah Spesifikasi</button>';
+    }
+    echo '</div>';
+    echo '</div>';
+
+    // Filter Bar
+    echo '<div style="margin-bottom:16px; padding:12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">';
+    echo '<form method="get" class="actions" style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">';
     echo '<input type="hidden" name="route" value="asset_specifications">';
-    echo '<select id="filterTableGroup" name="group_id" onchange="onFilterSpecGroupChanged(this.value); this.form.submit();">';
+    echo '<label style="margin:0; font-weight:600; font-size:12px; color:#475569;">Filter:</label>';
+    echo '<select id="filterTableGroup" name="group_id" onchange="onFilterSpecGroupChanged(this.value); this.form.submit();" style="padding:6px 10px; font-size:13px; background:#fff;">';
     echo asset_group_options($pdo, $filterGroup, true, 'Semua Komoditas');
     echo '</select>';
-    echo '<select id="filterTableType" name="type_id" onchange="this.form.submit()">';
+    echo '<select id="filterTableType" name="type_id" onchange="this.form.submit()" style="padding:6px 10px; font-size:13px; background:#fff;">';
     echo asset_type_options($pdo, $filterType, $filterGroup, true, 'Semua Kategori', true);
     echo '</select>';
-    echo '<input id="filterTableSearch" name="q" value="' . e($filterQ) . '" placeholder="Cari kode/nama spesifikasi..." style="width:200px" oninput="filterSpecTableClient()">';
-    echo '<button class="btn">Filter</button>';
+    echo '<input id="filterTableSearch" name="q" value="' . e($filterQ) . '" placeholder="Cari kode/nama spesifikasi..." style="width:200px; padding:6px 10px; font-size:13px;" oninput="filterSpecTableClient()">';
+    echo '<button type="submit" class="btn" style="padding:6px 14px; font-size:13px;">Filter</button>';
     if ($filterGroup || $filterType || $filterQ !== '') {
-        echo '<a class="btn" href="' . route_url('asset_specifications') . '">Reset</a>';
+        echo '<a class="btn" href="' . route_url('asset_specifications') . '" style="padding:6px 12px; font-size:13px;">✕ Reset</a>';
     }
     echo '</form>';
     echo '</div>';
 
     if (empty($rows)) {
-        echo '<div style="padding:30px;text-align:center;color:#64748b;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;margin-top:10px;">Belum ada Spesifikasi Aset yang sesuai dengan filter pencarian.</div>';
+        echo '<div style="padding:30px; text-align:center; color:#64748b; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1; margin-top:10px;">Belum ada Spesifikasi Aset yang sesuai dengan filter pencarian.</div>';
     } else {
-        echo '<table style="margin-top:10px;"><thead><tr><th>ID</th><th>Komoditas</th><th>Kategori</th><th>Kode Spesifikasi</th><th>Nama Spesifikasi</th><th>Tipe Data</th><th>Required</th><th>Searchable</th><th>Total Unit Terisi</th><th>Order</th><th>Aksi</th></tr></thead><tbody id="specTableBody">';
+        echo '<div style="overflow-x:auto;"><table style="margin:0;"><thead><tr><th style="width:40px; text-align:center;">ID</th><th>Komoditas</th><th>Kategori</th><th>Kode Spesifikasi</th><th>Nama Spesifikasi</th><th>Tipe Data</th><th style="text-align:center;">Required</th><th style="text-align:center;">Searchable</th><th style="text-align:center;">Total Unit Terisi</th><th style="text-align:center;">Order</th>' . ($canEditSpec || $canDeleteSpec ? '<th style="width:110px; text-align:center; white-space:nowrap;">Aksi</th>' : '') . '</tr></thead><tbody id="specTableBody">';
 
         $lastTypeId = null;
         foreach ($rows as $r) {
@@ -4321,7 +4133,6 @@ function asset_specification_master_page(PDO $pdo, array $user): void
             $curGroupId = (int)$r['effective_group_id'];
             $gCode = strtoupper(trim((string)$r['group_code']));
 
-            // Color theme based on Commodity
             $badgeBg = '#e0f2fe';
             $badgeColor = '#0369a1';
             $catHeaderBg = '#f0f9ff';
@@ -4338,7 +4149,6 @@ function asset_specification_master_page(PDO $pdo, array $user): void
                 $catBorder = '#fde68a';
             }
 
-            // Category Group Header
             if ($lastTypeId !== $curTypeId) {
                 $lastTypeId = $curTypeId;
                 $catTotal = (int)($catCounts[$curTypeId] ?? 0);
@@ -4352,14 +4162,35 @@ function asset_specification_master_page(PDO $pdo, array $user): void
             }
 
             $delBtn = $canDeleteSpec
-                ? btn_icon_delete(route_url('asset_specifications'), (int)$r['id'], 'Hapus Spesifikasi ' . e($r['specification_code']) . '?', 'Hapus Spesifikasi')
+                ? ('<form method="post" action="' . route_url('asset_specifications') . '" style="display:inline-flex; margin:0; padding:0; vertical-align:middle;" onsubmit="return confirm(&quot;Hapus Spesifikasi ' . e($r['specification_code']) . '?&quot;);">'
+                    . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+                    . '<input type="hidden" name="action" value="delete">'
+                    . '<input type="hidden" name="id" value="' . (int)$r['id'] . '">'
+                    . '<button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" title="Hapus Spesifikasi">'
+                    . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>'
+                    . '</button></form>')
                 : '';
+
+            $editAttrs = ' data-id="' . (int)$r['id'] . '"'
+                . ' data-group-id="' . $curGroupId . '"'
+                . ' data-type-id="' . $curTypeId . '"'
+                . ' data-code="' . e($r['specification_code']) . '"'
+                . ' data-name="' . e($r['specification_name']) . '"'
+                . ' data-type="' . e($r['data_type']) . '"'
+                . ' data-required="' . (!empty($r['is_required']) ? '1' : '0') . '"'
+                . ' data-searchable="' . (!isset($r['is_searchable']) || !empty($r['is_searchable']) ? '1' : '0') . '"'
+                . ' data-order="' . (int)($r['display_order'] ?? 1) . '"';
+
             $editBtn = $canEditSpec
-                ? (btn_icon_edit(route_url('asset_specifications', ['id' => $r['id']]), 'Edit Spesifikasi') . ' ')
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" onclick="editSpecItem(this)"' . $editAttrs . ' title="Edit Spesifikasi">'
+                    . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
+                    . '</button>')
                 : '';
+
             $actionCell = ($canEditSpec || $canDeleteSpec)
-                ? ('<td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . $editBtn . $delBtn . '</div></td>')
-                : '<td><span class="muted">-</span></td>';
+                ? ('<td style="text-align:center; white-space:nowrap;"><div style="display:inline-flex; flex-direction:row; flex-wrap:nowrap; gap:6px; justify-content:center; align-items:center; white-space:nowrap;">' . $editBtn . $delBtn . '</div></td>')
+                : '';
+
             $uCnt = (int)($r['unit_count'] ?? 0);
             $unitLink = $uCnt > 0 
                 ? '<a href="' . route_url('asset_items', ['type_id' => $r['asset_type_id']]) . '" class="badge ok" style="text-decoration:none;">' . $uCnt . ' Unit</a>' 
@@ -4368,22 +4199,413 @@ function asset_specification_master_page(PDO $pdo, array $user): void
             $searchKeywords = strtolower($r['specification_code'] . ' ' . $r['specification_name'] . ' ' . $r['type_name'] . ' ' . $r['type_code'] . ' ' . $r['group_name']);
 
             echo '<tr class="spec-row" data-group-id="' . $curGroupId . '" data-type-id="' . $curTypeId . '" data-search="' . e($searchKeywords) . '">'
-                . '<td>' . e($r['id']) . '</td>'
+                . '<td style="text-align:center; font-weight:600; color:#64748b;">' . e($r['id']) . '</td>'
                 . '<td>' . $grpBadge . '</td>'
                 . '<td><strong>' . e($r['type_name']) . '</strong></td>'
                 . '<td><strong style="color:#0284c7;font-family:monospace;font-size:13px;">' . e($r['specification_code']) . '</strong></td>'
                 . '<td>' . e($r['specification_name']) . '</td>'
                 . '<td><code>' . e($r['data_type']) . '</code></td>'
-                . '<td>' . (!empty($r['is_required']) ? '<span class="badge danger">Ya</span>' : '<span class="muted">Tidak</span>') . '</td>'
-                . '<td>' . (!empty($r['is_searchable']) ? '<span class="badge ok">Ya</span>' : '<span class="muted">Tidak</span>') . '</td>'
-                . '<td>' . $unitLink . '</td>'
-                . '<td>' . e($r['display_order']) . '</td>'
+                . '<td style="text-align:center;">' . (!empty($r['is_required']) ? '<span class="badge danger">Ya</span>' : '<span class="muted">Tidak</span>') . '</td>'
+                . '<td style="text-align:center;">' . (!empty($r['is_searchable']) ? '<span class="badge ok">Ya</span>' : '<span class="muted">Tidak</span>') . '</td>'
+                . '<td style="text-align:center;">' . $unitLink . '</td>'
+                . '<td style="text-align:center;">' . e($r['display_order']) . '</td>'
                 . $actionCell
                 . '</tr>';
         }
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
     }
     echo '</section>';
+
+    // WINDOWS MODUL: TAMBAH / EDIT SPESIFIKASI ASET (MODAL POPUP)
+    echo '<div id="modalSpec" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.65); backdrop-filter:blur(3px); z-index:99999; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">'
+        . '<div style="background:#fff; border-radius:12px; padding:24px; width:100%; max-width:620px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:92vh; overflow-y:auto; position:relative;">'
+        . '<button type="button" onclick="closeSpecModal()" style="position:absolute; top:18px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:#64748b; line-height:1;" title="Tutup Window">&times;</button>'
+        . '<h2 id="modalSpecTitle" style="margin:0 0 6px 0; font-size:18px; color:#1e40af;">+ Tambah Spesifikasi</h2>'
+        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Pilih Komoditas dan Kategori terlebih dahulu, masukkan Nama Spesifikasi dan tipe data, lalu simpan.</p>'
+        . '<form method="post" id="formModalSpec">'
+        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" id="modalSpecEditId" name="id" value="">'
+        
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Komoditas (Asset Group) *'
+        . '    <select id="modalSpecGroup" name="asset_group_id" onchange="onModalSpecGroupChanged()" required style="width:100%; margin-top:4px; padding:8px 10px; font-size:13px; background:#fff;">' . asset_group_options($pdo, $editGroupId, true, '- Pilih Komoditas -') . '</select>'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kategori (Asset Type) *'
+        . '    <select id="modalSpecType" name="asset_type_id" onchange="onModalSpecTypeChanged()" required style="width:100%; margin-top:4px; padding:8px 10px; font-size:13px; background:#fff;">' . asset_type_options($pdo, (int)($edit['asset_type_id'] ?? 0), $editGroupId, true, $editGroupId ? '- Pilih Kategori -' : '- Pilih Komoditas Terlebih Dahulu -') . '</select>'
+        . '  </label>'
+        . '</div>'
+
+        . '<div id="modalSpecExistingNotice" style="display:none; margin-bottom:12px;"></div>'
+
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Kode Spesifikasi * <span style="font-size:11px; color:#0284c7; font-weight:normal;">(Auto create)</span>'
+        . '    <input id="modalSpecCodeInput" name="specification_code" required placeholder="Contoh: CPU, RAM, STORAGE" oninput="checkModalSpecCodeDuplicate(); onSpecCodeManualEdit();" style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px; font-family:monospace; font-weight:700; text-transform:uppercase;">'
+        . '    <div id="modalSpecCodeWarn" style="display:none; color:#dc2626; font-size:12px; margin-top:4px; font-weight:600;"></div>'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Nama Spesifikasi *'
+        . '    <input id="modalSpecNameInput" name="specification_name" required placeholder="Contoh: Processor / CPU, Kapasitas RAM" oninput="onSpecNameInput()" style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px;">'
+        . '  </label>'
+        . '</div>'
+
+        . '<div class="grid two" style="margin-bottom:14px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Tipe Data *'
+        . '    <select name="data_type" id="modalSpecDataType" style="width:100%; margin-top:4px; padding:8px 10px; font-size:13px; background:#fff;">'
+        . '      <option value="text">Text</option>'
+        . '      <option value="number">Numeric</option>'
+        . '      <option value="date">Date</option>'
+        . '    </select>'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Urutan Tampil'
+        . '    <input type="number" name="display_order" id="modalSpecOrder" value="1" min="1" style="width:100%; margin-top:4px; padding:8px 10px; font-size:13px;">'
+        . '  </label>'
+        . '</div>'
+
+        . '<div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">'
+        . '  <label style="display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:13px; color:#334155; cursor:pointer;">'
+        . '    <input type="checkbox" name="is_required" id="modalSpecRequired" value="1" style="width:auto; margin:0;"> Wajib Diisi (Required)'
+        . '  </label>'
+        . '  <label style="display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:13px; color:#334155; cursor:pointer;">'
+        . '    <input type="checkbox" name="is_searchable" id="modalSpecSearchable" value="1" checked style="width:auto; margin:0;"> Searchable'
+        . '  </label>'
+        . '</div>'
+
+        . '<div class="actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:8px;">'
+        . '  <button type="button" class="btn" onclick="closeSpecModal()" style="padding:8px 16px; font-size:13px;">Batal</button>'
+        . '  <button type="submit" class="btn primary" id="modalSpecSubmitBtn" style="padding:8px 20px; font-size:13px; font-weight:700;">Simpan Spesifikasi</button>'
+        . '</div></form></div></div>';
+    ?>
+    <script>
+    window.currentCategorySpecs = [];
+    var specCodeUserEdited = false;
+
+    function autoGenerateSpecCode(name) {
+        if (!name) return '';
+        var s = name.trim().toUpperCase();
+        var presets = {
+            'PROCESSOR': 'CPU',
+            'PROCESSOR / CPU': 'CPU',
+            'CPU': 'CPU',
+            'RAM': 'RAM',
+            'MEMORI': 'RAM',
+            'KAPASITAS RAM': 'RAM',
+            'STORAGE': 'STORAGE',
+            'PENYIMPANAN': 'STORAGE',
+            'TIPE STORAGE': 'STORAGE',
+            'HARDDISK': 'HDD',
+            'SSD': 'SSD',
+            'VGA': 'GPU',
+            'KARTU GRAFIS': 'GPU',
+            'GPU': 'GPU',
+            'LAYAR': 'SCREEN',
+            'UKURAN LAYAR': 'SCREEN',
+            'RESOLUSI': 'RESOLUSI',
+            'SISTEM OPERASI': 'OS',
+            'OS': 'OS',
+            'WARNA': 'WARNA',
+            'KAPASITAS MESIN': 'CC',
+            'CC': 'CC',
+            'BAHAN BAKAR': 'FUEL',
+            'TRANSMISI': 'TRANSMISI'
+        };
+        if (presets[s]) return presets[s];
+
+        var clean = s.replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!clean) return '';
+        var words = clean.split(' ').filter(Boolean);
+        if (words.length >= 2) {
+            var acronym = words.map(function(w){ return w[0]; }).join('');
+            if (acronym.length >= 2 && acronym.length <= 5) return acronym;
+            return acronym.substring(0, 4);
+        }
+        var w = words[0];
+        if (w.length <= 4) return w;
+        var firstChar = w[0];
+        var consonants = firstChar + w.substring(1).replace(/[AEIOU]/g, '');
+        if (consonants.length >= 3 && consonants.length <= 6) return consonants;
+        return w.substring(0, 4);
+    }
+
+    function onSpecCodeManualEdit() {
+        var el = document.getElementById('modalSpecCodeInput');
+        var val = el ? el.value : '';
+        specCodeUserEdited = (val.trim() !== '');
+    }
+
+    function onSpecNameInput() {
+        if (specCodeUserEdited) return;
+        var nameEl = document.getElementById('modalSpecNameInput');
+        var nameVal = nameEl ? nameEl.value : '';
+        var codeInput = document.getElementById('modalSpecCodeInput');
+        if (codeInput) {
+            codeInput.value = autoGenerateSpecCode(nameVal);
+            checkModalSpecCodeDuplicate();
+        }
+    }
+
+    function openSpecModal() {
+        specCodeUserEdited = false;
+        var editIdEl = document.getElementById('modalSpecEditId');
+        if (editIdEl) editIdEl.value = '';
+        var titleEl = document.getElementById('modalSpecTitle');
+        if (titleEl) titleEl.innerText = '+ Tambah Spesifikasi';
+        var grpEl = document.getElementById('modalSpecGroup');
+        if (grpEl) grpEl.selectedIndex = 0;
+        var typeEl = document.getElementById('modalSpecType');
+        if (typeEl) typeEl.innerHTML = '<option value="">- Pilih Komoditas Terlebih Dahulu -</option>';
+        var codeEl = document.getElementById('modalSpecCodeInput');
+        if (codeEl) codeEl.value = '';
+        var nameEl = document.getElementById('modalSpecNameInput');
+        if (nameEl) nameEl.value = '';
+        var dtEl = document.getElementById('modalSpecDataType');
+        if (dtEl) dtEl.value = 'text';
+        var reqEl = document.getElementById('modalSpecRequired');
+        if (reqEl) reqEl.checked = false;
+        var searchEl = document.getElementById('modalSpecSearchable');
+        if (searchEl) searchEl.checked = true;
+        var ordEl = document.getElementById('modalSpecOrder');
+        if (ordEl) ordEl.value = '1';
+        var notice = document.getElementById('modalSpecExistingNotice');
+        if (notice) { notice.style.display = 'none'; notice.innerHTML = ''; }
+        var warn = document.getElementById('modalSpecCodeWarn');
+        if (warn) { warn.style.display = 'none'; warn.innerText = ''; }
+
+        var m = document.getElementById('modalSpec');
+        if (m) m.style.display = 'flex';
+    }
+
+    function closeSpecModal() {
+        var m = document.getElementById('modalSpec');
+        if (m) m.style.display = 'none';
+    }
+
+    window.onModalSpecGroupChanged = async function() {
+        var specGroup = document.getElementById('modalSpecGroup');
+        var specType = document.getElementById('modalSpecType');
+        var notice = document.getElementById('modalSpecExistingNotice');
+        window.currentCategorySpecs = [];
+        if (notice) { notice.style.display = 'none'; notice.innerHTML = ''; }
+        if (!specGroup || !specType) return;
+        var gid = parseInt(specGroup.value, 10) || 0;
+        if (gid === 0) {
+            specType.innerHTML = '<option value="">- Pilih Komoditas Terlebih Dahulu -</option>';
+            return;
+        }
+        specType.innerHTML = '<option value="">Memuat Kategori...</option>';
+        try {
+            var r = await fetch('index.php?route=api_asset_types&group_id=' + gid);
+            var types = await r.json();
+            var h = '<option value="">- Pilih Kategori -</option>';
+            if (Array.isArray(types) && types.length > 0) {
+                types.forEach(function(t) {
+                    h += '<option value="' + t.id + '">' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
+                });
+            } else {
+                h = '<option value="">- Belum ada kategori untuk komoditas ini -</option>';
+            }
+            specType.innerHTML = h;
+            onModalSpecTypeChanged();
+        } catch (e) {
+            console.error('Gagal load kategori:', e);
+        }
+    };
+
+    window.onModalSpecTypeChanged = async function() {
+        var specType = document.getElementById('modalSpecType');
+        var notice = document.getElementById('modalSpecExistingNotice');
+        if (!specType || !notice) return;
+        var tid = parseInt(specType.value, 10) || 0;
+        if (tid <= 0) {
+            notice.style.display = 'none';
+            notice.innerHTML = '';
+            window.currentCategorySpecs = [];
+            checkModalSpecCodeDuplicate();
+            return;
+        }
+        try {
+            var r = await fetch('index.php?route=api_asset_type_config&type_id=' + tid);
+            var data = await r.json();
+            window.currentCategorySpecs = (data && data.specifications) ? data.specifications : [];
+            if (window.currentCategorySpecs.length > 0) {
+                var badges = window.currentCategorySpecs.map(function(s) {
+                    var reqMark = s.is_required == 1 ? ' *' : '';
+                    return '<span class="badge" style="background:#e0f2fe;color:#0369a1;margin-right:5px;margin-bottom:4px;display:inline-block;padding:3px 8px;border:1px solid #bae6fd;font-size:11px;">' + 
+                           '<strong>' + (s.specification_code || '') + '</strong>: ' + (s.specification_name || '') + reqMark + '</span>';
+                }).join(' ');
+                notice.innerHTML = '<div style="padding:8px 12px;background:#f0f9ff;border-left:3px solid #0284c7;border-radius:4px;">' +
+                                   '<strong style="color:#0369a1;font-size:12px;">Spesifikasi yang sudah terdaftar di kategori ini:</strong>' +
+                                   '<div style="margin-top:5px;display:flex;flex-wrap:wrap;">' + badges + '</div>' +
+                                   '</div>';
+                notice.style.display = 'block';
+            } else {
+                notice.style.display = 'none';
+                notice.innerHTML = '';
+            }
+        } catch (e) {
+            console.error('Gagal load spesifikasi:', e);
+        }
+        checkModalSpecCodeDuplicate();
+    };
+
+    window.checkModalSpecCodeDuplicate = function() {
+        var codeInp = document.getElementById('modalSpecCodeInput');
+        var warn = document.getElementById('modalSpecCodeWarn');
+        var editId = parseInt((document.getElementById('modalSpecEditId') || {}).value, 10) || 0;
+        if (!codeInp || !warn) return;
+        var val = codeInp.value.toUpperCase().trim();
+        if (val === '' || !Array.isArray(window.currentCategorySpecs) || window.currentCategorySpecs.length === 0) {
+            warn.style.display = 'none';
+            warn.innerText = '';
+            return;
+        }
+        var found = window.currentCategorySpecs.find(function(s) {
+            return (s.specification_code || '').toUpperCase() === val && parseInt(s.id, 10) !== editId;
+        });
+        if (found) {
+            warn.innerText = '⚠️ Kode "' + val + '" sudah digunakan di kategori ini (' + found.specification_name + '). Kode harus unik per kategori!';
+            warn.style.display = 'block';
+        } else {
+            warn.style.display = 'none';
+            warn.innerText = '';
+        }
+    };
+
+    async function editSpecItem(btn) {
+        specCodeUserEdited = true;
+        var id = btn.getAttribute('data-id') || '';
+        var gid = btn.getAttribute('data-group-id') || '';
+        var tid = btn.getAttribute('data-type-id') || '';
+        var code = btn.getAttribute('data-code') || '';
+        var name = btn.getAttribute('data-name') || '';
+        var dt = btn.getAttribute('data-type') || 'text';
+        var req = btn.getAttribute('data-required') === '1';
+        var search = btn.getAttribute('data-searchable') === '1';
+        var ord = btn.getAttribute('data-order') || '1';
+
+        document.getElementById('modalSpecEditId').value = id;
+        document.getElementById('modalSpecTitle').innerText = '✏️ Edit Spesifikasi';
+        document.getElementById('modalSpecGroup').value = gid;
+
+        var tSel = document.getElementById('modalSpecType');
+        tSel.innerHTML = '<option value="">Memuat Kategori...</option>';
+        try {
+            var r = await fetch('index.php?route=api_asset_types&group_id=' + gid);
+            var types = await r.json();
+            var h = '<option value="">- Pilih Kategori -</option>';
+            if (Array.isArray(types)) {
+                types.forEach(function(t) {
+                    h += '<option value="' + t.id + '"' + (String(t.id) === String(tid) ? ' selected' : '') + '>' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
+                });
+            }
+            tSel.innerHTML = h;
+            onModalSpecTypeChanged();
+        } catch (e) {
+            console.error(e);
+        }
+
+        document.getElementById('modalSpecCodeInput').value = code;
+        document.getElementById('modalSpecNameInput').value = name;
+        document.getElementById('modalSpecDataType').value = dt;
+        document.getElementById('modalSpecRequired').checked = req;
+        document.getElementById('modalSpecSearchable').checked = search;
+        document.getElementById('modalSpecOrder').value = ord;
+
+        var m = document.getElementById('modalSpec');
+        if (m) m.style.display = 'flex';
+    }
+
+    window.filterSpecTableClient = function() {
+        var grpVal = (document.getElementById('filterTableGroup') || {}).value || '';
+        var typVal = (document.getElementById('filterTableType') || {}).value || '';
+        var qVal = ((document.getElementById('filterTableSearch') || {}).value || '').toLowerCase().trim();
+
+        var rows = document.querySelectorAll('#specTableBody tr.spec-row');
+        var visibleCatCount = {};
+
+        rows.forEach(function(row) {
+            var rGrp = row.getAttribute('data-group-id') || '';
+            var rTyp = row.getAttribute('data-type-id') || '';
+            var rText = (row.getAttribute('data-search') || '').toLowerCase();
+
+            var matchGrp = (!grpVal || rGrp === grpVal);
+            var matchTyp = (!typVal || rTyp === typVal);
+            var matchQ = (!qVal || rText.indexOf(qVal) !== -1);
+
+            if (matchGrp && matchTyp && matchQ) {
+                row.style.display = '';
+                visibleCatCount[rTyp] = (visibleCatCount[rTyp] || 0) + 1;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        var headers = document.querySelectorAll('#specTableBody tr.spec-group-header');
+        headers.forEach(function(hdr) {
+            var hTyp = hdr.getAttribute('data-type-id') || '';
+            if (visibleCatCount[hTyp] && visibleCatCount[hTyp] > 0) {
+                hdr.style.display = '';
+            } else {
+                hdr.style.display = 'none';
+            }
+        });
+    };
+
+    window.onFilterSpecGroupChanged = async function(gid) {
+        var typeSel = document.getElementById('filterTableType');
+        if (!typeSel) return;
+        gid = parseInt(gid, 10) || 0;
+        if (gid === 0) {
+            typeSel.innerHTML = '<option value="">Semua Kategori</option>';
+            try {
+                var r = await fetch('index.php?route=api_asset_types');
+                var types = await r.json();
+                if (Array.isArray(types)) {
+                    types.forEach(function(t) {
+                        typeSel.innerHTML += '<option value="' + t.id + '">' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
+                    });
+                }
+            } catch (e) {}
+            filterSpecTableClient();
+            return;
+        }
+        typeSel.innerHTML = '<option value="">Semua Kategori</option>';
+        try {
+            var r = await fetch('index.php?route=api_asset_types&group_id=' + gid);
+            var types = await r.json();
+            if (Array.isArray(types)) {
+                types.forEach(function(t) {
+                    typeSel.innerHTML += '<option value="' + t.id + '">' + (t.type_code ? t.type_code + ' - ' : '') + t.type_name + '</option>';
+                });
+            }
+        } catch (e) {}
+        filterSpecTableClient();
+    };
+
+    window.openSpecModal = openSpecModal;
+    window.closeSpecModal = closeSpecModal;
+    window.editSpecItem = editSpecItem;
+    window.onSpecNameInput = onSpecNameInput;
+    window.onSpecCodeManualEdit = onSpecCodeManualEdit;
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeSpecModal();
+        }
+    });
+    var modalSpec = document.getElementById('modalSpec');
+    if (modalSpec) {
+        modalSpec.addEventListener('click', function(e) {
+            if (e.target === modalSpec) {
+                closeSpecModal();
+            }
+        });
+    }
+    </script>
+    <?php
+    if ($edit) {
+        $editIdVal = (int)$edit['id'];
+        echo '<script>document.addEventListener("DOMContentLoaded", function(){ var b = document.querySelector(\'button[data-id="' . $editIdVal . '"]\'); if (b) editSpecItem(b); });</script>';
+    }
+
     render_footer();
 }
 
@@ -5016,7 +5238,7 @@ function handle_route_asset_companies(PDO $pdo): void
                 $pdo->prepare('UPDATE asset_companies SET company_code=?, company_name=?, legal_name=?, address=?, is_active=? WHERE id=?')->execute([$code, $name, trim((string)($_POST['legal_name'] ?? '')), trim((string)($_POST['address'] ?? '')), isset($_POST['is_active']) ? 1 : 0, $id]);
                 flash('Company berhasil diperbarui.');
             } else {
-                $pdo->prepare('INSERT INTO asset_companies (company_code, company_name, legal_name, address) VALUES (?, ?, ?, ?)')->execute([$code, $name, trim((string)($_POST['legal_name'] ?? '')), trim((string)($_POST['address'] ?? ''))]);
+                $pdo->prepare('INSERT INTO asset_companies (company_code, company_name, legal_name, address, is_active) VALUES (?, ?, ?, ?, ?)')->execute([$code, $name, trim((string)($_POST['legal_name'] ?? '')), trim((string)($_POST['address'] ?? '')), isset($_POST['is_active']) ? 1 : 0]);
                 flash('Company berhasil ditambahkan.');
             }
         } catch (Throwable $e) {
@@ -5026,29 +5248,200 @@ function handle_route_asset_companies(PDO $pdo): void
     }
     render_header('Company Asset', $user);
     echo asset_nav_html();
+
+    $canCreateComp = has_regulation('asset_companies', 'create', $user);
+    $canEditComp = has_regulation('asset_companies', 'edit', $user);
+    $canDeleteComp = has_regulation('asset_companies', 'delete', $user);
+
     $edit = null;
     if (!empty($_GET['id'])) {
         $stmt = $pdo->prepare('SELECT * FROM asset_companies WHERE id=?');
         $stmt->execute([(int)$_GET['id']]);
-        $edit = $stmt->fetch() ?: null;
+        $edit = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
-    if (($edit && has_regulation('asset_companies', 'edit', $user)) || (!$edit && has_regulation('asset_companies', 'create', $user))) {
-        echo asset_company_form_html($edit);
+
+    $rows = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM asset_items ai WHERE ai.company_id = c.id) AS unit_count FROM asset_companies c ORDER BY c.company_name ASC')->fetchAll(PDO::FETCH_ASSOC);
+
+    // TAMPILAN PANEL DAFTAR COMPANY (NAIK KE ATAS / DEPAN)
+    echo '<section class="panel">';
+    echo '<div class="split" style="margin-bottom:14px; align-items:center; flex-wrap:wrap; gap:10px;">';
+    echo '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">';
+    echo '<h1 style="margin:0; font-size:20px; color:#0f172a;">📋 Daftar Company</h1>';
+    echo '<span class="badge ok" style="font-size:12px; padding:5px 10px;">Total: ' . count($rows) . ' Company</span>';
+    echo '</div>';
+
+    echo '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">';
+    if ($canCreateComp) {
+        echo '<button type="button" class="btn primary" onclick="openCompanyModal()" style="display:inline-flex; align-items:center; font-weight:700; padding:8px 16px; font-size:13px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">+ Tambah Company</button>';
     }
-    echo '<section class="panel"><h2>Daftar Company</h2><table><tr><th>Kode</th><th>Company</th><th>Legal Name</th><th>Status</th><th>Aksi</th></tr>';
-    $canEdit = has_regulation('asset_companies', 'edit', $user);
-    $canDelete = has_regulation('asset_companies', 'delete', $user);
-    foreach ($pdo->query('SELECT * FROM asset_companies ORDER BY company_name') as $row) {
-        $actions = '';
-        if ($canEdit) {
-            $actions .= btn_icon_edit(route_url('asset_companies', ['id' => $row['id']]), 'Edit Company');
+    echo '</div>';
+    echo '</div>';
+
+    if (empty($rows)) {
+        echo '<div style="padding:30px; text-align:center; color:#64748b; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1; margin-top:10px;">Belum ada data Company.</div>';
+    } else {
+        echo '<div style="overflow-x:auto;"><table style="margin:0;"><thead><tr><th style="width:40px; text-align:center;">ID</th><th>Company Code</th><th>Company Name</th><th>Legal Name</th><th>Address</th><th style="text-align:center;">Total Unit Aset</th><th style="text-align:center;">Status</th>' . ($canEditComp || $canDeleteComp ? '<th style="width:110px; text-align:center; white-space:nowrap;">Aksi</th>' : '') . '</tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $delBtn = $canDeleteComp
+                ? ('<form method="post" action="' . route_url('asset_companies') . '" style="display:inline-flex; margin:0; padding:0; vertical-align:middle;" onsubmit="return confirm(&quot;Hapus company ' . addslashes((string)$row['company_name']) . '?&quot;);">'
+                    . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+                    . '<input type="hidden" name="action" value="delete">'
+                    . '<input type="hidden" name="id" value="' . (int)$row['id'] . '">'
+                    . '<button type="submit" class="btn-icon danger" style="padding:6px; border:1px solid #fecaca; border-radius:6px; background:#fef2f2; color:#dc2626; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" title="Hapus Company">'
+                    . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>'
+                    . '</button></form>')
+                : '';
+
+            $editAttrs = ' data-id="' . (int)$row['id'] . '"'
+                . ' data-code="' . e($row['company_code']) . '"'
+                . ' data-name="' . e($row['company_name']) . '"'
+                . ' data-legal="' . e($row['legal_name'] ?? '') . '"'
+                . ' data-address="' . e($row['address'] ?? '') . '"'
+                . ' data-active="' . ((int)$row['is_active'] ? '1' : '0') . '"';
+
+            $editBtn = $canEditComp
+                ? ('<button type="button" class="btn-icon" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); flex-shrink:0;" onclick="editCompanyItem(this)"' . $editAttrs . ' title="Edit Company">'
+                    . '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>'
+                    . '</button>')
+                : '';
+
+            $actionCell = ($canEditComp || $canDeleteComp)
+                ? ('<td style="text-align:center; white-space:nowrap;"><div style="display:inline-flex; flex-direction:row; flex-wrap:nowrap; gap:6px; justify-content:center; align-items:center; white-space:nowrap;">' . $editBtn . $delBtn . '</div></td>')
+                : '';
+
+            $uCnt = (int)($row['unit_count'] ?? 0);
+            $unitBadge = $uCnt > 0 
+                ? ('<a href="' . route_url('asset_items', ['company_id' => $row['id']]) . '" class="badge ok" style="text-decoration:none;">' . $uCnt . ' Unit</a>')
+                : '<span class="muted">0 Unit</span>';
+
+            echo '<tr>'
+                . '<td style="text-align:center; font-weight:600; color:#64748b;">' . e($row['id']) . '</td>'
+                . '<td><strong style="font-family:monospace; font-size:13px; color:#0369a1;">' . e($row['company_code']) . '</strong></td>'
+                . '<td><strong>' . e($row['company_name']) . '</strong></td>'
+                . '<td>' . e($row['legal_name'] ?: '-') . '</td>'
+                . '<td>' . e($row['address'] ?: '-') . '</td>'
+                . '<td style="text-align:center;">' . $unitBadge . '</td>'
+                . '<td style="text-align:center;">' . ((int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>') . '</td>'
+                . $actionCell
+                . '</tr>';
         }
-        if ($canDelete) {
-            $actions .= ' ' . btn_icon_delete(route_url('asset_companies'), (int)$row['id'], 'Hapus company ' . addslashes((string)$row['company_name']) . '?', 'Hapus Company');
-        }
-        echo '<tr><td>' . e($row['company_code']) . '</td><td>' . e($row['company_name']) . '</td><td>' . e($row['legal_name'] ?: '-') . '</td><td>' . ((int)$row['is_active'] ? '<span class="badge ok">Aktif</span>' : '<span class="badge danger">Nonaktif</span>') . '</td><td><div class="actions" style="display:flex;gap:4px;align-items:center;">' . ($actions ?: '-') . '</div></td></tr>';
+        echo '</tbody></table></div>';
     }
-    echo '</table></section>';
+    echo '</section>';
+
+    // WINDOWS MODUL: TAMBAH / EDIT COMPANY (MODAL POPUP)
+    echo '<div id="modalCompany" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.65); backdrop-filter:blur(3px); z-index:99999; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">'
+        . '<div style="background:#fff; border-radius:12px; padding:24px; width:100%; max-width:580px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); max-height:92vh; overflow-y:auto; position:relative;">'
+        . '<button type="button" onclick="closeCompanyModal()" style="position:absolute; top:18px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:#64748b; line-height:1;" title="Tutup Window">&times;</button>'
+        . '<h2 id="modalCompanyTitle" style="margin:0 0 6px 0; font-size:18px; color:#1e40af;">+ Tambah Company</h2>'
+        . '<p class="muted" style="margin:0 0 16px 0; font-size:13px;">Lengkapi data company di bawah ini, lalu klik Simpan.</p>'
+        . '<form method="post" id="formModalCompany">'
+        . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" id="modalCompanyId" name="id" value="">'
+
+        . '<div class="grid two" style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Company Code *'
+        . '    <input id="modalCompanyCode" name="company_code" required placeholder="Contoh: CMP, PCO, ABC" style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px; font-family:monospace; font-weight:700; text-transform:uppercase;">'
+        . '  </label>'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Company Name *'
+        . '    <input id="modalCompanyName" name="company_name" required placeholder="Contoh: PT Sumber Makmur" style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px;">'
+        . '  </label>'
+        . '</div>'
+
+        . '<div style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Legal Name'
+        . '    <input id="modalCompanyLegal" name="legal_name" placeholder="Nama legal perusahaan..." style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px;">'
+        . '  </label>'
+        . '</div>'
+
+        . '<div style="margin-bottom:12px;">'
+        . '  <label style="font-weight:600; font-size:13px; color:#334155;">Address'
+        . '    <textarea id="modalCompanyAddress" name="address" placeholder="Alamat kantor perusahaan..." style="width:100%; margin-top:4px; padding:8px 12px; font-size:13px; min-height:70px;"></textarea>'
+        . '  </label>'
+        . '</div>'
+
+        . '<div style="margin-bottom:16px;">'
+        . '  <label style="display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:13px; color:#334155; cursor:pointer;">'
+        . '    <input type="checkbox" name="is_active" id="modalCompanyActive" value="1" checked style="width:auto; margin:0;"> Status Aktif'
+        . '  </label>'
+        . '</div>'
+
+        . '<div class="actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:8px;">'
+        . '  <button type="button" class="btn" onclick="closeCompanyModal()" style="padding:8px 16px; font-size:13px;">Batal</button>'
+        . '  <button type="submit" class="btn primary" id="modalCompanySubmitBtn" style="padding:8px 20px; font-size:13px; font-weight:700;">Simpan Company</button>'
+        . '</div></form></div></div>';
+    ?>
+    <script>
+    function openCompanyModal() {
+        var idEl = document.getElementById('modalCompanyId');
+        if (idEl) idEl.value = '';
+        var titleEl = document.getElementById('modalCompanyTitle');
+        if (titleEl) titleEl.innerText = '+ Tambah Company';
+        var codeEl = document.getElementById('modalCompanyCode');
+        if (codeEl) codeEl.value = '';
+        var nameEl = document.getElementById('modalCompanyName');
+        if (nameEl) nameEl.value = '';
+        var legalEl = document.getElementById('modalCompanyLegal');
+        if (legalEl) legalEl.value = '';
+        var addrEl = document.getElementById('modalCompanyAddress');
+        if (addrEl) addrEl.value = '';
+        var actEl = document.getElementById('modalCompanyActive');
+        if (actEl) actEl.checked = true;
+
+        var m = document.getElementById('modalCompany');
+        if (m) m.style.display = 'flex';
+    }
+
+    function closeCompanyModal() {
+        var m = document.getElementById('modalCompany');
+        if (m) m.style.display = 'none';
+    }
+
+    function editCompanyItem(btn) {
+        var id = btn.getAttribute('data-id') || '';
+        var code = btn.getAttribute('data-code') || '';
+        var name = btn.getAttribute('data-name') || '';
+        var legal = btn.getAttribute('data-legal') || '';
+        var address = btn.getAttribute('data-address') || '';
+        var active = btn.getAttribute('data-active') === '1';
+
+        document.getElementById('modalCompanyId').value = id;
+        document.getElementById('modalCompanyTitle').innerText = '✏️ Edit Company';
+        document.getElementById('modalCompanyCode').value = code;
+        document.getElementById('modalCompanyName').value = name;
+        document.getElementById('modalCompanyLegal').value = legal;
+        document.getElementById('modalCompanyAddress').value = address;
+        document.getElementById('modalCompanyActive').checked = active;
+
+        var m = document.getElementById('modalCompany');
+        if (m) m.style.display = 'flex';
+    }
+
+    window.openCompanyModal = openCompanyModal;
+    window.closeCompanyModal = closeCompanyModal;
+    window.editCompanyItem = editCompanyItem;
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeCompanyModal();
+        }
+    });
+    var modalComp = document.getElementById('modalCompany');
+    if (modalComp) {
+        modalComp.addEventListener('click', function(e) {
+            if (e.target === modalComp) {
+                closeCompanyModal();
+            }
+        });
+    }
+    </script>
+    <?php
+    if ($edit) {
+        $editIdVal = (int)$edit['id'];
+        echo '<script>document.addEventListener("DOMContentLoaded", function(){ var b = document.querySelector(\'button[data-id="' . $editIdVal . '"]\'); if (b) editCompanyItem(b); });</script>';
+    }
+
     render_footer();
 }
 
