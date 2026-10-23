@@ -579,12 +579,23 @@ function handle_route_tickets(PDO $pdo): void
     $statusFilter = trim((string)($_GET['status'] ?? ''));
     $q = trim((string)($_GET['q'] ?? ''));
 
+    $commodityGroups = [];
+    if (db_table_exists($pdo, 'asset_groups')) {
+        $commodityGroups = $pdo->query("SELECT id, group_code, group_name FROM asset_groups WHERE is_active = 1 ORDER BY group_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     $where = [];
     $params = [];
 
     if ($catFilter !== '') {
-        $where[] = 't.asset_category = ?';
-        $params[] = $catFilter;
+        if (ctype_digit($catFilter)) {
+            $where[] = 'COALESCE(ai.asset_group_id, ma.asset_group_id) = ?';
+            $params[] = (int)$catFilter;
+        } else {
+            $where[] = '(ag.group_code = ? OR t.asset_category = ?)';
+            $params[] = $catFilter;
+            $params[] = $catFilter;
+        }
     }
     if ($statusFilter !== '') {
         $where[] = 't.status = ?';
@@ -600,6 +611,8 @@ function handle_route_tickets(PDO $pdo): void
     $sql = "SELECT t.*, 
                    COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
                    COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
+                   ag.group_code AS commodity_code,
+                   ag.group_name AS commodity_name,
                    c.company_name,
                    u.name AS handled_user_name,
                    w.workshop_name AS handled_workshop_name,
@@ -609,6 +622,7 @@ function handle_route_tickets(PDO $pdo): void
             FROM corrective_tickets t
             LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
             LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
+            LEFT JOIN asset_groups ag ON ag.id = COALESCE(ai.asset_group_id, ma.asset_group_id)
             LEFT JOIN asset_companies c ON c.id = t.company_id
             LEFT JOIN users u ON u.id = t.handled_by_user_id
             LEFT JOIN corrective_workshops w ON w.id = t.handled_by_workshop_id
@@ -659,12 +673,18 @@ function handle_route_tickets(PDO $pdo): void
             <label>Cari Tiket / Aset / Pelapor
                 <input name="q" value="<?= e($q) ?>" placeholder="Kode tiket, kode aset, nama pelapor...">
             </label>
-            <label>Kategori Aset
+            <label>Komoditas
                 <select name="category">
-                    <option value="">Semua Kategori</option>
-                    <option value="IT" <?= $catFilter === 'IT' ? 'selected' : '' ?>>IT Asset</option>
-                    <option value="Vehicle" <?= $catFilter === 'Vehicle' ? 'selected' : '' ?>>Vehicle (Kendaraan)</option>
-                    <option value="Facility" <?= $catFilter === 'Facility' ? 'selected' : '' ?>>Facility (Gedung/Fasilitas)</option>
+                    <option value="">Semua Komoditas</option>
+                    <?php if (!empty($commodityGroups)): ?>
+                        <?php foreach ($commodityGroups as $cg): ?>
+                            <option value="<?= (int)$cg['id'] ?>" <?= $catFilter === (string)$cg['id'] || strcasecmp($catFilter, (string)$cg['group_code']) === 0 ? 'selected' : '' ?>><?= e($cg['group_code'] . ' - ' . $cg['group_name']) ?></option>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <option value="IT" <?= $catFilter === 'IT' ? 'selected' : '' ?>>IT Asset</option>
+                        <option value="Vehicle" <?= $catFilter === 'Vehicle' ? 'selected' : '' ?>>Vehicle (Kendaraan)</option>
+                        <option value="Facility" <?= $catFilter === 'Facility' ? 'selected' : '' ?>>Facility (Gedung/Fasilitas)</option>
+                    <?php endif; ?>
                 </select>
             </label>
             <label>Status Tiket
@@ -688,7 +708,7 @@ function handle_route_tickets(PDO $pdo): void
             <thead>
                 <tr>
                     <th>Tiket & Tanggal</th>
-                    <th>Kategori & Prioritas</th>
+                    <th>Komoditas & Prioritas</th>
                     <th>Unit Aset</th>
                     <th>Kendala / Subjek</th>
                     <th>Pelapor & Lokasi</th>
@@ -726,7 +746,11 @@ function handle_route_tickets(PDO $pdo): void
                                 <span class="muted" style="font-size:12px;"><?= e(date('d M Y H:i', strtotime($t['created_at']))) ?></span>
                             </td>
                             <td>
-                                <?= ticket_category_badge($t['asset_category']) ?><br>
+                                <?php if (!empty($t['commodity_name'])): ?>
+                                    <span class="badge" style="background:#e0f2fe;color:#0369a1;"><?= e(($t['commodity_code'] ? $t['commodity_code'] . ' - ' : '') . $t['commodity_name']) ?></span><br>
+                                <?php else: ?>
+                                    <?= ticket_category_badge($t['asset_category']) ?><br>
+                                <?php endif; ?>
                                 <div style="margin-top:4px;"><?= ticket_priority_badge($t['priority']) ?></div>
                             </td>
                             <td><?= $assetLabel ?></td>

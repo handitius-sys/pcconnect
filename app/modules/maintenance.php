@@ -1002,7 +1002,7 @@ function handle_route_maintenance(PDO $pdo): void
         }
     }
 
-    render_header('History Preventive Maintenance', $user);
+    render_header('Preventive Maintenance', $user);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
         echo printer_schema_warning();
@@ -1016,12 +1016,15 @@ function handle_route_maintenance(PDO $pdo): void
             u.name technician, 
             COALESCE(ag.group_name, 'IT Asset') asset_group_name,
             COALESCE(ag.group_code, 'IT') asset_group_code,
+            COALESCE(at.type_name, CASE WHEN s.printer_id IS NOT NULL OR LOWER(s.asset_type)='printer' THEN 'Printer' WHEN s.pc_id IS NOT NULL OR LOWER(s.asset_type) IN ('pc','cmp') THEN 'Computer' ELSE s.asset_type END, 'Computer') AS asset_type_name,
+            COALESCE(at.type_code, UPPER(s.asset_type), 'CMP') AS asset_type_code,
             ai.asset_mode,
             COALESCE(pjd.job_desk_name, ai.job_desk_name, ma.job_desk_name, 'Master Jobdesk PM') AS master_job_desk_name
         FROM maintenance_schedules s 
         LEFT JOIN asset_items ai ON ai.id = s.asset_item_id
         LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id
         LEFT JOIN asset_groups ag ON ag.id = COALESCE(s.asset_group_id, ai.asset_group_id, ma.asset_group_id)
+        LEFT JOIN asset_types at ON at.id = COALESCE(ai.asset_type_id, ma.asset_type_id)
         LEFT JOIN preventive_job_desks pjd ON pjd.id = s.preventive_job_desk_id
         LEFT JOIN pcs p ON p.pc_id = s.pc_id 
         LEFT JOIN printers pr ON pr.prn_id = s.printer_id 
@@ -1029,11 +1032,84 @@ function handle_route_maintenance(PDO $pdo): void
         $where 
         ORDER BY s.scheduled_date DESC, s.id DESC")->fetchAll();
     } catch (Throwable $e) {
-        $rows = $pdo->query("SELECT s.*, s.pc_id asset_id, 'pc' asset_type, p.owner_name, p.computer_name, u.name technician, 'IT Asset' asset_group_name, 'IT' asset_group_code, NULL asset_mode FROM maintenance_schedules s JOIN pcs p ON p.pc_id = s.pc_id LEFT JOIN users u ON u.id=s.technician_id $where ORDER BY s.scheduled_date DESC, s.id DESC")->fetchAll();
+        $rows = $pdo->query("SELECT s.*, s.pc_id asset_id, 'pc' asset_type, 'Computer' asset_type_name, 'CMP' asset_type_code, p.owner_name, p.computer_name, u.name technician, 'IT Asset' asset_group_name, 'IT' asset_group_code, NULL asset_mode FROM maintenance_schedules s JOIN pcs p ON p.pc_id = s.pc_id LEFT JOIN users u ON u.id=s.technician_id $where ORDER BY s.scheduled_date DESC, s.id DESC")->fetchAll();
     }
+
+    // Hitung Statistik Status Preventive Maintenance (Gaya Dashboard)
+    $totalSchedCount = count($rows);
+    $pendingSchedCount = 0;
+    $completedSchedCount = 0;
+    $cancelledSchedCount = 0;
+    $todaySchedCount = 0;
+    $todayStr = date('Y-m-d');
+    foreach ($rows as $rStat) {
+        $st = strtolower((string)($rStat['status'] ?? ''));
+        if ($st === 'completed') {
+            $completedSchedCount++;
+        } elseif ($st === 'cancelled') {
+            $cancelledSchedCount++;
+        } else {
+            $pendingSchedCount++;
+        }
+        if (($rStat['scheduled_date'] ?? '') === $todayStr) {
+            $todaySchedCount++;
+        }
+    }
+
+    $colorIdxPm = 0;
+    $renderPmCard = function($number, $label, $iconPath, $themeIdx) {
+        $themes = [
+            ['#eff6ff', '#1e3a8a', '#3b82f6'], // 0: blue
+            ['#fffbeb', '#78350f', '#f59e0b'], // 1: yellow/amber
+            ['#f0fdf4', '#14532d', '#22c55e'], // 2: green
+            ['#fef2f2', '#7f1d1d', '#ef4444'], // 3: red
+            ['#f3e8ff', '#581c87', '#a855f7'], // 4: purple
+        ];
+        $t = $themes[$themeIdx % count($themes)];
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0;">'
+             . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 32px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
+             . '<span style="font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
+             . '</div></div>';
+    };
+
     $mobilePmBtn = '<a class="btn good" href="' . route_url('mobile_dashboard') . '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">📱 Mobile Preventive Maintenance</a>';
-    $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">Tambah Schedule</a>' : '';
-    echo '<section class="panel"><div class="split"><h1>History Preventive Maintenance</h1><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section><section class="panel"><table><tr><th>Tanggal Rencana / Expired</th><th>Asset / ID</th><th>Pengguna / Lokasi</th><th>Asset Group</th><th>Teknisi</th><th>Status</th><th>Foto</th><th>Aksi</th></tr>';
+    $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">+ Tambah Schedule Maintenance</a>' : '';
+    echo '<section class="panel"><div class="split"><div><h1 style="margin:0;">Preventive Maintenance</h1><p class="muted" style="margin:4px 0 0 0;">Jadwal pemeliharaan berkala (Preventive Maintenance) unit aset beserta status pengerjaannya.</p></div><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section>';
+
+    // Block Status Model Dashboard
+    echo '<div style="margin-bottom: 18px;">';
+    echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px;">';
+    echo $renderPmCard($totalSchedCount, 'Total Schedule PM', 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', 0);
+    echo $renderPmCard($todaySchedCount, 'Jadwal Hari Ini', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 4);
+    echo $renderPmCard($pendingSchedCount, 'Scheduled / In Progress', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', 1);
+    echo $renderPmCard($completedSchedCount, 'Completed (Selesai)', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 2);
+    echo $renderPmCard($cancelledSchedCount, 'Batal / Expired', 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z', 3);
+    echo '</section>';
+    echo '</div>';
+
+    echo '<style>
+        .pm-table-sortable th.sortable { cursor: pointer; user-select: none; transition: background 0.15s; white-space: nowrap; }
+        .pm-table-sortable th.sortable:hover { background: #edf2f7; color: #1e3a8a; }
+        .pm-sort-ind { display: inline-block; margin-left: 4px; font-size: 11px; opacity: 0.4; }
+        .pm-sort-ind.active { opacity: 1; color: #2563eb; font-weight: 700; }
+    </style>';
+
+    echo '<section class="panel"><div style="overflow-x:auto;"><table id="pmScheduleTable" class="pm-table-sortable"><thead><tr>'
+        . '<th class="sortable" onclick="sortPmTable(0)" title="Klik untuk mengurutkan">Tanggal Rencana / Expired <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(1)" title="Klik untuk mengurutkan">Asset / ID <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(2)" title="Klik untuk mengurutkan">Kategori (Asset Type) <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(3)" title="Klik untuk mengurutkan">Pengguna / Lokasi <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(4)" title="Klik untuk mengurutkan">Komoditas <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(5)" title="Klik untuk mengurutkan">Teknisi <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(6)" title="Klik untuk mengurutkan">Status <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(7)" title="Klik untuk mengurutkan">Foto <span class="pm-sort-ind">⇅</span></th>'
+        . '<th>Aksi</th>'
+        . '</tr></thead><tbody>';
     $scheduleIds = array_filter(array_map('intval', array_column($rows, 'id')));
     $reportsBySchedule = [];
     if ($scheduleIds) {
@@ -1086,11 +1162,71 @@ function handle_route_maintenance(PDO $pdo): void
                 . '</form>';
         }
         $groupBadge = $row['asset_group_code'] ? ($row['asset_group_code'] . ' - ' . $row['asset_group_name']) : ($row['asset_group_name'] ?: 'IT Asset');
+        $typeDisplay = !empty($row['asset_type_code']) && !empty($row['asset_type_name']) && strcasecmp((string)$row['asset_type_code'], (string)$row['asset_type_name']) !== 0
+            ? ($row['asset_type_code'] . ' - ' . $row['asset_type_name'])
+            : ($row['asset_type_name'] ?? $row['asset_type'] ?? 'Computer');
         $bundleBadge = ($row['asset_mode'] ?? '') === 'group' ? '<br><span class="badge" style="background:#1e3a8a;color:#fff;font-size:11px;">📦 Induk Bundle</span>' : '';
         $deskBadge = !empty($row['master_job_desk_name']) ? ('<br><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;font-weight:600;margin-top:3px;" title="Terhubung ke Master Jobdesk PM">📋 ' . e($row['master_job_desk_name']) . '</span>') : '';
-        echo '<tr><td>' . $dateCell . '</td><td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . '<br><span class="badge">' . e($row['asset_type'] ?? 'pc') . '</span>' . $deskBadge . '</td><td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td><td><span class="badge">' . e($groupBadge) . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . $statusBadge . '</td><td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td><td>' . $actions . '</td></tr>';
+        echo '<tr>'
+            . '<td data-sort="' . e($row['scheduled_date']) . '">' . $dateCell . '</td>'
+            . '<td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . $deskBadge . '</td>'
+            . '<td><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;">' . e($typeDisplay) . '</span></td>'
+            . '<td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td>'
+            . '<td><span class="badge">' . e($groupBadge) . '</span></td>'
+            . '<td>' . e($row['technician'] ?: '-') . '</td>'
+            . '<td>' . $statusBadge . '</td>'
+            . '<td>Before: ' . e($beforeCount) . '<br>Process: ' . e($processCount) . '<br>After: ' . e($afterCount) . '</td>'
+            . '<td>' . $actions . '</td>'
+            . '</tr>';
     }
-    echo '</table></section>';
+    echo '</tbody></table></div></section>';
+    echo '<script>
+    window.sortPmTable = function(colIndex) {
+        var table = document.getElementById("pmScheduleTable");
+        if (!table) return;
+        var tbody = table.querySelector("tbody");
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll("tr"));
+        if (rows.length <= 1) return;
+
+        var ths = table.querySelectorAll("thead th");
+        var targetTh = ths[colIndex];
+        if (!targetTh) return;
+
+        var currentDir = targetTh.getAttribute("data-sort-dir");
+        var isAsc = currentDir !== "asc";
+
+        ths.forEach(function(th, idx) {
+            var ind = th.querySelector(".pm-sort-ind");
+            if (ind) {
+                ind.textContent = "⇅";
+                ind.classList.remove("active");
+            }
+            if (idx !== colIndex) th.removeAttribute("data-sort-dir");
+        });
+
+        targetTh.setAttribute("data-sort-dir", isAsc ? "asc" : "desc");
+        var activeInd = targetTh.querySelector(".pm-sort-ind");
+        if (activeInd) {
+            activeInd.textContent = isAsc ? "▲" : "▼";
+            activeInd.classList.add("active");
+        }
+
+        rows.sort(function(a, b) {
+            var tdA = a.children[colIndex];
+            var tdB = b.children[colIndex];
+            var valA = tdA ? (tdA.getAttribute("data-sort") || tdA.innerText.trim()) : "";
+            var valB = tdB ? (tdB.getAttribute("data-sort") || tdB.innerText.trim()) : "";
+            return isAsc
+                ? valA.localeCompare(valB, undefined, {numeric: true, sensitivity: "base"})
+                : valB.localeCompare(valA, undefined, {numeric: true, sensitivity: "base"});
+        });
+
+        rows.forEach(function(row) {
+            tbody.appendChild(row);
+        });
+    };
+    </script>';
     render_footer();
 }
 
@@ -1383,7 +1519,8 @@ function handle_route_schedule_form(PDO $pdo): void
         $assetCodeDisplay = $aiInfo ? $aiInfo['asset_code'] : ($existingSchedule['pc_id'] ?: $existingSchedule['printer_id'] ?: ('#' . $targetAssetId));
         $assetNameDisplay = $aiInfo ? $aiInfo['asset_name'] : '-';
         $custodianDisplay = $aiInfo ? ($aiInfo['custodian_name'] ?: '-') : '-';
-        $groupDisplay = $aiInfo ? ($aiInfo['group_code'] . ' - ' . $aiInfo['group_name']) : 'IT Asset';
+        $groupDisplay = $aiInfo && !empty($aiInfo['group_name']) ? ($aiInfo['group_code'] . ' - ' . $aiInfo['group_name']) : 'IT Asset';
+        $typeDisplayEdit = $aiInfo && !empty($aiInfo['type_name']) ? $aiInfo['type_name'] : ($existingSchedule['asset_type'] ?: 'Computer');
 
         $groupIdForJobs = (int)($existingSchedule['asset_group_id'] ?: ($aiInfo['asset_group_id'] ?? 0));
         $stJobs = $pdo->prepare("SELECT j.* FROM maintenance_jobs j WHERE (j.is_deleted = 0 OR j.is_deleted IS NULL) AND (j.asset_group_id = ? OR j.id IN (SELECT job_id FROM schedule_jobs WHERE schedule_id = ?)) ORDER BY j.job_desk_name, j.title");
@@ -1415,11 +1552,12 @@ function handle_route_schedule_form(PDO $pdo): void
         // TARGET ASET INFO (TERKUNCI)
         echo '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 20px;">'
             . '<div style="font-weight: 700; font-size: 14px; color: #1e3a8a; margin-bottom: 8px;">Target Aset Maintenance (Terkunci)</div>'
-            . '<div class="grid four" style="align-items: center;">'
+            . '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: center;">'
             . '<div><span class="muted" style="font-size: 11px;">Kode Aset</span><br><strong>' . e($assetCodeDisplay) . '</strong></div>'
             . '<div><span class="muted" style="font-size: 11px;">Nama Aset</span><br><strong>' . e($assetNameDisplay) . '</strong></div>'
             . '<div><span class="muted" style="font-size: 11px;">Pengguna</span><br><strong>' . e($custodianDisplay) . '</strong></div>'
             . '<div><span class="muted" style="font-size: 11px;">Komoditas</span><br><span class="badge">' . e($groupDisplay) . '</span></div>'
+            . '<div><span class="muted" style="font-size: 11px;">Kategori (Asset Type)</span><br><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;">' . e($typeDisplayEdit) . '</span></div>'
             . '</div>'
             . '</div>';
 
@@ -1512,6 +1650,16 @@ function syncEditExpiredDate(val) {
     $assetGroups = $pdo->query('SELECT id, group_code, group_name FROM asset_groups ORDER BY group_name')->fetchAll(PDO::FETCH_ASSOC);
     $assetTypes = $pdo->query('SELECT id, asset_group_id, type_code, type_name FROM asset_types ORDER BY type_name')->fetchAll(PDO::FETCH_ASSOC);
 
+    // Map untuk resolusi cerdas asset_type_id dari data asset_types jika unit aset hanya mengisi string asset_type / asset_category
+    $typeById = [];
+    $typeByCodeOrName = [];
+    foreach ($assetTypes as $at) {
+        $tid = (int)$at['id'];
+        $typeById[$tid] = $at;
+        $typeByCodeOrName[strtoupper(trim((string)$at['type_code']))] = $at;
+        $typeByCodeOrName[strtoupper(trim((string)$at['type_name']))] = $at;
+    }
+
     // ID default group & type untuk PC dan Printer warisan (fallback)
     $itGroupId = 0;
     $cmpTypeId = 0;
@@ -1524,7 +1672,7 @@ function syncEditExpiredDate(val) {
         if ($at['type_code'] === 'PRT') { $prtTypeId = (int)$at['id']; }
     }
 
-    $sqlAi = "SELECT ai.id, ai.asset_code, ai.asset_name, ai.asset_group_id, ai.asset_type_id, ai.job_desk_name,
+    $sqlAi = "SELECT ai.id, ai.asset_code, ai.asset_name, ai.asset_group_id, ai.asset_type_id, ai.asset_type, ai.asset_category, ai.job_desk_name,
                      ai.asset_mode,
                      ai.serial_number, ai.brand, ai.model,
                      ag.group_name, ag.group_code,
@@ -1543,6 +1691,30 @@ function syncEditExpiredDate(val) {
     $maintenanceAssets = $pdo->query($sqlAi)->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($maintenanceAssets as &$maRow) {
+        // Resolusi dari tabel asset_types jika asset_type_id kosong tetapi ada teks di asset_type atau kode aset
+        if (empty($maRow['asset_type_id'])) {
+            $candType = strtoupper(trim((string)($maRow['asset_type'] ?? '')));
+            if ($candType !== '' && isset($typeByCodeOrName[$candType])) {
+                $matchedAt = $typeByCodeOrName[$candType];
+                $maRow['asset_type_id'] = (int)$matchedAt['id'];
+                $maRow['type_code'] = $matchedAt['type_code'];
+                $maRow['type_name'] = $matchedAt['type_name'];
+                if (empty($maRow['asset_group_id']) && !empty($matchedAt['asset_group_id'])) {
+                    $maRow['asset_group_id'] = (int)$matchedAt['asset_group_id'];
+                }
+            } elseif (preg_match('/^[A-Z0-9]+-([A-Z0-9]+)-/i', (string)$maRow['asset_code'], $mCodePart)) {
+                $tCodeFromAsset = strtoupper($mCodePart[1]);
+                if (isset($typeByCodeOrName[$tCodeFromAsset])) {
+                    $matchedAt = $typeByCodeOrName[$tCodeFromAsset];
+                    $maRow['asset_type_id'] = (int)$matchedAt['id'];
+                    $maRow['type_code'] = $matchedAt['type_code'];
+                    $maRow['type_name'] = $matchedAt['type_name'];
+                    if (empty($maRow['asset_group_id']) && !empty($matchedAt['asset_group_id'])) {
+                        $maRow['asset_group_id'] = (int)$matchedAt['asset_group_id'];
+                    }
+                }
+            }
+        }
         if (empty($maRow['asset_group_id'])) {
             $maRow['asset_group_id'] = $itGroupId ?: 1;
             $maRow['group_code'] = 'IT';
@@ -1561,7 +1733,7 @@ function syncEditExpiredDate(val) {
                 FROM maintenance_jobs j 
                 LEFT JOIN asset_groups g ON g.id = j.asset_group_id 
                 LEFT JOIN asset_types t ON t.id = j.asset_type_id 
-                WHERE j.is_active = 1
+                WHERE j.is_active = 1 AND (j.is_deleted = 0 OR j.is_deleted IS NULL)
                 ORDER BY g.group_name ASC, t.type_name ASC, j.id ASC";
     $allJobs = $pdo->query($jobsSql)->fetchAll(PDO::FETCH_ASSOC);
 
@@ -1634,6 +1806,7 @@ function syncEditExpiredDate(val) {
         . '  <input type="hidden" id="schedAssetIdHidden" name="asset_item_id" required value="' . e($targetAssetId ?: '') . '">'
         . '</label>'
         . '<div id="schedAssetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
+        . '</div>'
         . '</div>'
         . '<div id="assetSelectedNotice" style="display:none; margin-top: 10px; font-size: 13px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px;"></div>'
         . '</div>';
@@ -2011,8 +2184,6 @@ window.syncCreateExpiredDate = function(val) {
             }
             syncCategoryTasks();
         });
-    }
-
     }
 
     // Inisialisasi awal saat halaman dimuat

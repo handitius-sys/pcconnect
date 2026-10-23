@@ -261,7 +261,7 @@ function get_regulated_menus(): array
             'asset_mutations' => 'Mutasi Aset',
         ],
         'Maintenance Aset' => [
-            'maintenance' => 'Schedule PM',
+            'maintenance' => 'Preventive Maintenance',
             'tickets' => 'Aset Corrective',
             'mobile_service' => 'Mobile Service',
         ],
@@ -313,7 +313,7 @@ function get_default_sidebar_structure(): array
             'icon' => 'tool',
             'order' => 20,
             'items' => [
-                'maintenance' => ['label' => 'Schedule PM', 'icon' => 'tool', 'order' => 10, 'reg' => 'maintenance'],
+                'maintenance' => ['label' => 'Preventive Maintenance', 'icon' => 'tool', 'order' => 10, 'reg' => 'maintenance'],
                 'tickets' => ['label' => 'Aset Corrective', 'icon' => 'ticket', 'order' => 20, 'reg' => 'tickets'],
             ],
         ],
