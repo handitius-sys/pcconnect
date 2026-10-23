@@ -1069,11 +1069,11 @@ function handle_route_maintenance(PDO $pdo): void
         $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
         $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
 
-        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0;">'
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 16px 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0; min-width: 0; flex: 1 1 0;">'
              . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
              . '<div style="position: relative; z-index: 1;">'
-             . '<strong style="font-size: 32px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
-             . '<span style="font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
+             . '<strong style="font-size: 30px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
+             . '<span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
              . '</div></div>';
     };
 
@@ -1081,9 +1081,9 @@ function handle_route_maintenance(PDO $pdo): void
     $addBtn = has_regulation('maintenance', 'create') ? '<a class="btn primary" href="' . route_url('schedule_form') . '">+ Tambah Schedule Maintenance</a>' : '';
     echo '<section class="panel"><div class="split"><div><h1 style="margin:0;">Preventive Maintenance</h1><p class="muted" style="margin:4px 0 0 0;">Jadwal pemeliharaan berkala (Preventive Maintenance) unit aset beserta status pengerjaannya.</p></div><div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' . $mobilePmBtn . '<a class="btn" href="' . route_url('export_excel', ['type' => 'maintenance']) . '">Export Excel</a>' . $addBtn . '</div></div></section>';
 
-    // Block Status Model Dashboard
+    // Block Status Model Dashboard (Auto-adjust 1 baris)
     echo '<div style="margin-bottom: 18px;">';
-    echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px;">';
+    echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">';
     echo $renderPmCard($totalSchedCount, 'Total Schedule PM', 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', 0);
     echo $renderPmCard($todaySchedCount, 'Jadwal Hari Ini', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 4);
     echo $renderPmCard($pendingSchedCount, 'Scheduled / In Progress', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', 1);

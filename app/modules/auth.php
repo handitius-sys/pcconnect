@@ -839,11 +839,11 @@ function handle_route_dashboard(PDO $pdo): void
         $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
         $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
 
-        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">'
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 16px 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0; min-width: 0; flex: 1 1 0;">'
              . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
              . '<div style="position: relative; z-index: 1;">'
-             . '<strong style="font-size: 32px; display: block; margin-bottom: 2px; line-height: 1;">' . e($number) . '</strong>'
-             . '<span style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">' . e($label) . '</span>'
+             . '<strong style="font-size: 30px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
+             . '<span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
              . '</div></div>';
     };
 
@@ -880,7 +880,7 @@ function handle_route_dashboard(PDO $pdo): void
 
         echo '<div style="margin-bottom: 24px;">';
         echo '<h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1e3a8a; font-weight: 700; display: flex; align-items: center; gap: 8px;">📦 Aset Overview</h2>';
-        echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">';
+        echo '<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">';
         echo $renderCard($totalAssets, 'Total Unit Aset', 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4');
         echo $renderCard($activeAssets, 'Active Aset', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z');
         echo $renderCard($borrowedAssets, 'Borrowed', 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4');

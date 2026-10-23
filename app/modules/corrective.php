@@ -642,6 +642,26 @@ function handle_route_tickets(PDO $pdo): void
         COUNT(*) AS count_total
     FROM corrective_tickets")->fetch(PDO::FETCH_ASSOC);
 
+    $renderCmCard = function($number, $label, $iconPath, $themeIdx) {
+        $themes = [
+            ['#eff6ff', '#1e3a8a', '#3b82f6'], // 0: blue
+            ['#fef2f2', '#7f1d1d', '#ef4444'], // 1: red
+            ['#fffbeb', '#78350f', '#f59e0b'], // 2: yellow/amber
+            ['#f3e8ff', '#581c87', '#a855f7'], // 3: purple
+            ['#f0fdf4', '#14532d', '#22c55e'], // 4: green
+        ];
+        $t = $themes[$themeIdx % count($themes)];
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
+        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
+
+        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 16px 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0; min-width: 0; flex: 1 1 0;">'
+             . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
+             . '<div style="position: relative; z-index: 1;">'
+             . '<strong style="font-size: 30px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
+             . '<span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
+             . '</div></div>';
+    };
+
     render_header('Corrective Maintenance & Ticketing', $user);
     ?>
     <section class="panel">
@@ -658,14 +678,17 @@ function handle_route_tickets(PDO $pdo): void
                 <a class="btn" href="<?= route_url('corrective_repairs') ?>">Riwayat Reparasi & Part</a>
             </div>
         </div>
-
-        <div class="grid four" style="margin-top:20px;">
-            <div class="stat" style="background:#fff5f5; border:1px solid #fecaca; border-radius:8px; padding:14px;"><strong style="color:#b91c1c; font-size:26px;"><?= (int)($stats['count_open'] ?? 0) ?></strong><span style="color:#991b1b; font-weight:600; display:block; margin-top:2px;">Tiket Baru / Terbuka</span></div>
-            <div class="stat" style="background:#fffbe6; border:1px solid #fef08a; border-radius:8px; padding:14px;"><strong style="color:#d97706; font-size:26px;"><?= (int)($stats['count_progress'] ?? 0) ?></strong><span style="color:#92400e; font-weight:600; display:block; margin-top:2px;">Sedang Dikerjakan</span></div>
-            <div class="stat" style="background:#f3e8ff; border:1px solid #e9d5ff; border-radius:8px; padding:14px;"><strong style="color:#7c3aed; font-size:26px;"><?= (int)($stats['count_pending_part'] ?? 0) ?></strong><span style="color:#6b21a8; font-weight:600; display:block; margin-top:2px;">Menunggu Sparepart</span></div>
-            <div class="stat" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:14px;"><strong style="color:#15803d; font-size:26px;"><?= (int)($stats['count_resolved'] ?? 0) ?></strong><span style="color:#166534; font-weight:600; display:block; margin-top:2px;">Selesai / Ditutup</span></div>
-        </div>
     </section>
+
+    <div style="margin-bottom: 18px;">
+        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
+            <?= $renderCmCard((int)($stats['count_total'] ?? 0), 'Total Tiket', 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z', 0) ?>
+            <?= $renderCmCard((int)($stats['count_open'] ?? 0), 'Tiket Baru / Terbuka', 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', 1) ?>
+            <?= $renderCmCard((int)($stats['count_progress'] ?? 0), 'Sedang Dikerjakan', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', 2) ?>
+            <?= $renderCmCard((int)($stats['count_pending_part'] ?? 0), 'Menunggu Sparepart', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 3) ?>
+            <?= $renderCmCard((int)($stats['count_resolved'] ?? 0), 'Selesai / Ditutup', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 4) ?>
+        </section>
+    </div>
 
     <section class="panel">
         <form method="get" class="grid four" style="margin-bottom:16px;">
