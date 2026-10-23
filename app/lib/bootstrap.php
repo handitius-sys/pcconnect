@@ -687,6 +687,10 @@ function render_header(string $title, ?array $user = null): void
     echo 'table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}';
     echo 'th,td{border-bottom:1px solid #e2e8f0;text-align:left;padding:11px 14px;vertical-align:middle;font-size:13px}';
     echo 'th{background:#f8fafc;font-weight:600;color:#475569;text-transform:uppercase;font-size:11.5px;letter-spacing:.04em}';
+    echo 'th.sortable-th{cursor:pointer;user-select:none;transition:background .15s,color .15s;white-space:nowrap}';
+    echo 'th.sortable-th:hover{background:#e2e8f0 !important;color:#1e3a8a !important}';
+    echo '.th-sort-ind{display:inline-block;margin-left:5px;font-size:11px;opacity:.45}';
+    echo '.th-sort-ind.active{opacity:1;color:#2563eb;font-weight:800}';
     echo 'tr:hover td{background:#fbfcfe}';
     echo '.badge{display:inline-flex;align-items:center;border-radius:999px;background:#e2e8f0;color:#475569;padding:3px 10px;font-size:11.5px;font-weight:600}';
     echo '.badge.ok{background:#dcfce7;color:#15803d}';
@@ -1015,8 +1019,127 @@ function render_footer(): void
             window.addEventListener("touchend", handleEnd);
         }
 
+        function parseSortableCellValue(rawText) {
+            var txt = (rawText || "").replace(/\s+/g, " ").trim();
+            if (!txt || txt === "-") return { type: "empty", val: "" };
+
+            // 1. ISO Date: YYYY-MM-DD (optional HH:MM(:SS))
+            var mIso = txt.match(/\b(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+            if (mIso) {
+                var tsIso = Date.parse(mIso[1] + "-" + mIso[2] + "-" + mIso[3] + "T" + (mIso[4] || "00") + ":" + (mIso[5] || "00") + ":" + (mIso[6] || "00"));
+                if (!isNaN(tsIso)) return { type: "num", val: tsIso };
+            }
+
+            // 2. DD/MM/YYYY (optional HH:MM)
+            var mSlash = txt.match(/\b(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+            if (mSlash) {
+                var tsSlash = Date.parse(mSlash[3] + "-" + mSlash[2] + "-" + mSlash[1] + "T" + (mSlash[4] || "00") + ":" + (mSlash[5] || "00") + ":00");
+                if (!isNaN(tsSlash)) return { type: "num", val: tsSlash };
+            }
+
+            // 3. DD MMM YYYY (optional HH:MM) e.g. 23 Oct 2026 14:20
+            var mTextDate = txt.match(/\b(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+            if (mTextDate) {
+                var tsTxt = Date.parse(mTextDate[1] + " " + mTextDate[2] + " " + mTextDate[3] + " " + (mTextDate[4] || "00") + ":" + (mTextDate[5] || "00") + ":00");
+                if (!isNaN(tsTxt)) return { type: "num", val: tsTxt };
+            }
+
+            // 4. Currency Rp ... or pure numeric
+            if (/^Rp\s*[\d.,]+/i.test(txt)) {
+                var numRp = parseFloat(txt.replace(/[^0-9,-]/g, "").replace(",", "."));
+                if (!isNaN(numRp)) return { type: "num", val: numRp };
+            }
+            if (/^-?\d+(?:[.,]\d+)?$/.test(txt)) {
+                var numPure = parseFloat(txt.replace(",", "."));
+                if (!isNaN(numPure)) return { type: "num", val: numPure };
+            }
+
+            return { type: "str", val: txt.toLowerCase() };
+        }
+
+        function initSortableTables() {
+            var tables = Array.prototype.slice.call(document.querySelectorAll("table.sortable-table"));
+            tables.forEach(function(tbl) {
+                if (tbl.getAttribute("data-sort-initialized") === "1") return;
+                tbl.setAttribute("data-sort-initialized", "1");
+
+                var thead = tbl.tHead || tbl.querySelector("thead");
+                var tbody = (tbl.tBodies && tbl.tBodies[0]) ? tbl.tBodies[0] : tbl.querySelector("tbody");
+                if (!thead || !tbody) return;
+                var headerRow = thead.rows && thead.rows[0] ? thead.rows[0] : null;
+                if (!headerRow) return;
+
+                var headers = Array.prototype.slice.call(headerRow.cells);
+                var sortState = {};
+
+                headers.forEach(function(th, colIdx) {
+                    var rawHeader = (th.textContent || "").trim().toLowerCase();
+                    if (th.getAttribute("data-nosort") === "1" || rawHeader === "aksi") return;
+
+                    th.classList.add("sortable-th");
+                    if (!th.getAttribute("title")) {
+                        th.setAttribute("title", "Klik untuk mengurutkan");
+                    }
+                    var ind = th.querySelector(".th-sort-ind");
+                    if (!ind) {
+                        ind = document.createElement("span");
+                        ind.className = "th-sort-ind";
+                        ind.textContent = "⇅";
+                        th.appendChild(ind);
+                    }
+
+                    th.addEventListener("click", function() {
+                        var dir = sortState[colIdx] === "asc" ? "desc" : "asc";
+                        sortState = {};
+                        sortState[colIdx] = dir;
+
+                        headers.forEach(function(h, idx) {
+                            var sp = h.querySelector(".th-sort-ind");
+                            if (!sp) return;
+                            if (idx === colIdx) {
+                                sp.textContent = dir === "asc" ? "▲" : "▼";
+                                sp.classList.add("active");
+                            } else {
+                                sp.textContent = "⇅";
+                                sp.classList.remove("active");
+                            }
+                        });
+
+                        var rows = Array.prototype.slice.call(tbody.rows).filter(function(r) {
+                            return !(r.cells.length === 1 && r.cells[0].colSpan > 1);
+                        });
+                        if (rows.length <= 1) return;
+
+                        rows.sort(function(rowA, rowB) {
+                            var cellA = rowA.cells[colIdx] ? rowA.cells[colIdx].innerText : "";
+                            var cellB = rowB.cells[colIdx] ? rowB.cells[colIdx].innerText : "";
+                            var pA = parseSortableCellValue(cellA);
+                            var pB = parseSortableCellValue(cellB);
+
+                            if (pA.type === "empty" && pB.type === "empty") return 0;
+                            if (pA.type === "empty") return 1;
+                            if (pB.type === "empty") return -1;
+
+                            var cmp = 0;
+                            if (pA.type === "num" && pB.type === "num") {
+                                cmp = pA.val - pB.val;
+                            } else {
+                                cmp = String(cellA || "").trim().localeCompare(String(cellB || "").trim(), "id", { numeric: true, sensitivity: "base" });
+                            }
+                            return dir === "asc" ? cmp : -cmp;
+                        });
+
+                        rows.forEach(function(r) {
+                            tbody.appendChild(r);
+                        });
+                    });
+                });
+            });
+        }
+
         applySidebarState();
         initSidebarResizer();
+        initSortableTables();
         </script>';
     }
     echo '</body></html>';

@@ -2178,7 +2178,8 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </div>
         </div>
 
-        <table>
+        <div style="overflow-x:auto;">
+        <table class="sortable-table">
             <thead>
                 <tr>
                     <th>Tanggal & Tiket</th>
@@ -2250,6 +2251,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 <?php endif; ?>
             </tbody>
         </table>
+        </div>
     </section>
     <?php
     render_invoice_camera_modal_and_script();

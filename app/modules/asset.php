@@ -2567,7 +2567,7 @@ function asset_movements_table(array $rows): string
         return '<p class="muted" style="padding:16px 0;">Belum ada data riwayat mutasi aset yang sesuai.</p>';
     }
     $canDelete = has_regulation('asset_movements', 'delete');
-    $html = '<div style="overflow-x:auto;"><table>'
+    $html = '<div style="overflow-x:auto;"><table class="sortable-table">'
         . '<thead><tr>'
         . '<th>Tanggal</th>'
         . '<th>Aksi / Status Mutasi</th>'
@@ -2577,7 +2577,7 @@ function asset_movements_table(array $rows): string
         . '<th>Company</th>'
         . '<th>Alasan / Keterangan</th>'
         . '<th>PIC / Petugas</th>'
-        . ($canDelete ? '<th>Aksi</th>' : '')
+        . ($canDelete ? '<th data-nosort="1">Aksi</th>' : '')
         . '</tr></thead><tbody>';
 
     foreach ($rows as $row) {
@@ -7298,7 +7298,7 @@ function handle_route_report_asset_items(PDO $pdo): void
             echo '    <span class="badge ok" style="font-size:12px;">Total ' . count($items) . ' Unit</span>';
             echo '  </div>';
             echo '  <div style="overflow-x:auto;">';
-            echo '    <table class="table">';
+            echo '    <table class="table sortable-table">';
             echo '      <thead>';
             echo '        <tr>';
             echo '          <th style="width:40px;">No</th>';

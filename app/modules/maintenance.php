@@ -3112,7 +3112,7 @@ function handle_route_reports(PDO $pdo): void
     foreach ($techs as $tech) {
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
-    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><table><tr><th>Tanggal</th><th>PcID</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th>Aksi</th></tr>';
+    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><div style="overflow-x:auto;"><table class="sortable-table"><thead><tr><th>Tanggal</th><th>PcID</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($stmt as $report) {
         $summary = maintenance_report_summary($pdo, $report);
         $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
@@ -3147,7 +3147,7 @@ function handle_route_reports(PDO $pdo): void
         echo '</td></tr>';
         echo '<tr><th>Waktu Real</th><td colspan="2"><strong>' . e($summary['real_duration_text'] ?? '-') . '</strong></td></tr></table></td><td><a class="btn" href="' . route_url('report_print', ['id' => $report['schedule_id']]) . '">Detail</a></td></tr>';
     }
-    echo '</table></section>';
+    echo '</tbody></table></div></section>';
     render_footer();
 }
 
@@ -3190,12 +3190,12 @@ function handle_route_maintenance_status_report(PDO $pdo): void
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
     echo '</select></label><label>&nbsp;<button class="btn primary">Filter</button></label></div></form></section>';
-    echo '<section class="panel"><table><tr><th>Tipe</th><th>Asset ID</th><th>Owner / Printer</th><th>Teknisi</th><th>Tanggal</th><th>Status</th><th>Audit Foto</th><th>Aksi</th></tr>';
+    echo '<section class="panel"><div style="overflow-x:auto;"><table class="sortable-table"><thead><tr><th>Tipe</th><th>Asset ID</th><th>Owner / Printer</th><th>Teknisi</th><th>Tanggal</th><th>Status</th><th>Audit Foto</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($rows as $row) {
         $badgeClass = $row['status_group'] === 'cancelled' ? ' danger' : ($row['status_group'] === 'expired' ? ' danger' : ($row['status_group'] === 'completed' ? ' ok' : ''));
         echo '<tr><td>' . e($row['asset_type']) . '</td><td><strong>' . e($row['asset_id']) . '</strong></td><td>' . e($row['asset_name']) . '<br><span class="muted">' . e($row['asset_detail'] ?: '-') . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . e($row['scheduled_date']) . '</td><td><span class="badge' . $badgeClass . '">' . e($row['status_label']) . '</span><br><span class="muted">' . e($row['raw_status']) . '</span></td><td>' . e($row['audit_flags'] ?: 'OK') . '</td><td><a class="btn" href="' . route_url('maintenance_do', ['id' => $row['schedule_id']]) . '">Buka</a> <a class="btn" href="' . route_url('report_print', ['id' => $row['schedule_id']]) . '">Detail</a></td></tr>';
     }
-    echo '</table></section>';
+    echo '</tbody></table></div></section>';
     render_footer();
 }
 

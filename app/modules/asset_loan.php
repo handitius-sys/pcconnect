@@ -1593,7 +1593,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
         echo '<div style="text-align:center;padding:36px;color:#64748b;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;">Tidak ada data peminjaman yang cocok dengan filter.</div>';
     } else {
         echo '<div style="overflow-x:auto;">'
-            . '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            . '<table class="sortable-table" style="width:100%;border-collapse:collapse;font-size:12px;">'
             . '<thead><tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;text-align:left;">'
             . '  <th style="padding:8px 10px;">No</th>'
             . '  <th style="padding:8px 10px;">No. Pinjam</th>'
