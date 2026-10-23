@@ -765,13 +765,27 @@ function mobile_job(PDO $pdo): void
             . '<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#1e40af;line-height:1.45;">'
             . '📌 <strong>Petunjuk Foto:</strong> Dekatkan potongan kertas putih kecil (± 4 cm x 1 cm) berisi kode <strong style="color:#b45309;">' . e($challengeCode) . '</strong> dengan stiker QR Code label berserta terlihat fisik unitnya.'
             . '</div>'
-            . '<form method="post" enctype="multipart/form-data" onsubmit="try{localStorage.setItem(\'pcconnect_before_' . (int)$id . '\', Date.now().toString());}catch(e){}">'
+            . '<form id="beforePhotoForm" method="post" enctype="multipart/form-data" onsubmit="try{localStorage.setItem(\'pcconnect_before_' . (int)$id . '\', Date.now().toString());}catch(e){}">'
             . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
             . '<input type="hidden" name="action" value="save_before">'
             . '<input type="hidden" id="photoEvidenceMeta" name="photo_evidence_meta" value="">'
             . '<p id="photoCompressStatus" class="camera-note">Gunakan kamera langsung di lokasi unit aset.</p>'
             . '<label>Foto Sebelum (Kamera Langsung)<input class="photo-input" data-photo-group="before" data-photo-slot="1" type="file" name="before_photos[]" accept="image/*" capture="environment" required></label>'
-            . '<button class="btn primary" style="width:100%;margin-top:12px;padding:12px;font-size:15px;">Simpan Foto Sebelum & Buka Checklist</button>'
+            . '<div id="beforePhotoPreviewBox" style="display:none;margin-top:10px;padding:10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;text-align:center;">'
+            . '<img id="beforePhotoPreviewImg" src="" alt="Preview Foto Sebelum" style="max-height:180px;max-width:100%;border-radius:6px;object-fit:contain;border:1px solid #e2e8f0;">'
+            . '<div id="beforePhotoPreviewInfo" style="font-size:12px;color:#0f766e;font-weight:600;margin-top:6px;"></div>'
+            . '</div>'
+            . '<div id="photoProcessProgressBox" style="display:none;margin-top:12px;padding:12px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;">'
+            . '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+            . '<span id="photoProgressLabel" style="font-size:13px;font-weight:700;color:#0369a1;">Memproses foto...</span>'
+            . '<span id="photoProgressPct" style="font-size:14px;font-weight:800;color:#0284c7;background:#e0f2fe;padding:2px 8px;border-radius:999px;">0%</span>'
+            . '</div>'
+            . '<div style="width:100%;height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;">'
+            . '<div id="photoProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,#2563eb,#0ea5e9);border-radius:999px;transition:width 0.2s ease;"></div>'
+            . '</div>'
+            . '<div id="photoProgressDetail" style="font-size:11.5px;color:#475569;margin-top:6px;">Menyiapkan...</div>'
+            . '</div>'
+            . '<button type="submit" id="btnSaveBefore" class="btn primary" style="width:100%;margin-top:12px;padding:12px;font-size:15px;">Simpan Foto Sebelum & Buka Checklist</button>'
             . '</form></section>';
     } else {
         $startTime = strtotime((string)($schedule['before_photo_at'] ?? $schedule['arrival_at'] ?? 'now'));
@@ -814,6 +828,16 @@ function mobile_job(PDO $pdo): void
         echo '<label>Kondisi Fisik Akhir<select name="condition_rating" ' . ($locked ? 'disabled' : '') . '><option>Excellent</option><option>Good</option><option>Fair</option><option>Need Repair</option><option>Need Replace</option></select></label>';
         echo '<label>Catatan Kondisi Fisik<textarea name="physical_condition" ' . ($locked ? 'readonly' : '') . '>' . e($latestReport['physical_condition'] ?? $schedule['physical_condition'] ?? '') . '</textarea></label><label>Catatan Teknisi<textarea name="additional_notes" ' . ($locked ? 'readonly' : '') . '>' . e($latestReport['additional_notes'] ?? '') . '</textarea></label>';
         echo '<label>Nama Pemakai PC / User<input name="signature_name" value="' . e($latestReport['signature_name'] ?? '') . '" ' . ($locked ? 'readonly' : '') . '></label><canvas id="sig" class="signature-pad"></canvas><input type="hidden" id="signatureData" name="signature_data"><p><button type="button" class="btn" id="clearSig" ' . ($locked ? 'disabled' : '') . '>Clear Signature</button></p>';
+        echo '<div id="photoProcessProgressBox" style="display:none;margin-top:12px;margin-bottom:10px;padding:12px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;">'
+            . '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+            . '<span id="photoProgressLabel" style="font-size:13px;font-weight:700;color:#0369a1;">Memproses foto...</span>'
+            . '<span id="photoProgressPct" style="font-size:14px;font-weight:800;color:#0284c7;background:#e0f2fe;padding:2px 8px;border-radius:999px;">0%</span>'
+            . '</div>'
+            . '<div style="width:100%;height:10px;background:#dbeafe;border-radius:999px;overflow:hidden;">'
+            . '<div id="photoProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg,#2563eb,#0ea5e9);border-radius:999px;transition:width 0.2s ease;"></div>'
+            . '</div>'
+            . '<div id="photoProgressDetail" style="font-size:11.5px;color:#475569;margin-top:6px;">Menyiapkan...</div>'
+            . '</div>';
         echo $locked ? '<p class="muted">Report locked. Schedule complete.</p><a class="btn" href="' . route_url('report_print', ['id' => $id]) . '">Lihat Report</a>' : '<button type="submit" id="btnSubmitJob" class="btn primary" style="width:100%;padding:12px;font-size:15px;">Simpan Pekerjaan & Selesai</button>';
         echo '</form></section>';
 
@@ -852,8 +876,126 @@ function mobile_job(PDO $pdo): void
     echo 'if(form){form.addEventListener("submit",save);}';
 
     echo 'var status=document.getElementById("photoCompressStatus");';
-    echo 'async function compressFile(file){if(!file||!file.type.match(/^image\\//)){return file;}if(file.size<=1048576){return file;}var img=new Image();var url=URL.createObjectURL(file);await new Promise(function(resolve,reject){img.onload=resolve;img.onerror=reject;img.src=url;});var maxSide=1600,scale=Math.min(1,maxSide/Math.max(img.width,img.height)),w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale)),canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);URL.revokeObjectURL(url);var quality=.82,blob=null;while(quality>=.45){blob=await new Promise(function(resolve){canvas.toBlob(resolve,"image/jpeg",quality);});if(blob&&blob.size<=1048576){break;}quality-=.08;}if(!blob){return file;}return new File([blob],file.name.replace(/\\.[^.]+$/,"")+".jpg",{type:"image/jpeg",lastModified:Date.now()});}';
-    echo 'document.querySelectorAll(".photo-input").forEach(function(input){input.addEventListener("change",async function(){if(!input.files||!input.files.length){return;}if(status){status.textContent="Mengompres foto...";}var dt=new DataTransfer();for(var i=0;i<input.files.length;i++){dt.items.add(await compressFile(input.files[i]));}input.files=dt.files;if(status){status.textContent="Foto siap upload, maksimal 1 MB per file.";} });});';
+    echo 'var progBox=document.getElementById("photoProcessProgressBox"),progLbl=document.getElementById("photoProgressLabel"),progPct=document.getElementById("photoProgressPct"),progBar=document.getElementById("photoProgressBar"),progDet=document.getElementById("photoProgressDetail");';
+    echo 'function setProgress(pct,label,detail,isDone,isErr){';
+    echo 'if(!progBox)return;progBox.style.display="block";var p=Math.max(0,Math.min(100,Math.round(pct)));';
+    echo 'if(progPct)progPct.textContent=p+"%";if(progBar)progBar.style.width=p+"%";if(progLbl&&label)progLbl.textContent=label;if(progDet&&detail!==undefined)progDet.textContent=detail;';
+    echo 'if(isErr){progBox.style.background="#fef2f2";progBox.style.borderColor="#fecaca";if(progLbl)progLbl.style.color="#b91c1c";if(progPct){progPct.style.background="#fee2e2";progPct.style.color="#b91c1c";}if(progBar)progBar.style.background="#ef4444";}';
+    echo 'else if(isDone){progBox.style.background="#f0fdf4";progBox.style.borderColor="#bbf7d0";if(progLbl)progLbl.style.color="#15803d";if(progPct){progPct.style.background="#dcfce7";progPct.style.color="#15803d";}if(progBar)progBar.style.background="#16a34a";}';
+    echo 'else{progBox.style.background="#f0f9ff";progBox.style.borderColor="#bae6fd";if(progLbl)progLbl.style.color="#0369a1";if(progPct){progPct.style.background="#e0f2fe";progPct.style.color="#0284c7";}if(progBar)progBar.style.background="linear-gradient(90deg,#2563eb,#0ea5e9)";}';
+    echo '}';
+
+    echo 'async function compressFile(file,onStep){';
+    echo 'if(!file||!file.type.match(/^image\\//)){if(onStep)onStep(100,"Foto siap diunggah");return file;}';
+    echo 'var origKb=Math.round(file.size/1024);';
+    echo 'if(onStep)onStep(15,"Membaca foto dari kamera...","Ukuran asli: "+origKb+" KB");';
+    echo 'if(file.size<=1048576){if(onStep)onStep(100,"✅ Foto siap diunggah (100%)","Ukuran: "+origKb+" KB (tidak perlu kompresi)");return file;}';
+    echo 'var img=new Image();var url=URL.createObjectURL(file);';
+    echo 'await new Promise(function(resolve,reject){img.onload=resolve;img.onerror=reject;img.src=url;});';
+    echo 'if(onStep)onStep(35,"Menyesuaikan resolusi gambar...","Resolusi asli: "+img.width+"x"+img.height+" px");';
+    echo 'var maxSide=1600,scale=Math.min(1,maxSide/Math.max(img.width,img.height)),w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale)),canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");';
+    echo 'canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);URL.revokeObjectURL(url);';
+    echo 'var quality=.82,blob=null,stepIdx=0;';
+    echo 'while(quality>=.45){';
+    echo 'stepIdx++;var curPct=Math.min(92,45+stepIdx*10);';
+    echo 'if(onStep)onStep(curPct,"Mengompres ukuran foto...","Tahap "+stepIdx+" (kualitas "+Math.round(quality*100)+"%)");';
+    echo 'blob=await new Promise(function(resolve){canvas.toBlob(resolve,"image/jpeg",quality);});';
+    echo 'if(blob&&blob.size<=1048576){break;}quality-=.08;';
+    echo '}';
+    echo 'if(!blob){if(onStep)onStep(100,"✅ Foto siap diunggah (100%)","Ukuran: "+origKb+" KB");return file;}';
+    echo 'var finalFile=new File([blob],file.name.replace(/\\.[^.]+$/,"")+".jpg",{type:"image/jpeg",lastModified:Date.now()});';
+    echo 'var finalKb=Math.round(finalFile.size/1024);';
+    echo 'if(onStep)onStep(100,"✅ Foto selesai diproses (100%)","Ukuran awal "+origKb+" KB -> "+finalKb+" KB (Siap disimpan)");';
+    echo 'return finalFile;';
+    echo '}';
+
+    echo 'var isCompressing=false;';
+    echo 'document.querySelectorAll(".photo-input").forEach(function(input){input.addEventListener("change",async function(){';
+    echo 'if(!input.files||!input.files.length){return;}';
+    echo 'isCompressing=true;';
+    echo 'var submitBtn=document.getElementById("btnSaveBefore")||document.getElementById("btnSubmitJob");';
+    echo 'var origBtnText=submitBtn?submitBtn.textContent:"";';
+    echo 'if(submitBtn){submitBtn.disabled=true;}';
+    echo 'if(status){status.textContent="Memproses & mengompres foto kamera...";}';
+    echo 'setProgress(10,"Memproses foto kamera...","Mohon tunggu sebentar...",false,false);';
+    echo 'try{';
+    echo 'var dt=new DataTransfer();';
+    echo 'for(var i=0;i<input.files.length;i++){';
+    echo 'var cFile=await compressFile(input.files[i],function(p,lbl,det){setProgress(p,lbl,det,p>=100,false);if(submitBtn&&p<100){submitBtn.textContent="⏳ Memproses Foto ("+Math.round(p)+"%)...";}});';
+    echo 'dt.items.add(cFile);';
+    echo '}';
+    echo 'input.files=dt.files;';
+    echo 'record(input);';
+    echo 'if(input.getAttribute("data-photo-group")==="before"&&input.files[0]){';
+    echo 'var prevBox=document.getElementById("beforePhotoPreviewBox"),prevImg=document.getElementById("beforePhotoPreviewImg"),prevInfo=document.getElementById("beforePhotoPreviewInfo");';
+    echo 'if(prevBox&&prevImg){prevImg.src=URL.createObjectURL(input.files[0]);prevBox.style.display="block";if(prevInfo)prevInfo.textContent="Foto Sebelum siap dikirim ("+Math.round(input.files[0].size/1024)+" KB)";}';
+    echo '}';
+    echo 'if(status){status.textContent="Foto siap diunggah (100%). Silakan klik tombol Simpan di bawah.";}';
+    echo '}catch(err){';
+    echo 'setProgress(100,"Gagal mengompres otomatis, menggunakan file asli",(err&&err.message)?err.message:"",false,true);';
+    echo '}finally{';
+    echo 'isCompressing=false;';
+    echo 'if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=origBtnText;}';
+    echo '}';
+    echo '});});';
+
+    echo 'var beforeForm=document.getElementById("beforePhotoForm");';
+    echo 'if(beforeForm){';
+    echo 'beforeForm.addEventListener("submit",function(e){';
+    echo 'if(isCompressing){alert("Mohon tunggu proses persiapan foto hingga 100%.");e.preventDefault();return false;}';
+    echo 'var fInput=beforeForm.querySelector("input[name=\'before_photos[]\']");';
+    echo 'if(!fInput||!fInput.files||!fInput.files.length){alert("Silakan ambil Foto Sebelum terlebih dahulu.");e.preventDefault();return false;}';
+    echo 'e.preventDefault();';
+    echo 'save();';
+    echo 'try{localStorage.setItem("pcconnect_before_' . (int)$id . '", Date.now().toString());}catch(ex){}';
+    echo 'var btn=document.getElementById("btnSaveBefore");';
+    echo 'var origTxt=btn?btn.textContent:"Simpan Foto Sebelum & Buka Checklist";';
+    echo 'if(btn){btn.disabled=true;btn.textContent="⏳ Mengunggah Foto... 0%";}';
+    echo 'setProgress(2,"📤 Mengunggah Foto Sebelum ke Server...","Menghubungkan ke server...",false,false);';
+    echo 'var fd=new FormData(beforeForm);';
+    echo 'var xhr=new XMLHttpRequest();';
+    echo 'var serverTimer=null,serverSec=0,curSimPct=75;';
+    echo 'xhr.open("POST",beforeForm.action||window.location.href,true);';
+    echo 'xhr.upload.onprogress=function(ev){';
+    echo 'if(ev.lengthComputable&&ev.total>0){';
+    echo 'var rawPct=Math.round((ev.loaded/ev.total)*100);';
+    echo 'var uiPct=Math.min(75,Math.max(3,Math.round(rawPct*0.75)));';
+    echo 'var loadedKb=Math.round(ev.loaded/1024),totalKb=Math.round(ev.total/1024);';
+    echo 'setProgress(uiPct,"📤 Mengunggah Foto Sebelum ("+rawPct+"% terkirim)","Terkirim "+loadedKb+" KB dari "+totalKb+" KB",false,false);';
+    echo 'if(btn)btn.textContent="⏳ Mengunggah Foto... "+uiPct+"%";';
+    echo 'if(rawPct>=100&&!serverTimer){';
+    echo 'curSimPct=76;';
+    echo 'setProgress(curSimPct,"🔍 Memvalidasi Lokasi GPS & Kode Challenge...","Foto diterima server, sedang memverifikasi bukti foto (0 dtk)...",false,false);';
+    echo 'if(btn)btn.textContent="⏳ Memverifikasi Foto... "+curSimPct+"%";';
+    echo 'serverTimer=setInterval(function(){';
+    echo 'serverSec++;if(curSimPct<96){curSimPct+=2;}';
+    echo 'setProgress(curSimPct,"🔍 Memvalidasi Lokasi GPS & Kode Challenge...","Proses verifikasi server berjalan aktif ("+serverSec+" detik)...",false,false);';
+    echo 'if(btn)btn.textContent="⏳ Memverifikasi Foto... "+curSimPct+"% ("+serverSec+"s)";';
+    echo '},800);';
+    echo '}';
+    echo '}';
+    echo '};';
+    echo 'xhr.onload=function(){';
+    echo 'if(serverTimer){clearInterval(serverTimer);serverTimer=null;}';
+    echo 'if(xhr.status>=200&&xhr.status<400){';
+    echo 'setProgress(100,"✅ Foto Sebelum Berhasil Diproses (100%)!","Membuka halaman checklist pengerjaan...",true,false);';
+    echo 'if(btn)btn.textContent="✅ Selesai (100%) - Memuat...";';
+    echo 'var targetUrl=xhr.responseURL||window.location.href;';
+    echo 'window.location.href=targetUrl;';
+    echo '}else{';
+    echo 'setProgress(100,"❌ Gagal menyimpan ke server (HTTP "+xhr.status+")","Silakan klik tombol Simpan untuk mencoba lagi.",false,true);';
+    echo 'if(btn){btn.disabled=false;btn.textContent=origTxt;}';
+    echo '}';
+    echo '};';
+    echo 'xhr.onerror=function(){';
+    echo 'if(serverTimer){clearInterval(serverTimer);serverTimer=null;}';
+    echo 'setProgress(100,"❌ Koneksi jaringan terputus saat mengunggah","Periksa sinyal internet/Wi-Fi Anda lalu coba lagi.",false,true);';
+    echo 'if(btn){btn.disabled=false;btn.textContent=origTxt;}';
+    echo '};';
+    echo 'xhr.send(fd);';
+    echo 'return false;';
+    echo '});';
+    echo '}';
 
     if ($hasBeforePhotos && !$locked) {
         $startTimeMs = (int)($startTime * 1000);

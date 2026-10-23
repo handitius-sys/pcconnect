@@ -377,8 +377,8 @@ Output JSON only with keys: code_matched (bool), detected_code (string|null), qr
     $listCh = curl_init('https://generativelanguage.googleapis.com/v1beta/models?key=' . urlencode($apiKey));
     curl_setopt($listCh, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($listCh, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'x-goog-api-key: ' . $apiKey]);
-    curl_setopt($listCh, CURLOPT_TIMEOUT, 8);
-    curl_setopt($listCh, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($listCh, CURLOPT_TIMEOUT, 4);
+    curl_setopt($listCh, CURLOPT_CONNECTTIMEOUT, 3);
     curl_setopt($listCh, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($listCh, CURLOPT_SSL_VERIFYHOST, 0);
     $listRes = curl_exec($listCh);
@@ -416,9 +416,13 @@ Output JSON only with keys: code_matched (bool), detected_code (string|null), qr
         }
     }
 
-    // Fallback model terstandar jika models.list tidak mengembalikan daftar
-    if (empty($candidateModels)) {
-        $candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-flash', 'gemini-pro-vision'];
+    // Fallback model terstandar jika models.list tidak mengembalikan daftar (batasi maks 2 model agar tidak hang)
+    if ($listCurlErr !== '') {
+        $candidateModels = [];
+    } elseif (empty($candidateModels)) {
+        $candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    } else {
+        $candidateModels = array_slice($candidateModels, 0, 2);
     }
 
     foreach ($candidateModels as $modelName) {
@@ -429,8 +433,8 @@ Output JSON only with keys: code_matched (bool), detected_code (string|null), qr
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'x-goog-api-key: ' . $apiKey]);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         $response = curl_exec($ch);
