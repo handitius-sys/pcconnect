@@ -1384,33 +1384,124 @@ if (!function_exists('db_column_exists')) {
     }
 }
 
+function enrich_scanned_asset_item(PDO $pdo, array $ai): array
+{
+    $itemId = (int)($ai['id'] ?? 0);
+    if ($itemId <= 0) {
+        return $ai;
+    }
+
+    if (db_table_exists($pdo, 'asset_item_members')) {
+        try {
+            $stmtC = $pdo->prepare('SELECT aim.*, c.id child_id, c.asset_code child_asset_code, c.asset_name child_asset_name, c.brand child_brand, c.model child_model
+                                    FROM asset_item_members aim
+                                    JOIN asset_items c ON c.id = aim.child_asset_item_id
+                                    WHERE aim.parent_asset_item_id = ? AND aim.detached_at IS NULL');
+            $stmtC->execute([$itemId]);
+            $children = $stmtC->fetchAll();
+            if ($children) {
+                $ai['bundle_children'] = $children;
+            }
+
+            $stmtP = $pdo->prepare('SELECT aim.*, p.id parent_id, p.asset_code parent_asset_code, p.asset_name parent_asset_name
+                                    FROM asset_item_members aim
+                                    JOIN asset_items p ON p.id = aim.parent_asset_item_id
+                                    WHERE aim.child_asset_item_id = ? AND aim.detached_at IS NULL LIMIT 1');
+            $stmtP->execute([$itemId]);
+            $parent = $stmtP->fetch();
+            if ($parent) {
+                $ai['parent_bundle'] = $parent;
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
+
+    if (db_table_exists($pdo, 'pcs')) {
+        try {
+            $stP = $pdo->prepare('SELECT pc_id FROM pcs WHERE asset_item_id = ? LIMIT 1');
+            $stP->execute([$itemId]);
+            $pcIdFound = $stP->fetchColumn();
+            if ($pcIdFound) {
+                $ai['pc_id'] = (string)$pcIdFound;
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
+    if (empty($ai['pc_id']) && !empty($ai['source_pc_id'])) {
+        $ai['pc_id'] = trim((string)$ai['source_pc_id']);
+    }
+
+    if (db_table_exists($pdo, 'printers')) {
+        try {
+            $stPr = $pdo->prepare('SELECT prn_id FROM printers WHERE asset_item_id = ? LIMIT 1');
+            $stPr->execute([$itemId]);
+            $prnIdFound = $stPr->fetchColumn();
+            if ($prnIdFound) {
+                $ai['printer_id'] = (string)$prnIdFound;
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
+
+    if (db_table_exists($pdo, 'maintenance_assets')) {
+        try {
+            $stMa = $pdo->prepare('SELECT id FROM maintenance_assets WHERE asset_item_id = ? LIMIT 1');
+            $stMa->execute([$itemId]);
+            $maIdFound = (int)($stMa->fetchColumn() ?: 0);
+            if ($maIdFound > 0) {
+                $ai['maintenance_asset_id'] = $maIdFound;
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
+
+    return $ai;
+}
+
 function find_asset_by_code(PDO $pdo, string $code): array
 {
-    $clean = strtoupper(trim($code));
-    if ($clean === '') {
+    $rawInput = trim($code);
+    if ($rawInput === '' || strtoupper($rawInput) === '[ENCRYPTED_QR]') {
         return ['', '', []];
     }
 
-    // Dekripsi atau ekstrak parameter jika input berupa URL / Query String
-    if (str_contains($clean, 'HTTP://') || str_contains($clean, 'HTTPS://') || str_contains($clean, 'EQR=') || str_contains($clean, 'CODE=')) {
-        if (function_exists('qr_decrypt_payload') && str_contains($clean, 'EQR=')) {
-            $eqrVal = substr($clean, strpos($clean, 'EQR=') + 4);
-            $eqrVal = explode('&', $eqrVal)[0];
-            $dec = qr_decrypt_payload(urldecode($eqrVal));
-            if ($dec) {
-                $clean = strtoupper(trim($dec));
+    $alreadyDecrypted = false;
+
+    // 1. Dekripsi atau ekstrak parameter jika input berupa URL / Query String (jaga case asli untuk Base64 eqr)
+    if (stripos($rawInput, 'http://') !== false || stripos($rawInput, 'https://') !== false || stripos($rawInput, 'eqr=') !== false || stripos($rawInput, 'code=') !== false) {
+        if (function_exists('qr_decrypt_payload') && preg_match('/[?&]eqr=([^&#\s]+)/i', $rawInput, $mEqr)) {
+            $dec = qr_decrypt_payload(rawurldecode($mEqr[1]));
+            if ($dec !== null && $dec !== '') {
+                $rawInput = trim($dec);
+                $alreadyDecrypted = true;
             }
-        } elseif (str_contains($clean, 'CODE=')) {
-            $cVal = substr($clean, strpos($clean, 'CODE=') + 5);
-            $clean = strtoupper(trim(urldecode(explode('&', $cVal)[0])));
+        } elseif (function_exists('qr_decrypt_payload') && stripos($rawInput, 'eqr=') === 0) {
+            $eqrVal = explode('&', substr($rawInput, 4))[0];
+            $dec = qr_decrypt_payload(rawurldecode($eqrVal));
+            if ($dec !== null && $dec !== '') {
+                $rawInput = trim($dec);
+                $alreadyDecrypted = true;
+            }
+        } elseif (preg_match('/[?&]code=([^&#\s]+)/i', $rawInput, $mCode)) {
+            $rawInput = trim(rawurldecode($mCode[1]));
+        } elseif (stripos($rawInput, 'code=') === 0) {
+            $cVal = explode('&', substr($rawInput, 5))[0];
+            $rawInput = trim(rawurldecode($cVal));
         }
     }
 
-    if (function_exists('qr_decrypt_payload')) {
-        $dec = qr_decrypt_payload($clean);
-        if ($dec !== null && $dec !== '') {
-            $clean = strtoupper(trim($dec));
+    // 2. Jika belum didekripsi dan bukan kode standar plaintext, coba dekripsi langsung dengan menjaga case asli
+    if (!$alreadyDecrypted && function_exists('qr_decrypt_payload') && !preg_match('/^[A-Z0-9]{2,5}-[A-Z0-9]{2,5}-\d{3,8}$/i', $rawInput)) {
+        $dec = qr_decrypt_payload($rawInput);
+        if ($dec !== null && $dec !== '' && preg_match('/^[A-Za-z0-9_.\-\s#]+$/', $dec)) {
+            $rawInput = trim($dec);
+            $alreadyDecrypted = true;
         }
+    }
+
+    $clean = strtoupper(trim($rawInput));
+    if ($clean === '' || $clean === '[ENCRYPTED_QR]') {
+        return ['', '', []];
     }
 
     [$assetId, $security] = parse_asset_code($clean);
@@ -1418,6 +1509,9 @@ function find_asset_by_code(PDO $pdo, string $code): array
         $assetId = $clean;
         $security = '';
     }
+    // Jika kode diawali MNT- (misal MNT-IT-CMP-000001 atau MNT-PC000010), siapkan juga variasi tanpa MNT-
+    $cleanNoMnt = str_starts_with($clean, 'MNT-') ? substr($clean, 4) : $clean;
+    $assetIdNoMnt = str_starts_with($assetId, 'MNT-') ? substr($assetId, 4) : $assetId;
 
     // 1. PRIORITAS UTAMA: Cari langsung di tabel asset_items (Unit Aset)
     if (db_table_exists($pdo, 'asset_items')) {
@@ -1428,12 +1522,25 @@ function find_asset_by_code(PDO $pdo, string $code): array
                                      LEFT JOIN asset_types at ON at.id = ai.asset_type_id
                                      LEFT JOIN asset_companies c ON c.id = ai.company_id
                                      LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                                     WHERE (UPPER(TRIM(ai.asset_code)) = ? OR UPPER(TRIM(ai.asset_code)) = ? 
-                                         OR UPPER(TRIM(ai.alias_code)) = ? OR UPPER(TRIM(ai.alias_code)) = ?
-                                         OR UPPER(TRIM(ai.serial_number)) = ? OR UPPER(TRIM(ai.serial_number)) = ?)
-                                       AND ai.status <> "inactive"
+                                     WHERE (
+                                         UPPER(TRIM(ai.asset_code)) IN (?, ?, ?, ?)
+                                         OR (ai.alias_code IS NOT NULL AND TRIM(ai.alias_code) <> "" AND UPPER(TRIM(ai.alias_code)) IN (?, ?, ?, ?))
+                                         OR (ai.serial_number IS NOT NULL AND TRIM(ai.serial_number) <> "" AND UPPER(TRIM(ai.serial_number)) IN (?, ?, ?, ?))
+                                         OR (ai.source_pc_id IS NOT NULL AND TRIM(ai.source_pc_id) <> "" AND UPPER(TRIM(ai.source_pc_id)) IN (?, ?, ?, ?))
+                                     )
+                                       AND ai.status NOT IN ("inactive", "deleted")
+                                     ORDER BY (UPPER(TRIM(ai.asset_code)) = ?) DESC,
+                                              (UPPER(TRIM(ai.asset_code)) = ?) DESC,
+                                              (UPPER(TRIM(ai.source_pc_id)) = ?) DESC,
+                                              ai.id DESC
                                      LIMIT 1');
-            $stmtAi->execute([$clean, $assetId, $clean, $assetId, $clean, $assetId]);
+            $stmtAi->execute([
+                $clean, $cleanNoMnt, $assetId, $assetIdNoMnt,
+                $clean, $cleanNoMnt, $assetId, $assetIdNoMnt,
+                $clean, $cleanNoMnt, $assetId, $assetIdNoMnt,
+                $clean, $cleanNoMnt, $assetId, $assetIdNoMnt,
+                $clean, $cleanNoMnt, $assetIdNoMnt,
+            ]);
             $ai = $stmtAi->fetch();
         } catch (PDOException $e) {
             $stmtAi = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
@@ -1442,9 +1549,10 @@ function find_asset_by_code(PDO $pdo, string $code): array
                                      LEFT JOIN asset_types at ON at.id = ai.asset_type_id
                                      LEFT JOIN asset_companies c ON c.id = ai.company_id
                                      LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                                     WHERE (UPPER(TRIM(ai.asset_code)) = ? OR UPPER(TRIM(ai.asset_code)) = ?) AND ai.status <> "inactive"
+                                     WHERE UPPER(TRIM(ai.asset_code)) IN (?, ?, ?, ?) AND ai.status NOT IN ("inactive", "deleted")
+                                     ORDER BY (UPPER(TRIM(ai.asset_code)) = ?) DESC, ai.id DESC
                                      LIMIT 1');
-            $stmtAi->execute([$clean, $assetId]);
+            $stmtAi->execute([$clean, $cleanNoMnt, $assetId, $assetIdNoMnt, $clean]);
             $ai = $stmtAi->fetch();
         }
 
@@ -1455,49 +1563,14 @@ function find_asset_by_code(PDO $pdo, string $code): array
                                      LEFT JOIN asset_types at ON at.id = ai.asset_type_id
                                      LEFT JOIN asset_companies c ON c.id = ai.company_id
                                      LEFT JOIN asset_locations loc ON loc.id = ai.location_id
-                                     WHERE ai.id = ? AND ai.status <> "inactive"
+                                     WHERE ai.id = ? AND ai.status NOT IN ("inactive", "deleted")
                                      LIMIT 1');
             $stmtNum->execute([(int)$mNum[1]]);
             $ai = $stmtNum->fetch();
         }
 
         if ($ai) {
-            // Jika unit merupakan Parent Bundle ('group'), muat anggota anak bundlingnya
-            if (($ai['asset_mode'] ?? '') === 'group') {
-                $stmtC = $pdo->prepare('SELECT aim.*, c.id child_id, c.asset_code child_asset_code, c.asset_name child_asset_name, c.brand child_brand, c.model child_model
-                                        FROM asset_item_members aim
-                                        JOIN asset_items c ON c.id = aim.child_asset_item_id
-                                        WHERE aim.parent_asset_item_id = ? AND aim.detached_at IS NULL');
-                $stmtC->execute([(int)$ai['id']]);
-                $ai['bundle_children'] = $stmtC->fetchAll();
-            } elseif (($ai['asset_mode'] ?? '') === 'child') {
-                // Jika unit merupakan anak anggota bundle, muat info induknya
-                $stmtP = $pdo->prepare('SELECT aim.*, p.id parent_id, p.asset_code parent_asset_code, p.asset_name parent_asset_name
-                                        FROM asset_item_members aim
-                                        JOIN asset_items p ON p.id = aim.parent_asset_item_id
-                                        WHERE aim.child_asset_item_id = ? AND aim.detached_at IS NULL LIMIT 1');
-                $stmtP->execute([(int)$ai['id']]);
-                $ai['parent_bundle'] = $stmtP->fetch() ?: null;
-            }
-
-            // Hubungkan relasi PC / Printer jika ada untuk kompatibilitas
-            if (db_table_exists($pdo, 'pcs')) {
-                $stP = $pdo->prepare('SELECT pc_id FROM pcs WHERE asset_item_id = ? LIMIT 1');
-                $stP->execute([(int)$ai['id']]);
-                $pcIdFound = $stP->fetchColumn();
-                if ($pcIdFound) {
-                    $ai['pc_id'] = (string)$pcIdFound;
-                }
-            }
-            if (db_table_exists($pdo, 'printers')) {
-                $stPr = $pdo->prepare('SELECT prn_id FROM printers WHERE asset_item_id = ? LIMIT 1');
-                $stPr->execute([(int)$ai['id']]);
-                $prnIdFound = $stPr->fetchColumn();
-                if ($prnIdFound) {
-                    $ai['printer_id'] = (string)$prnIdFound;
-                }
-            }
-
+            $ai = enrich_scanned_asset_item($pdo, $ai);
             return ['asset_item', (string)$ai['id'], $ai];
         }
     }
@@ -1506,9 +1579,9 @@ function find_asset_by_code(PDO $pdo, string $code): array
     if (db_table_exists($pdo, 'maintenance_assets')) {
         $mntCode = str_starts_with($assetId, 'MNT-') ? $assetId : 'MNT-' . $assetId;
         $stmt = $pdo->prepare('SELECT ma.* FROM maintenance_assets ma 
-                               WHERE (ma.maintenance_asset_code=? OR ma.maintenance_asset_code=?) 
+                               WHERE (ma.maintenance_asset_code=? OR ma.maintenance_asset_code=? OR ma.pc_id=? OR ma.printer_id=?) 
                                AND ma.status<>"inactive" LIMIT 1');
-        $stmt->execute([$assetId, $mntCode]);
+        $stmt->execute([$assetId, $mntCode, $assetIdNoMnt, $assetIdNoMnt]);
         $maintenanceAsset = $stmt->fetch();
 
         if (!$maintenanceAsset) {
@@ -1522,10 +1595,17 @@ function find_asset_by_code(PDO $pdo, string $code): array
 
         if ($maintenanceAsset) {
             if (!empty($maintenanceAsset['asset_item_id']) && db_table_exists($pdo, 'asset_items')) {
-                $stAi = $pdo->prepare('SELECT * FROM asset_items WHERE id = ? LIMIT 1');
+                $stAi = $pdo->prepare('SELECT ai.*, ag.group_name, ag.group_code, at.type_name, at.type_code, c.company_name, loc.location_name
+                                       FROM asset_items ai
+                                       LEFT JOIN asset_groups ag ON ag.id = ai.asset_group_id
+                                       LEFT JOIN asset_types at ON at.id = ai.asset_type_id
+                                       LEFT JOIN asset_companies c ON c.id = ai.company_id
+                                       LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                       WHERE ai.id = ? LIMIT 1');
                 $stAi->execute([(int)$maintenanceAsset['asset_item_id']]);
                 $ai = $stAi->fetch();
                 if ($ai) {
+                    $ai = enrich_scanned_asset_item($pdo, $ai);
                     return ['asset_item', (string)$ai['id'], $ai];
                 }
             }
@@ -1534,22 +1614,40 @@ function find_asset_by_code(PDO $pdo, string $code): array
     }
 
     // 3. Fallback: Printer & PC lama
-    if (substr($assetId, 0, 3) === 'PRN' && db_table_exists($pdo, 'printers')) {
+    if (substr($assetIdNoMnt, 0, 3) === 'PRN' && db_table_exists($pdo, 'printers')) {
         $stmt = $pdo->prepare('SELECT * FROM printers WHERE prn_id=?');
-        $stmt->execute([$assetId]);
+        $stmt->execute([$assetIdNoMnt]);
         $printer = $stmt->fetch();
         if ($printer && ($security === '' || hash_equals((string)$printer['security_code'], $security))) {
-            return ['printer', $assetId, $printer];
+            if (!empty($printer['asset_item_id']) && db_table_exists($pdo, 'asset_items')) {
+                $stAi = $pdo->prepare('SELECT * FROM asset_items WHERE id = ? LIMIT 1');
+                $stAi->execute([(int)$printer['asset_item_id']]);
+                $ai = $stAi->fetch();
+                if ($ai) {
+                    $ai = enrich_scanned_asset_item($pdo, $ai);
+                    return ['asset_item', (string)$ai['id'], $ai];
+                }
+            }
+            return ['printer', $assetIdNoMnt, $printer];
         }
         return ['', '', []];
     }
 
     if (db_table_exists($pdo, 'pcs')) {
         $stmt = $pdo->prepare('SELECT * FROM pcs WHERE pc_id=?');
-        $stmt->execute([$assetId]);
+        $stmt->execute([$assetIdNoMnt]);
         $pc = $stmt->fetch();
         if ($pc && ($security === '' || hash_equals((string)$pc['security_code'], $security))) {
-            return ['pc', $assetId, $pc];
+            if (!empty($pc['asset_item_id']) && db_table_exists($pdo, 'asset_items')) {
+                $stAi = $pdo->prepare('SELECT * FROM asset_items WHERE id = ? LIMIT 1');
+                $stAi->execute([(int)$pc['asset_item_id']]);
+                $ai = $stAi->fetch();
+                if ($ai) {
+                    $ai = enrich_scanned_asset_item($pdo, $ai);
+                    return ['asset_item', (string)$ai['id'], $ai];
+                }
+            }
+            return ['pc', $assetIdNoMnt, $pc];
         }
     }
 

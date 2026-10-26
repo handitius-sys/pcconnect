@@ -68,6 +68,9 @@ function mobile_encrypted_asset_url(string $assetCode): string
 function qr_image_url(string $value, int $size = 900): string
 {
     $size = max(120, min(1200, $size));
+    if ($value === '__PAYLOAD__') {
+        return 'https://api.qrserver.com/v1/create-qr-code/?size=' . $size . 'x' . $size . '&format=png&data=__PAYLOAD__';
+    }
 
     // Jika value adalah kode aset langsung (bukan URL), otomatis enkripsikan ke mobile URL terenkripsi
     if (!str_starts_with($value, 'http://') && !str_starts_with($value, 'https://')) {

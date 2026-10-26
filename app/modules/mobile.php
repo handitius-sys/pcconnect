@@ -244,42 +244,58 @@ function mobile_schedule(PDO $pdo): void
  */
 function mobile_scan(PDO $pdo): void
 {
-    $code = strtoupper(trim((string)($_GET['code'] ?? $_POST['code'] ?? '')));
+    $rawCode = trim((string)($_GET['code'] ?? $_POST['code'] ?? ''));
     $eqr = trim((string)($_GET['eqr'] ?? $_POST['eqr'] ?? ''));
+    $code = '';
+    $decryptedOk = false;
 
     if ($eqr !== '' && function_exists('qr_decrypt_payload')) {
-        $decrypted = qr_decrypt_payload($eqr);
+        $decrypted = qr_decrypt_payload(rawurldecode($eqr));
+        if ($decrypted === null || $decrypted === '') {
+            $decrypted = qr_decrypt_payload($eqr);
+        }
         if ($decrypted !== null && $decrypted !== '') {
             $code = strtoupper(trim($decrypted));
+            $decryptedOk = true;
         }
     }
 
-    if ($code !== '' && function_exists('qr_decrypt_payload')) {
-        $decrypted = qr_decrypt_payload($code);
-        if ($decrypted !== null && $decrypted !== '') {
-            $code = strtoupper(trim($decrypted));
-        }
-    }
-
-    if (str_contains($code, 'HTTP://') || str_contains($code, 'HTTPS://') || str_contains($code, '?') || str_contains($code, '=')) {
-        $parsed = parse_url($code);
-        if (!empty($parsed['query'])) {
-            parse_str($parsed['query'], $qp);
-            if (!empty($qp['eqr']) && function_exists('qr_decrypt_payload')) {
-                $dec = qr_decrypt_payload($qp['eqr']);
-                if ($dec) {
-                    $code = strtoupper(trim($dec));
+    if (!$decryptedOk && $rawCode !== '' && strtoupper($rawCode) !== '[ENCRYPTED_QR]') {
+        if (stripos($rawCode, 'http://') !== false || stripos($rawCode, 'https://') !== false || str_contains($rawCode, '?') || str_contains($rawCode, '=')) {
+            $parsed = parse_url($rawCode);
+            if (!empty($parsed['query'])) {
+                parse_str($parsed['query'], $qp);
+                $qpLower = array_change_key_case($qp, CASE_LOWER);
+                if (!empty($qpLower['eqr']) && function_exists('qr_decrypt_payload')) {
+                    $dec = qr_decrypt_payload((string)$qpLower['eqr']);
+                    if ($dec !== null && $dec !== '') {
+                        $code = strtoupper(trim($dec));
+                        $decryptedOk = true;
+                    }
+                } elseif (!empty($qpLower['code'])) {
+                    $code = strtoupper(trim((string)$qpLower['code']));
+                    $decryptedOk = true;
                 }
-            } elseif (!empty($qp['code'])) {
-                $code = strtoupper(trim($qp['code']));
+            }
+            if (!$decryptedOk && (stripos($rawCode, 'http://') !== false || stripos($rawCode, 'https://') !== false)) {
+                $pathParts = explode('/', rtrim(parse_url($rawCode, PHP_URL_PATH) ?? '', '/'));
+                $lastPart = end($pathParts);
+                if ($lastPart && strtolower($lastPart) !== 'index.php') {
+                    $rawCode = trim(urldecode($lastPart));
+                }
             }
         }
-        if (str_contains($code, 'HTTP://') || str_contains($code, 'HTTPS://')) {
-            $pathParts = explode('/', rtrim(parse_url($code, PHP_URL_PATH) ?? '', '/'));
-            $lastPart = end($pathParts);
-            if ($lastPart && $lastPart !== 'index.php') {
-                $code = strtoupper(trim(urldecode($lastPart)));
+
+        if (!$decryptedOk && function_exists('qr_decrypt_payload') && !preg_match('/^[A-Z0-9]{2,5}-[A-Z0-9]{2,5}-\d{3,8}$/i', $rawCode)) {
+            $decrypted = qr_decrypt_payload($rawCode);
+            if ($decrypted !== null && $decrypted !== '' && preg_match('/^[A-Za-z0-9_.\-\s#]+$/', $decrypted)) {
+                $code = strtoupper(trim($decrypted));
+                $decryptedOk = true;
             }
+        }
+
+        if (!$decryptedOk) {
+            $code = strtoupper(trim($rawCode));
         }
     }
     $scheduleId = (int)($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -306,7 +322,9 @@ function mobile_scan(PDO $pdo): void
         $schedule = null;
         if ($scheduleId > 0) {
             $schSql = "SELECT s.*, 
-                       ai.id AS ai_id, ai.asset_code AS ai_asset_code, ai.asset_mode AS ai_asset_mode,
+                       ai.id AS ai_id, ai.asset_code AS ai_asset_code, ai.asset_name AS ai_asset_name,
+                       ai.custodian_name AS ai_custodian_name, ai.asset_mode AS ai_asset_mode,
+                       ai.source_pc_id AS ai_source_pc_id,
                        ai.latitude AS ai_lat, ai.longitude AS ai_lng, ai.location_radius_m AS ai_radius,
                        ma.id AS ma_id, ma.maintenance_asset_code, ma.latitude AS ma_lat, ma.longitude AS ma_lng, 
                        ma.location_radius_m AS ma_radius, ma.location_label AS ma_location_label, 
@@ -334,50 +352,84 @@ function mobile_scan(PDO $pdo): void
                 redirect_to('mobile_schedule');
             }
 
-            // Cek apakah scan cocok dengan target schedule
+            // Cek apakah scan cocok dengan target schedule (mendukung Induk/Anak Bundle, PC ID, Source PC ID, Printer ID, Maintenance Asset)
             $isMatch = false;
+            $schedItemId = (int)($scheduleCandidate['asset_item_id'] ?? 0);
+            $schedAssetCode = strtoupper(trim((string)($scheduleCandidate['ai_asset_code'] ?? '')));
+            $schedPcId = strtoupper(trim((string)($scheduleCandidate['pc_id'] ?: ($scheduleCandidate['ai_source_pc_id'] ?: ($scheduleCandidate['ma_pc_id'] ?? '')))));
+            $schedPrinterId = strtoupper(trim((string)($scheduleCandidate['printer_id'] ?: ($scheduleCandidate['ma_printer_id'] ?? ''))));
+            $schedMaId = (int)($scheduleCandidate['maintenance_asset_id'] ?? 0);
+
             if ($assetType === 'asset_item') {
-                $scannedItemId = (int)$assetInfo['id'];
-                $schedItemId = (int)($scheduleCandidate['asset_item_id'] ?? 0);
+                $scannedItemId = (int)($assetInfo['id'] ?? 0);
+                $scannedAssetCode = strtoupper(trim((string)($assetInfo['asset_code'] ?? '')));
+                $scannedPcId = strtoupper(trim((string)($assetInfo['pc_id'] ?? ($assetInfo['source_pc_id'] ?? ''))));
+                $scannedPrinterId = strtoupper(trim((string)($assetInfo['printer_id'] ?? '')));
+                $scannedMaId = (int)($assetInfo['maintenance_asset_id'] ?? 0);
 
                 if ($schedItemId > 0 && $schedItemId === $scannedItemId) {
                     $isMatch = true;
-                } elseif (($assetInfo['asset_mode'] ?? '') === 'group') {
-                    // Cukup scan QR Induk untuk seluruh paket unit:
-                    if ($schedItemId === $scannedItemId) {
-                        $isMatch = true;
-                    } else {
-                        $childIds = array_map('intval', array_column($assetInfo['bundle_children'] ?? [], 'child_id'));
-                        if (in_array($schedItemId, $childIds, true)) {
-                            $isMatch = true;
-                        }
-                    }
-                } elseif (($assetInfo['asset_mode'] ?? '') === 'child' && !empty($assetInfo['parent_bundle'])) {
-                    $parentId = (int)($assetInfo['parent_bundle']['parent_id'] ?? 0);
-                    if ($schedItemId === $parentId) {
-                        $isMatch = true;
-                    }
-                } elseif (!empty($scheduleCandidate['pc_id']) && !empty($assetInfo['pc_id']) && $scheduleCandidate['pc_id'] === $assetInfo['pc_id']) {
+                }
+                if (!$isMatch && $schedAssetCode !== '' && $schedAssetCode === $scannedAssetCode) {
                     $isMatch = true;
-                } elseif (!empty($scheduleCandidate['printer_id']) && !empty($assetInfo['printer_id']) && $scheduleCandidate['printer_id'] === $assetInfo['printer_id']) {
+                }
+                if (!$isMatch && !empty($assetInfo['bundle_children'])) {
+                    $childIds = array_map('intval', array_column($assetInfo['bundle_children'], 'child_id'));
+                    if (in_array($schedItemId, $childIds, true)) {
+                        $isMatch = true;
+                    }
+                }
+                if (!$isMatch && !empty($assetInfo['parent_bundle'])) {
+                    $parentId = (int)($assetInfo['parent_bundle']['parent_id'] ?? ($assetInfo['parent_bundle']['parent_asset_item_id'] ?? 0));
+                    if ($parentId > 0 && $schedItemId === $parentId) {
+                        $isMatch = true;
+                    }
+                }
+                if (!$isMatch && $schedItemId > 0 && $scannedItemId > 0 && function_exists('asset_item_contains_child')) {
+                    if (asset_item_contains_child($pdo, $scannedItemId, $schedItemId) || asset_item_contains_child($pdo, $schedItemId, $scannedItemId)) {
+                        $isMatch = true;
+                    }
+                }
+                if (!$isMatch && $schedPcId !== '' && $scannedPcId !== '' && $schedPcId === $scannedPcId) {
+                    $isMatch = true;
+                }
+                if (!$isMatch && $schedPrinterId !== '' && $scannedPrinterId !== '' && $schedPrinterId === $scannedPrinterId) {
+                    $isMatch = true;
+                }
+                if (!$isMatch && $schedMaId > 0 && $scannedMaId > 0 && $schedMaId === $scannedMaId) {
                     $isMatch = true;
                 }
             } elseif ($assetType === 'maintenance_asset') {
-                $isMatch = ((int)$scheduleCandidate['maintenance_asset_id'] === (int)$assetId)
-                    || (!empty($scheduleCandidate['pc_id']) && !empty($assetInfo['pc_id']) && $scheduleCandidate['pc_id'] === $assetInfo['pc_id'])
-                    || (!empty($scheduleCandidate['printer_id']) && !empty($assetInfo['printer_id']) && $scheduleCandidate['printer_id'] === $assetInfo['printer_id']);
+                $scannedPcId = strtoupper(trim((string)($assetInfo['pc_id'] ?? '')));
+                $scannedPrinterId = strtoupper(trim((string)($assetInfo['printer_id'] ?? '')));
+                $scannedAiId = (int)($assetInfo['asset_item_id'] ?? 0);
+                $isMatch = ($schedMaId > 0 && $schedMaId === (int)$assetId)
+                    || ($schedItemId > 0 && $scannedAiId > 0 && $schedItemId === $scannedAiId)
+                    || ($schedPcId !== '' && $scannedPcId !== '' && $schedPcId === $scannedPcId)
+                    || ($schedPrinterId !== '' && $scannedPrinterId !== '' && $schedPrinterId === $scannedPrinterId);
             } elseif ($assetType === 'printer') {
-                $isMatch = (!empty($scheduleCandidate['printer_id']) && $scheduleCandidate['printer_id'] === $assetId)
-                    || (!empty($scheduleCandidate['ma_printer_id']) && $scheduleCandidate['ma_printer_id'] === $assetId)
-                    || (!empty($assetInfo['maintenance_asset_id']) && (int)$assetInfo['maintenance_asset_id'] === (int)$scheduleCandidate['maintenance_asset_id']);
+                $scannedPrn = strtoupper(trim((string)$assetId));
+                $scannedAiId = (int)($assetInfo['asset_item_id'] ?? 0);
+                $isMatch = ($schedPrinterId !== '' && $schedPrinterId === $scannedPrn)
+                    || ($schedItemId > 0 && $scannedAiId > 0 && $schedItemId === $scannedAiId)
+                    || (!empty($assetInfo['maintenance_asset_id']) && $schedMaId > 0 && (int)$assetInfo['maintenance_asset_id'] === $schedMaId);
             } else { // pc
-                $isMatch = (!empty($scheduleCandidate['pc_id']) && $scheduleCandidate['pc_id'] === $assetId)
-                    || (!empty($scheduleCandidate['ma_pc_id']) && $scheduleCandidate['ma_pc_id'] === $assetId)
-                    || (!empty($assetInfo['maintenance_asset_id']) && (int)$assetInfo['maintenance_asset_id'] === (int)$scheduleCandidate['maintenance_asset_id']);
+                $scannedPc = strtoupper(trim((string)$assetId));
+                $scannedAiId = (int)($assetInfo['asset_item_id'] ?? 0);
+                $isMatch = ($schedPcId !== '' && $schedPcId === $scannedPc)
+                    || ($schedItemId > 0 && $scannedAiId > 0 && $schedItemId === $scannedAiId)
+                    || (!empty($assetInfo['maintenance_asset_id']) && $schedMaId > 0 && (int)$assetInfo['maintenance_asset_id'] === $schedMaId);
             }
 
             if (!$isMatch) {
-                flash('QR Code yang di-scan tidak sesuai dengan target unit aset pada schedule ini.', 'err');
+                $scannedCodeLabel = (string)($assetInfo['asset_code'] ?? $assetInfo['pc_id'] ?? $assetInfo['printer_id'] ?? $assetInfo['maintenance_asset_code'] ?? $assetId);
+                $scannedNameLabel = (string)($assetInfo['asset_name'] ?? $assetInfo['computer_name'] ?? $assetInfo['printer_name'] ?? $assetInfo['name'] ?? '');
+                $targetCodeLabel = (string)($scheduleCandidate['ai_asset_code'] ?: ($scheduleCandidate['pc_id'] ?: ($scheduleCandidate['printer_id'] ?: ('#' . $scheduleCandidate['id']))));
+                $targetNameLabel = (string)($scheduleCandidate['ai_asset_name'] ?? '');
+                flash(
+                    'QR Code yang di-scan (' . $scannedCodeLabel . ($scannedNameLabel !== '' ? ' - ' . $scannedNameLabel : '') . ') tidak sesuai dengan target unit aset pada schedule ini (' . $targetCodeLabel . ($targetNameLabel !== '' ? ' - ' . $targetNameLabel : '') . ').',
+                    'err'
+                );
                 redirect_to('mobile_scan', ['id' => $scheduleId, 'phase' => $phase]);
             }
 
@@ -511,10 +563,37 @@ function mobile_scan(PDO $pdo): void
     if (($user['role'] ?? '') === 'technician' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
         $code = '';
     }
+    $targetInfoHtml = '';
+    if ($scheduleId > 0) {
+        try {
+            $tStmt = $pdo->prepare("SELECT s.id, s.scheduled_date,
+                COALESCE(ai.asset_code, s.pc_id, s.printer_id, CONCAT('Unit #', s.id)) AS target_code,
+                COALESCE(ai.asset_name, ma.name, p.computer_name, pr.printer_name, '-') AS target_name,
+                COALESCE(ai.custodian_name, ma.owner_name, p.owner_name, '-') AS target_owner,
+                ai.asset_mode
+                FROM maintenance_schedules s
+                LEFT JOIN maintenance_assets ma ON ma.id = s.maintenance_asset_id
+                LEFT JOIN asset_items ai ON ai.id = COALESCE(s.asset_item_id, ma.asset_item_id)
+                LEFT JOIN pcs p ON (p.pc_id = s.pc_id OR (s.pc_id IS NULL AND p.asset_item_id = s.asset_item_id))
+                LEFT JOIN printers pr ON (pr.prn_id = s.printer_id OR (s.printer_id IS NULL AND pr.asset_item_id = s.asset_item_id))
+                WHERE s.id = ? LIMIT 1");
+            $tStmt->execute([$scheduleId]);
+            $tRow = $tStmt->fetch();
+            if ($tRow) {
+                $bundleBadge = (($tRow['asset_mode'] ?? '') === 'group') ? ' <span class="badge" style="background:#1e3a8a;color:#fff;font-size:11px;">📦 Induk Bundle</span>' : '';
+                $targetInfoHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #2563eb;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:13px;">'
+                    . '<div style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">Target Unit Aset Schedule Ini:</div>'
+                    . '<div style="font-weight:800;font-size:15px;color:#0f172a;">' . e($tRow['target_code']) . $bundleBadge . '</div>'
+                    . '<div style="color:#334155;">' . e($tRow['target_name']) . ($tRow['target_owner'] && $tRow['target_owner'] !== '-' ? ' &bull; <strong>' . e($tRow['target_owner']) . '</strong>' : '') . '</div>'
+                    . '</div>';
+            }
+        } catch (Throwable $ignored) {
+        }
+    }
     $scanTitle = $phase === 'end' ? 'Scan QR Selesai' : 'Scan QR Mulai';
     $codeReadonly = ($user['role'] ?? '') === 'technician' ? ' readonly' : '';
     $manualNote = ($user['role'] ?? '') === 'technician' ? '<p class="muted">Untuk teknisi, Kode Unit Aset hanya bisa terisi dari live scan kamera.</p>' : '<p class="muted">Admin masih dapat mengetik Kode Unit Aset untuk troubleshooting.</p>';
-    echo '<section class="panel"><h1>' . e($scanTitle) . '</h1><p class="muted">QR terenkripsi otomatis divalidasi oleh sistem.</p><div id="reader" style="display:none;width:100%;max-width:420px"></div><video id="video" class="scan-video" autoplay muted playsinline></video><p id="cameraStatus" class="camera-note">Tekan Mulai Live Scan. Kamera dan GPS wajib aktif untuk teknisi.</p><p><button type="button" id="startCamera" class="btn primary">Mulai Live Scan</button></p>' . $manualNote . '<form method="post" id="scanForm"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($scheduleId) . '"><input type="hidden" name="phase" value="' . e($phase) . '"><input type="hidden" id="lat" name="lat"><input type="hidden" id="lng" name="lng"><input type="hidden" id="eqr" name="eqr" value="' . e($eqr) . '"><label>Kode Unit Aset<input id="code" name="code" value="' . e($code) . '" placeholder="Terisi otomatis dari live scan QR" required' . $codeReadonly . '></label><button class="btn primary">Validasi QR</button></form></section>';
+    echo '<section class="panel"><h1>' . e($scanTitle) . '</h1>' . $targetInfoHtml . '<p class="muted">QR terenkripsi otomatis divalidasi oleh sistem.</p><div id="reader" style="display:none;width:100%;max-width:420px"></div><video id="video" class="scan-video" autoplay muted playsinline></video><p id="cameraStatus" class="camera-note">Tekan Mulai Live Scan. Kamera dan GPS wajib aktif untuk teknisi.</p><p><button type="button" id="startCamera" class="btn primary">Mulai Live Scan</button></p>' . $manualNote . '<form method="post" id="scanForm"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="id" value="' . e($scheduleId) . '"><input type="hidden" name="phase" value="' . e($phase) . '"><input type="hidden" id="lat" name="lat"><input type="hidden" id="lng" name="lng"><input type="hidden" id="eqr" name="eqr" value="' . e($eqr) . '"><label>Kode Unit Aset<input id="code" name="code" value="' . e($code) . '" placeholder="Terisi otomatis dari live scan QR" required' . $codeReadonly . '></label><button class="btn primary">Validasi QR</button></form></section>';
     echo '<script src="https://unpkg.com/html5-qrcode" onerror="window.__qrLibFailed=true"></script><script>(function(){var code=document.getElementById("code"),eqrInput=document.getElementById("eqr"),status=document.getElementById("cameraStatus"),video=document.getElementById("video"),reader=document.getElementById("reader"),detector=null,timer=null,html5=null,submitted=false,gpsReady=false;function extractData(raw){var v=String(raw||"").trim();try{var u=new URL(v,window.location.href);if(u.searchParams.get("eqr")){return {eqr:u.searchParams.get("eqr")};}if(u.searchParams.get("code")){return {code:u.searchParams.get("code").trim()};}v=u.pathname;}catch(e){if(v.indexOf("eqr=")>=0){return {eqr:v.split("eqr=").pop().split("&")[0]};}if(v.indexOf("code=")>=0){return {code:v.split("code=").pop().split("&")[0]};}}v=decodeURIComponent(v).trim();if(v.indexOf("/")>=0){v=v.split("/").pop();}v=v.trim().toUpperCase();var m=v.match(/[A-Z0-9_-]+-[A-Z0-9]{2,12}/);return {code:m?m[0]:v};}function handleScan(raw){if(submitted){return;}var res=extractData(raw);if(res.eqr){eqrInput.value=res.eqr;code.value="[ENCRYPTED_QR]";status.textContent="QR terenkripsi terbaca. Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);return;}if(res.code){code.value=res.code;status.textContent="QR terbaca: "+res.code+". Memvalidasi...";submitted=true;setTimeout(function(){document.getElementById("scanForm").submit();},400);}}if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){document.getElementById("lat").value=p.coords.latitude.toFixed(7);document.getElementById("lng").value=p.coords.longitude.toFixed(7);gpsReady=true;status.textContent="GPS siap. Akurasi sekitar "+Math.round(p.coords.accuracy)+" meter.";},function(){},{enableHighAccuracy:true,timeout:15000,maximumAge:0});}if("BarcodeDetector" in window){detector=new BarcodeDetector({formats:["qr_code"]});}document.getElementById("startCamera").onclick=async function(){if(window.Html5Qrcode){try{video.style.display="none";reader.style.display="block";html5=new Html5Qrcode("reader");await html5.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:240}},function(decoded){handleScan(decoded);});return;}catch(e){}}if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){try{var s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});video.srcObject=s;video.style.display="block";clearInterval(timer);timer=setInterval(async function(){try{if(detector){var r=await detector.detect(video);if(r&&r[0]){handleScan(r[0].rawValue);}}}catch(e){}},800);}catch(e){status.textContent="Kamera tidak dapat diakses.";}}};})();</script>';
     render_mobile_footer();
 }
