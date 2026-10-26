@@ -629,15 +629,15 @@ function handle_route_users(PDO $pdo): void
         echo '<section class="panel"><div class="split"><h2>Edit User</h2><a class="btn" href="' . route_url('users') . '">Batal Edit</a></div><form method="post"><input type="hidden" name="csrf" value="' . csrf_token() . '"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="' . e($editUser['id']) . '"><div class="grid three"><label>Nama<input name="name" value="' . e($editUser['name']) . '" required></label><label>Username<input name="username" value="' . e($editUser['username']) . '" required></label><label>Role<select name="role" required>' . $roleOptions . '</select></label></div><button class="btn primary">Simpan Perubahan</button></form></section>';
     }
 
-    // Catatan Hak Akses Role (diperkecil)
+    // Catatan Hak Akses Role (diperkecil & diselaraskan dengan update Regulasi Hak Akses terakhir)
     echo '<section class="panel" style="padding:10px 16px;margin-bottom:12px;background:#f8fafc;border-left:4px solid #0284c7;">';
-    echo '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><strong style="font-size:12px;color:#0f172a;">Catatan Hak Akses Role:</strong></div>';
-    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));gap:6px;font-size:11.5px;color:#475569;line-height:1.35;">';
-    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Full:</strong> Akses penuh ke seluruh menu & sistem.</div>';
-    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Maintenance:</strong> Jadwal & checklist preventive maintenance.</div>';
-    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Teknisi:</strong> Mobile scan Preventive Maintenance.</div>';
-    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Corrective Maintenance:</strong> Mobile Field Service & Reparasi.</div>';
-    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Petugas Peminjaman:</strong> Serah-terima & scan peminjaman aset.</div>';
+    echo '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;"><strong style="font-size:12px;color:#0f172a;">🛡️ Catatan Hak Akses Role (Terkoneksi ke Matriks Regulasi Hak Akses):</strong><a href="' . route_url('setup_regulations') . '" style="font-size:11.5px;color:#0284c7;font-weight:700;text-decoration:none;">⚙️ Atur Detail di Regulasi Hak Akses ↗</a></div>';
+    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:6px;font-size:11.5px;color:#475569;line-height:1.35;">';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Full:</strong> Akses penuh (View/Create/Edit/Delete) ke seluruh modul, Reports, Data Master & Regulasi.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Admin Maintenance:</strong> Kelola Preventive Maintenance, Aset Corrective, Unit Aset (View/Edit), Master & Reports.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Teknisi Preventive:</strong> Eksekusi Preventive Maintenance (Mobile + Foto %), Tiket Corrective & Mode View Unit Aset.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Corrective Maintenance:</strong> Mobile Field Service, Tiket Aset Corrective, Master Bengkel & Mode View Unit Aset.</div>';
+    echo '<div style="background:#fff;padding:6px 8px;border-radius:4px;border:1px solid #e2e8f0;"><strong>Petugas Peminjaman:</strong> Transaksi Peminjaman & Mutasi Aset, Report Peminjaman & Mode View Unit Aset.</div>';
     echo '</div></section>';
 
     // Panel Daftar User (naik ke atas)

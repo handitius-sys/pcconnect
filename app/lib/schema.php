@@ -2721,6 +2721,17 @@ function ensure_unified_asset_schema(PDO $pdo): void
     }
 }
 
+/**
+ * Memastikan tabel `role_regulations` dan `role_settings` tersedia di database
+ * serta menginisialisasi izin bawaan (default) untuk setiap role dan menu terbaru.
+ *
+ * [PROSES & TROUBLESHOOT]:
+ * 1. Membuat tabel `role_regulations` (menyimpan can_view, can_create, can_edit, can_delete per role & menu_key).
+ * 2. Membuat tabel `role_settings` (menyimpan idle_timeout_minutes per role).
+ * 3. Memastikan setiap kombinasi role dan menu_key pada `get_regulated_menus()` memiliki baris default
+ *    menggunakan `INSERT IGNORE` (sehingga kustomisasi yang sudah ada tidak tertimpa, namun menu baru
+ *    atau role yang baru di-reset langsung terisi otomatis).
+ */
 function ensure_role_regulations_schema(PDO $pdo): void
 {
     try {
@@ -2743,57 +2754,58 @@ function ensure_role_regulations_schema(PDO $pdo): void
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-        // Inisialisasi default timeout per role jika kosong
-        $setCount = (int)$pdo->query("SELECT COUNT(*) FROM role_settings")->fetchColumn();
-        if ($setCount === 0) {
-            $defTimeouts = [
-                'admin' => 60,
-                'maintenance_admin' => 60,
-                'technician' => 60,
-                'corrective_maintenance' => 60,
-                'loan_officer' => 60,
-            ];
-            $stmtSet = $pdo->prepare("INSERT IGNORE INTO role_settings (role, idle_timeout_minutes) VALUES (?, ?)");
-            foreach ($defTimeouts as $rRole => $rTimeout) {
-                $stmtSet->execute([$rRole, $rTimeout]);
-            }
+        // Inisialisasi default timeout per role jika belum ada
+        $defTimeouts = [
+            'admin' => 60,
+            'maintenance_admin' => 60,
+            'technician' => 60,
+            'corrective_maintenance' => 60,
+            'loan_officer' => 60,
+        ];
+        $stmtSet = $pdo->prepare("INSERT IGNORE INTO role_settings (role, idle_timeout_minutes) VALUES (?, ?)");
+        foreach ($defTimeouts as $rRole => $rTimeout) {
+            $stmtSet->execute([$rRole, $rTimeout]);
         }
 
-        // Periksa apakah tabel kosong, jika ya inisialisasi default permissions
-        $count = (int)$pdo->query("SELECT COUNT(*) FROM role_regulations")->fetchColumn();
-        if ($count === 0) {
+        // Kumpulkan seluruh menu_key terbaru dari get_regulated_menus()
+        $menus = [];
+        if (function_exists('get_regulated_menus')) {
+            foreach (get_regulated_menus() as $grpItems) {
+                foreach ($grpItems as $mKey => $mLabel) {
+                    $menus[] = $mKey;
+                }
+            }
+        } else {
             $menus = [
-                // Master
-                'asset_items', 'asset_groups', 'asset_types', 'asset_brands',
-                'asset_master_items', 'asset_locations', 'asset_identifiers', 'asset_specifications',
-                'jobs', 'asset_maintenance_templates', 'corrective_job_desks', 'asset_companies',
-                'master_pengguna', 'users', 'pcs', 'printers',
-                // Transaksi
-                'asset_loans', 'maintenance', 'tickets', 'walkarounds', 'asset_movements'
+                'asset_items', 'asset_loans', 'asset_mutations',
+                'maintenance', 'tickets', 'mobile_service',
+                'reports', 'corrective_repairs', 'asset_movements', 'report_asset_loans', 'report_asset_items',
+                'pcs', 'asset_groups', 'corrective_workshops', 'asset_types', 'jobs', 'corrective_job_desks',
+                'asset_brands', 'asset_master_items', 'asset_identifiers', 'asset_specifications',
+                'asset_locations', 'asset_companies', 'master_pengguna',
+                'labels', 'users'
             ];
+        }
 
-            $roles = ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer'];
+        $roles = ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer'];
+        $existingCount = (int)$pdo->query("SELECT COUNT(*) FROM role_regulations")->fetchColumn();
+        $expectedMinCount = count($roles) * count($menus);
+
+        if ($existingCount < $expectedMinCount) {
             $ins = $pdo->prepare("INSERT IGNORE INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete) VALUES (?, ?, ?, ?, ?, ?)");
-
             foreach ($roles as $r) {
                 foreach ($menus as $m) {
-                    if ($r === 'admin') {
-                        $ins->execute([$r, $m, 1, 1, 1, 1]);
-                    } elseif ($r === 'maintenance_admin') {
-                        $isMaintDomain = in_array($m, ['maintenance', 'jobs', 'asset_maintenance_templates', 'asset_items', 'asset_loans', 'asset_movements', 'pcs', 'printers'], true);
-                        $canDel = in_array($m, ['maintenance', 'jobs', 'asset_maintenance_templates'], true) ? 1 : 0;
-                        $ins->execute([$r, $m, 1, $isMaintDomain ? 1 : 0, $isMaintDomain ? 1 : 0, $canDel]);
-                    } elseif ($r === 'technician') {
-                        $canEdit = in_array($m, ['maintenance', 'tickets', 'walkarounds'], true) ? 1 : 0;
-                        $canAdd = in_array($m, ['tickets', 'walkarounds'], true) ? 1 : 0;
-                        $ins->execute([$r, $m, 1, $canAdd, $canEdit, 0]);
-                    } elseif ($r === 'corrective_maintenance') {
-                        $isCorrDomain = in_array($m, ['tickets', 'walkarounds', 'corrective_job_desks'], true);
-                        $ins->execute([$r, $m, 1, $isCorrDomain ? 1 : 0, $isCorrDomain ? 1 : 0, 0]);
-                    } elseif ($r === 'loan_officer') {
-                        $isLoanDomain = ($m === 'asset_loans');
-                        $ins->execute([$r, $m, 1, $isLoanDomain ? 1 : 0, $isLoanDomain ? 1 : 0, 0]);
-                    }
+                    $def = function_exists('get_default_role_regulation')
+                        ? get_default_role_regulation($r, $m)
+                        : ['view' => 1, 'create' => ($r === 'admin' ? 1 : 0), 'edit' => ($r === 'admin' ? 1 : 0), 'delete' => ($r === 'admin' ? 1 : 0)];
+                    $ins->execute([
+                        $r,
+                        $m,
+                        (int)($def['view'] ?? 0),
+                        (int)($def['create'] ?? 0),
+                        (int)($def['edit'] ?? 0),
+                        (int)($def['delete'] ?? 0),
+                    ]);
                 }
             }
         }

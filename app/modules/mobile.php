@@ -2,6 +2,24 @@
 
 declare(strict_types=1);
 
+/**
+ * ============================================================================
+ * MODUL MOBILE PREVENTIVE MAINTENANCE (ANTARMUKA TEKNISI LAPANGAN)
+ * ============================================================================
+ * File: app/modules/mobile.php
+ *
+ * Mengelola seluruh alur pengerjaan Preventive Maintenance melalui perangkat mobile:
+ * 1. Dashboard & Daftar Jadwal Teknisi (`handle_route_mobile_dashboard` & `handle_route_mobile_job`).
+ * 2. Scan QR & Validasi Geolocation (`handle_route_mobile_scan`):
+ *    - Memverifikasi kesesuaian QR unit aset/bundle dan radius koordinat GPS lokasi unit.
+ * 3. Eksekusi Pengerjaan & Upload Foto (`handle_route_mobile_maintenance_do`):
+ *    - Tahap "Ambil Foto Sebelum" (`save_before_photo`) dilengkapi indikator Progress Bar & Persentase
+ *      Real-Time (`0%` - `100%`) via `XMLHttpRequest` (`xhr.upload.onprogress`) untuk memantau status upload
+ *      dan tahapan verifikasi AI Challenge Code agar pengguna tahu proses berjalan (tidak hang).
+ *    - Tahap Checklist Pekerjaan & "Ambil Foto Sesudah" (`complete_with_after_photo`) disertai perhitungan
+ *      durasi pengerjaan real-time dan penguncian laporan (`locked_at`).
+ */
+
 function schedule_has_event(PDO $pdo, int $scheduleId, string $eventType): bool
 {
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM maintenance_timeline WHERE schedule_id=? AND event_type=?');

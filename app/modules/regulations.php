@@ -3,9 +3,15 @@
 declare(strict_types=1);
 
 /**
- * Modul Setup Regulasi Hak Akses Per Role & Pengaturan Urutan Menu Side Slider
- * Mengontrol izin Lihat (View), Tambah (Create), Edit, dan Hapus (Remove)
- * serta mengontrol urutan tampilan menu navigasi sidebar (side slider).
+ * Modul Setup Regulasi Hak Akses Per Role & Pengaturan Urutan Menu Side Slider (`?route=setup_regulations`).
+ *
+ * [PROSES & TROUBLESHOOT]:
+ * 1. Mengontrol izin Lihat (View / Read-Only), Tambah (Create), Ubah (Edit), dan Hapus/Batal (Delete/Cancel)
+ *    untuk seluruh modul terbaru (Transaksi Aset, Maintenance Aset, Reports, Data Master, Pengaturan & Setup).
+ * 2. Mengontrol waktu Auto Sign-Out (Idle Timeout) per role melalui tabel `role_settings`.
+ * 3. Mengontrol urutan tampilan kelompok (accordion) dan sub-menu pada side slider (`system_menu_orders`).
+ * 4. Jika tombol "Reset Regulasi ke Default" ditekan (`action=reset_default`), sistem menghapus konfigurasi
+ *    role terkait dari `role_regulations` lalu mengisi ulang nilai bawaan via `get_default_role_regulation()`.
  */
 function handle_route_setup_regulations(PDO $pdo): void
 {
@@ -54,9 +60,26 @@ function handle_route_setup_regulations(PDO $pdo): void
             try {
                 $pdo->prepare('DELETE FROM role_regulations WHERE role = ?')->execute([$selectedRole]);
                 $pdo->prepare('INSERT INTO role_settings (role, idle_timeout_minutes, updated_at) VALUES (?, 60, NOW()) ON DUPLICATE KEY UPDATE idle_timeout_minutes = 60, updated_at = NOW()')->execute([$selectedRole]);
-                ensure_role_regulations_schema($pdo);
+                if (function_exists('get_default_role_regulation')) {
+                    $stmtReIns = $pdo->prepare('INSERT IGNORE INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
+                    foreach ($menus as $grp => $grpItems) {
+                        foreach ($grpItems as $mKey => $mLbl) {
+                            $def = get_default_role_regulation($selectedRole, $mKey);
+                            $stmtReIns->execute([
+                                $selectedRole,
+                                $mKey,
+                                (int)($def['view'] ?? 0),
+                                (int)($def['create'] ?? 0),
+                                (int)($def['edit'] ?? 0),
+                                (int)($def['delete'] ?? 0),
+                            ]);
+                        }
+                    }
+                } else {
+                    ensure_role_regulations_schema($pdo);
+                }
                 clear_role_regulations_cache();
-                flash('Regulasi hak akses dan waktu auto sign-out untuk role ' . e($roles[$selectedRole]) . ' berhasil direset ke pengaturan bawaan (60 menit).');
+                flash('Regulasi hak akses dan waktu auto sign-out untuk role ' . e($roles[$selectedRole]) . ' berhasil direset ke pengaturan bawaan terbaru (60 menit).');
             } catch (Throwable $e) {
                 flash('Gagal mereset regulasi: ' . $e->getMessage(), 'err');
             }
@@ -331,6 +354,17 @@ function handle_route_setup_regulations(PDO $pdo): void
                     <?php endif; ?>
                 </div>
 
+                <?php $menuDescriptions = function_exists('get_regulated_menu_descriptions') ? get_regulated_menu_descriptions() : []; ?>
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:12.5px;color:#1e3a8a;line-height:1.5;">
+                    <div style="font-weight:700;color:#1e40af;margin-bottom:4px;">📌 Panduan Cakupan Regulasi Hak Akses (Update Sistem Terakhir):</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 16px;">
+                        <div>• <strong>Lihat (View):</strong> Membuka menu/tabel, mengurutkan kolom (sort), export laporan, serta membuka <strong>Mode View Detail (Read-Only)</strong> pada Daftar Unit Aset tanpa merubah data.</div>
+                        <div>• <strong>Tambah (Create):</strong> Menambah data baru (Unit Aset + Import PC, Schedule Preventive Maintenance, Tiket Aset Corrective, Peminjaman, Mutasi, Data Master, + Tambah User).</div>
+                        <div>• <strong>Ubah (Edit):</strong> Mengubah data eksisting, mengeksekusi pengerjaan Preventive/Corrective (termasuk upload foto progres %), mengelola anggota bundle, dan serah-terima pinjaman.</div>
+                        <div>• <strong>Hapus / Batal (Delete):</strong> Menghapus/restore unit aset, membatalkan jadwal Preventive Maintenance, membatalkan tiket Corrective, atau menghapus item master.</div>
+                    </div>
+                </div>
+
                 <?php foreach ($menus as $groupName => $groupMenus): ?>
                     <div style="margin-top:24px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
                         <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;background:#f1f5f9;padding:4px 12px;border-radius:6px;">
@@ -354,16 +388,23 @@ function handle_route_setup_regulations(PDO $pdo): void
                                 <?php foreach ($groupMenus as $mKey => $mLabel): ?>
                                     <?php
                                     $rRow = $curData[$mKey] ?? null;
-                                    $canView = $selectedRole === 'admin' ? 1 : (!empty($rRow['can_view']) ? 1 : 0);
-                                    $canCreate = $selectedRole === 'admin' ? 1 : (!empty($rRow['can_create']) ? 1 : 0);
-                                    $canEdit = $selectedRole === 'admin' ? 1 : (!empty($rRow['can_edit']) ? 1 : 0);
-                                    $canDelete = $selectedRole === 'admin' ? 1 : (!empty($rRow['can_delete']) ? 1 : 0);
+                                    $defReg = function_exists('get_default_role_regulation')
+                                        ? get_default_role_regulation($selectedRole, $mKey)
+                                        : ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
+                                    $canView = $selectedRole === 'admin' ? 1 : ($rRow !== null ? (!empty($rRow['can_view']) ? 1 : 0) : (int)($defReg['view'] ?? 0));
+                                    $canCreate = $selectedRole === 'admin' ? 1 : ($rRow !== null ? (!empty($rRow['can_create']) ? 1 : 0) : (int)($defReg['create'] ?? 0));
+                                    $canEdit = $selectedRole === 'admin' ? 1 : ($rRow !== null ? (!empty($rRow['can_edit']) ? 1 : 0) : (int)($defReg['edit'] ?? 0));
+                                    $canDelete = $selectedRole === 'admin' ? 1 : ($rRow !== null ? (!empty($rRow['can_delete']) ? 1 : 0) : (int)($defReg['delete'] ?? 0));
                                     $isDisabled = $selectedRole === 'admin' ? 'disabled' : '';
+                                    $mDesc = $menuDescriptions[$mKey] ?? '';
                                     ?>
                                     <tr>
                                         <td>
                                             <strong><?= e($mLabel) ?></strong>
-                                            <div style="font-size:11px;color:#64748b;font-family:Consolas,monospace;">key: <?= e($mKey) ?></div>
+                                            <?php if ($mDesc !== ''): ?>
+                                                <div style="font-size:12px;color:#475569;margin-top:2px;line-height:1.35;"><?= e($mDesc) ?></div>
+                                            <?php endif; ?>
+                                            <div style="font-size:11px;color:#94a3b8;font-family:Consolas,monospace;margin-top:2px;">key: <?= e($mKey) ?></div>
                                         </td>
                                         <td style="text-align:center;">
                                             <input type="checkbox" name="reg[<?= e($mKey) ?>][view]" value="1" <?= $canView ? 'checked' : '' ?> <?= $isDisabled ?> class="chk-col-view chk-row-<?= e($mKey) ?>">

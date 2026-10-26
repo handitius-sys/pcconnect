@@ -252,6 +252,14 @@ function can_manage_maintenance(?array $user): bool
     return in_array(($user['role'] ?? ''), ['admin', 'maintenance_admin'], true);
 }
 
+/**
+ * Mengembalikan daftar seluruh menu/modul yang diatur dalam Matriks Regulasi Hak Akses.
+ *
+ * [PROSES & TROUBLESHOOT]:
+ * - Urutan kelompok dan nama modul diselaraskan penuh dengan struktur navigasi terbaru (`get_default_sidebar_structure()`).
+ * - Jika menambah menu baru di sidebar yang memerlukan kontrol hak akses (View/Create/Edit/Delete),
+ *   daftarkan `menu_key` di sini serta tentukan nilai default per role pada `get_default_role_regulation()`.
+ */
 function get_regulated_menus(): array
 {
     return [
@@ -274,25 +282,133 @@ function get_regulated_menus(): array
         ],
         'Data Master' => [
             'pcs' => 'Pendataan PC',
-            'printers' => 'Pendataan Printer',
             'asset_groups' => 'Master Komoditas',
+            'corrective_workshops' => 'Master Bengkel / Workshop',
             'asset_types' => 'Master Kategori',
             'jobs' => 'Master Jobdesk PM',
             'corrective_job_desks' => 'Master Jobdesk Corrective',
             'asset_brands' => 'Master Brand / Merk',
-            'asset_master_items' => 'Master Barang (Katalog Model)',
+            'asset_master_items' => 'Master Barang',
             'asset_identifiers' => 'Identifier Aset',
             'asset_specifications' => 'Spesifikasi Aset',
             'asset_locations' => 'Master Lokasi',
             'asset_companies' => 'Company',
             'master_pengguna' => 'Master Pengguna',
-            'corrective_workshops' => 'Master Bengkel / Workshop',
         ],
         'Pengaturan & Setup' => [
             'labels' => 'QR Label Unit',
             'users' => 'Akses Users',
         ]
     ];
+}
+
+/**
+ * Mengembalikan deskripsi cakupan fungsi (View, Create, Edit, Delete) untuk setiap menu di Regulasi Hak Akses.
+ */
+function get_regulated_menu_descriptions(): array
+{
+    return [
+        'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
+        'asset_loans' => 'Lihat daftar peminjaman aset, pengajuan pinjam aset baru, proses serah terima & pengembalian, batalkan pengajuan',
+        'asset_mutations' => 'Lihat riwayat mutasi unit aset, buat transaksi mutasi lokasi/pengguna/company, edit & batalkan mutasi',
+        'maintenance' => 'Lihat jadwal & block status Preventive Maintenance, tambah schedule maintenance, eksekusi/edit PM, batalkan/hapus jadwal',
+        'tickets' => 'Lihat tiket & block status Aset Corrective (filter Komoditas), buat laporan perbaikan, update progres/bengkel, batalkan/hapus tiket',
+        'mobile_service' => 'Akses antarmuka Mobile Field Service untuk pengerjaan Preventive & Corrective via perangkat mobile (termasuk upload foto progres %)',
+        'reports' => 'Lihat, urutkan (sort kolom), cetak PDF, dan export Excel pada Report Preventive Maintenance',
+        'corrective_repairs' => 'Lihat, urutkan (sort kolom), dan export Excel pada Report Corrective Maintenance',
+        'asset_movements' => 'Lihat, urutkan (sort kolom), dan pantau jejak pergerakan pada Report Mutasi Aset',
+        'report_asset_loans' => 'Lihat, urutkan (sort kolom), dan pantau riwayat pada Report Peminjaman Aset',
+        'report_asset_items' => 'Lihat, urutkan (sort kolom), dan rekapitulasi inventaris pada Report Unit Aset',
+        'pcs' => 'Lihat daftar telemetri Pendataan PC, tambah/import agen PC, update lokasi/spesifikasi PC, hapus data PC',
+        'asset_groups' => 'Kelola data Master Komoditas (Grup Aset seperti IT, Elektrikal, Mekanikal, dll.)',
+        'corrective_workshops' => 'Kelola data Master Bengkel / Workshop tujuan perbaikan eksternal maupun internal',
+        'asset_types' => 'Kelola data Master Kategori (Tipe Aset di bawah Komoditas beserta kode prefix unit)',
+        'jobs' => 'Kelola daftar checklist & template Master Jobdesk Preventive Maintenance (PM)',
+        'corrective_job_desks' => 'Kelola daftar tindakan & kategori pekerjaan pada Master Jobdesk Corrective',
+        'asset_brands' => 'Kelola daftar Master Brand / Merk perangkat & aset',
+        'asset_master_items' => 'Kelola Daftar Master Barang (katalog standar tipe/model barang beserta spesifikasi dasar)',
+        'asset_identifiers' => 'Kelola atribut Identifier Aset (Serial Number, MAC Address, Hostname, No. Polisi, dll.) per kategori',
+        'asset_specifications' => 'Kelola atribut Spesifikasi Aset (Processor, RAM, Storage, Kapasitas, dll.) per kategori',
+        'asset_locations' => 'Kelola daftar Master Lokasi penempatan aset (gedung, lantai, ruangan, cabang)',
+        'asset_companies' => 'Kelola entitas perusahaan (Company) pemilik/pengguna aset',
+        'master_pengguna' => 'Kelola direktori Master Pengguna (Karyawan/Custodian) serta konfigurasi sinkronisasi database eksternal',
+        'labels' => 'Lihat dan cetak stiker QR Label Unit untuk penandaan fisik aset',
+        'users' => 'Lihat Daftar User, buka modal + Tambah User, ubah role/password user, serta hapus akun pengguna sistem',
+    ];
+}
+
+/**
+ * Mengembalikan matriks izin bawaan (default) untuk kombinasi `$role` dan `$menuKey`.
+ *
+ * [PROSES & TROUBLESHOOT]:
+ * Dipakai oleh:
+ * 1. `ensure_role_regulations_schema()` saat inisialisasi tabel / tambah modul baru / Reset Regulasi ke Default.
+ * 2. `has_regulation()` sebagai fallback apabila sebuah `menu_key` belum tersimpan di tabel `role_regulations`.
+ * 3. `handle_route_setup_regulations()` agar tampilan checkbox di halaman Regulasi Hak Akses selalu sinkron.
+ */
+function get_default_role_regulation(string $role, string $menuKey): array
+{
+    if ($role === 'admin') {
+        return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 1];
+    }
+
+    if ($role === 'maintenance_admin') {
+        $fullCrud = ['maintenance', 'tickets', 'jobs', 'corrective_job_desks', 'corrective_workshops'];
+        $createEditOnly = [
+            'asset_items', 'asset_loans', 'asset_mutations', 'mobile_service',
+            'pcs', 'asset_groups', 'asset_types', 'asset_brands', 'asset_master_items',
+            'asset_identifiers', 'asset_specifications', 'asset_locations', 'master_pengguna', 'labels'
+        ];
+        $viewOnly = [
+            'reports', 'corrective_repairs', 'asset_movements', 'report_asset_loans',
+            'report_asset_items', 'asset_companies'
+        ];
+        if (in_array($menuKey, $fullCrud, true)) {
+            return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 1];
+        }
+        if (in_array($menuKey, $createEditOnly, true)) {
+            return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 0];
+        }
+        if (in_array($menuKey, $viewOnly, true)) {
+            return ['view' => 1, 'create' => 0, 'edit' => 0, 'delete' => 0];
+        }
+        return ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
+    }
+
+    if ($role === 'technician') {
+        if (in_array($menuKey, ['maintenance', 'mobile_service'], true)) {
+            return ['view' => 1, 'create' => 0, 'edit' => 1, 'delete' => 0];
+        }
+        if ($menuKey === 'tickets') {
+            return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 0];
+        }
+        if (in_array($menuKey, ['asset_items', 'pcs', 'jobs', 'corrective_job_desks', 'reports', 'corrective_repairs', 'report_asset_items', 'labels'], true)) {
+            return ['view' => 1, 'create' => 0, 'edit' => 0, 'delete' => 0];
+        }
+        return ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
+    }
+
+    if ($role === 'corrective_maintenance') {
+        if (in_array($menuKey, ['tickets', 'mobile_service', 'corrective_job_desks', 'corrective_workshops'], true)) {
+            return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 0];
+        }
+        if (in_array($menuKey, ['asset_items', 'pcs', 'corrective_repairs', 'report_asset_items', 'labels'], true)) {
+            return ['view' => 1, 'create' => 0, 'edit' => 0, 'delete' => 0];
+        }
+        return ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
+    }
+
+    if ($role === 'loan_officer') {
+        if (in_array($menuKey, ['asset_loans', 'asset_mutations'], true)) {
+            return ['view' => 1, 'create' => 1, 'edit' => 1, 'delete' => 0];
+        }
+        if (in_array($menuKey, ['asset_items', 'report_asset_loans', 'asset_movements', 'report_asset_items', 'master_pengguna', 'labels'], true)) {
+            return ['view' => 1, 'create' => 0, 'edit' => 0, 'delete' => 0];
+        }
+        return ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
+    }
+
+    return ['view' => 0, 'create' => 0, 'edit' => 0, 'delete' => 0];
 }
 
 function get_default_sidebar_structure(): array
@@ -537,6 +653,15 @@ function get_role_idle_timeout_seconds(?string $role, ?PDO $pdo = null): int
     return get_role_idle_timeout_minutes($role, $pdo) * 60;
 }
 
+/**
+ * Memeriksa apakah pengguna saat ini memiliki izin untuk melakukan `$action` (`view`, `create`, `edit`, `delete`)
+ * pada modul `$menuKey`.
+ *
+ * [PROSES & TROUBLESHOOT]:
+ * 1. Role `admin` selalu memiliki akses penuh (`true`).
+ * 2. Mengecek pengaturan di tabel `role_regulations` (via `get_user_regulations($role)`).
+ * 3. Jika `menu_key` belum ada di database, menggunakan aturan bawaan `get_default_role_regulation($role, $menuKey)`.
+ */
 function has_regulation(string $menuKey, string $action = 'view', ?array $user = null): bool
 {
     if ($user === null) {
@@ -551,24 +676,8 @@ function has_regulation(string $menuKey, string $action = 'view', ?array $user =
     }
     $regs = get_user_regulations($role);
     if (!isset($regs[$menuKey])) {
-        if ($role === 'maintenance_admin') {
-            if (in_array($menuKey, ['maintenance', 'asset_items', 'tickets', 'asset_loans', 'asset_movements', 'asset_mutations', 'jobs', 'corrective_job_desks', 'mobile_service'], true)) {
-                return true;
-            }
-        } elseif ($role === 'technician') {
-            if (in_array($menuKey, ['maintenance', 'tickets', 'jobs', 'corrective_job_desks', 'mobile_service'], true) && in_array($action, ['view', 'edit'], true)) {
-                return true;
-            }
-        } elseif ($role === 'corrective_maintenance') {
-            if (in_array($menuKey, ['tickets', 'corrective_job_desks', 'mobile_service'], true)) {
-                return true;
-            }
-        } elseif ($role === 'loan_officer') {
-            if ($menuKey === 'asset_loans') {
-                return true;
-            }
-        }
-        return false;
+        $def = get_default_role_regulation($role, $menuKey);
+        return !empty($def[$action]);
     }
     return !empty($regs[$menuKey][$action]);
 }
