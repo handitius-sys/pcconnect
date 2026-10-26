@@ -634,20 +634,14 @@ function asset_master_item_form_html(PDO $pdo, array $i, bool $editing, bool $vi
     }
 
     if ($viewOnly) {
-        $canEditBtn = (has_regulation('asset_items', 'edit') && strtolower((string)($i['status'] ?? 'active')) !== 'deleted')
-            ? '<a class="btn primary" href="' . route_url('asset_item_form', ['id' => (int)$i['id']]) . '" style="font-weight:600;">✏️ Beralih ke Mode Edit</a>'
-            : '';
         $bundleBanner = '<div style="background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1;padding:14px 18px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">'
             . '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:24px;line-height:1;">👁️</span><div><strong style="font-size:14px;color:#0c4a6e;">Mode Lihat Detail Unit Aset (Hanya Lihat / Read-Only)</strong><br><span style="font-size:12.5px;color:#0369a1;">Halaman ini hanya untuk melihat informasi rincian, spesifikasi, dan riwayat unit aset tanpa merubah data.</span></div></div>'
-            . '<div style="display:flex;gap:8px;align-items:center;">' . $canEditBtn . '<a class="btn" href="' . route_url('asset_items') . '">← Kembali ke Daftar Unit Aset</a></div>'
+            . '<div style="display:flex;gap:8px;align-items:center;"><a class="btn" href="' . route_url('asset_items') . '">← Kembali ke Daftar Unit Aset</a></div>'
             . '</div>';
     }
 
     if ($viewOnly) {
-        $cancelBtn = '<a class="btn" href="' . route_url('asset_items') . '">← Kembali ke Daftar Unit Aset</a>'
-            . (has_regulation('asset_items', 'edit') && strtolower((string)($i['status'] ?? 'active')) !== 'deleted'
-                ? '<a class="btn primary" href="' . route_url('asset_item_form', ['id' => (int)$i['id']]) . '">✏️ Edit Unit Aset</a>'
-                : '');
+        $cancelBtn = '<a class="btn" href="' . route_url('asset_items') . '">← Kembali ke Daftar Unit Aset</a>';
     } elseif ($parentId > 0) {
         $cancelBtn = '<a class="btn" href="' . route_url('asset_item_form', ['id' => $parentId]) . '">Batal / Kembali ke Bundle</a><button class="btn primary">Simpan & Masukkan ke Bundle</button>';
     } else {
