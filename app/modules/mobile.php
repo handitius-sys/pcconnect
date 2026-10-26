@@ -659,19 +659,36 @@ function mobile_job(PDO $pdo): void
         $action = (string)($_POST['action'] ?? 'complete_job');
 
         if ($action === 'save_before') {
+            $isAjax = !empty($_POST['is_ajax']) || strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+            $targetJobUrl = route_url('mobile_job', ['id' => $id]);
             if ($locked) {
+                if ($isAjax) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['ok' => false, 'error' => 'Report sudah locked.', 'redirect' => $targetJobUrl]);
+                    exit;
+                }
                 flash('Report sudah locked.', 'err');
                 redirect_to('mobile_job', ['id' => $id]);
             }
             $uploadMeta = [];
             $before = save_uploaded_photos('before_photos', $id, 'before', $uploadMeta);
             if (empty($before)) {
+                if ($isAjax) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['ok' => false, 'error' => 'Foto sebelum wajib diambil dari kamera langsung.']);
+                    exit;
+                }
                 flash('Foto sebelum wajib diambil dari kamera langsung.', 'err');
                 redirect_to('mobile_job', ['id' => $id]);
             }
             $photoAuditMeta = build_photo_audit_meta($pdo, $id, $uploadMeta, (string)($_POST['photo_evidence_meta'] ?? ''));
             $locationError = photo_evidence_location_error($photoAuditMeta);
             if ($locationError !== null) {
+                if ($isAjax) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['ok' => false, 'error' => $locationError]);
+                    exit;
+                }
                 flash($locationError, 'err');
                 redirect_to('mobile_job', ['id' => $id]);
             }
@@ -695,6 +712,11 @@ function mobile_job(PDO $pdo): void
             $aiNote = !empty($aiAudit['note']) ? ' [AI: ' . $aiAudit['note'] . ']' : '';
             add_timeline($pdo, $id, 'before_photo_saved', 'Foto sebelum berhasil disimpan pada ' . $nowStr . '. Kode challenge: ' . $challengeCode . $aiNote . '. Teknisi mulai pengerjaan checklist.', (int)$user['id']);
             flash('Foto sebelum berhasil disimpan. Checklist job desk kini dapat dipilih dan dikerjakan.');
+            if ($isAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['ok' => true, 'message' => 'Foto sebelum berhasil disimpan.', 'redirect' => $targetJobUrl]);
+                exit;
+            }
             redirect_to('mobile_job', ['id' => $id]);
         }
 
@@ -862,9 +884,11 @@ function mobile_job(PDO $pdo): void
             . '<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#1e40af;line-height:1.45;">'
             . '📌 <strong>Petunjuk Foto:</strong> Dekatkan potongan kertas putih kecil (± 4 cm x 1 cm) berisi kode <strong style="color:#b45309;">' . e($challengeCode) . '</strong> dengan stiker QR Code label berserta terlihat fisik unitnya.'
             . '</div>'
-            . '<form id="beforePhotoForm" method="post" enctype="multipart/form-data" onsubmit="try{localStorage.setItem(\'pcconnect_before_' . (int)$id . '\', Date.now().toString());}catch(e){}">'
+            . '<form id="beforePhotoForm" method="post" action="' . route_url('mobile_job', ['id' => $id]) . '" enctype="multipart/form-data" onsubmit="try{localStorage.setItem(\'pcconnect_before_' . (int)$id . '\', Date.now().toString());}catch(e){}">'
             . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+            . '<input type="hidden" name="id" value="' . (int)$id . '">'
             . '<input type="hidden" name="action" value="save_before">'
+            . '<input type="hidden" name="is_ajax" value="1">'
             . '<input type="hidden" id="photoEvidenceMeta" name="photo_evidence_meta" value="">'
             . '<p id="photoCompressStatus" class="camera-note">Gunakan kamera langsung di lokasi unit aset.</p>'
             . '<label>Foto Sebelum (Kamera Langsung)<input class="photo-input" data-photo-group="before" data-photo-slot="1" type="file" name="before_photos[]" accept="image/*" capture="environment" required></label>'
@@ -903,8 +927,9 @@ function mobile_job(PDO $pdo): void
         }
 
         echo '<section class="panel ' . ($locked ? 'readonly' : '') . '"><h2>Checklist Job Desk</h2>'
-            . '<form id="jobForm" method="post" enctype="multipart/form-data">'
+            . '<form id="jobForm" method="post" action="' . route_url('mobile_job', ['id' => $id]) . '" enctype="multipart/form-data">'
             . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
+            . '<input type="hidden" name="id" value="' . (int)$id . '">'
             . '<input type="hidden" name="action" value="complete_job">'
             . '<input type="hidden" id="photoEvidenceMeta" name="photo_evidence_meta" value="">'
             . '<input type="hidden" id="durationConfirmed" name="duration_confirmed" value="0">'
@@ -1052,7 +1077,9 @@ function mobile_job(PDO $pdo): void
     echo 'var fd=new FormData(beforeForm);';
     echo 'var xhr=new XMLHttpRequest();';
     echo 'var serverTimer=null,serverSec=0,curSimPct=75;';
-    echo 'xhr.open("POST",beforeForm.action||window.location.href,true);';
+    echo 'var postUrl=beforeForm.getAttribute("action")||window.location.href;';
+    echo 'xhr.open("POST",postUrl,true);';
+    echo 'xhr.setRequestHeader("X-Requested-With","XMLHttpRequest");';
     echo 'xhr.upload.onprogress=function(ev){';
     echo 'if(ev.lengthComputable&&ev.total>0){';
     echo 'var rawPct=Math.round((ev.loaded/ev.total)*100);';
@@ -1074,10 +1101,16 @@ function mobile_job(PDO $pdo): void
     echo '};';
     echo 'xhr.onload=function(){';
     echo 'if(serverTimer){clearInterval(serverTimer);serverTimer=null;}';
+    echo 'var res=null;try{res=JSON.parse(xhr.responseText);}catch(ex){}';
+    echo 'if(res&&res.ok===false){';
+    echo 'setProgress(100,"❌ "+(res.error||"Gagal menyimpan foto sebelum"),"Silakan periksa kembali lalu klik tombol Simpan.",false,true);';
+    echo 'if(btn){btn.disabled=false;btn.textContent=origTxt;}';
+    echo 'return;';
+    echo '}';
     echo 'if(xhr.status>=200&&xhr.status<400){';
     echo 'setProgress(100,"✅ Foto Sebelum Berhasil Diproses (100%)!","Membuka halaman checklist pengerjaan...",true,false);';
     echo 'if(btn)btn.textContent="✅ Selesai (100%) - Memuat...";';
-    echo 'var targetUrl=xhr.responseURL||window.location.href;';
+    echo 'var targetUrl=(res&&res.redirect)?res.redirect:((xhr.responseURL&&xhr.responseURL.indexOf("[object")===-1)?xhr.responseURL:postUrl);';
     echo 'window.location.href=targetUrl;';
     echo '}else{';
     echo 'setProgress(100,"❌ Gagal menyimpan ke server (HTTP "+xhr.status+")","Silakan klik tombol Simpan untuk mencoba lagi.",false,true);';
