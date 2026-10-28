@@ -238,6 +238,8 @@ function handle_route_asset_legacy_import(PDO $pdo): void
     // 3. Upload File & Proses Preview dengan AI / Smart Heuristic (Step 2)
     if ($action === 'upload_preview' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
+        @set_time_limit(180);
+        @ini_set('memory_limit', '512M');
 
         $groupId = (int)($_POST['asset_group_id'] ?? 0);
         $typeId = (int)($_POST['asset_type_id'] ?? 0);
@@ -322,6 +324,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
 
         $dataRows = array_slice($rows, 1);
         $previewList = [];
+        $checkAliasStmt = $pdo->prepare("SELECT id, asset_code FROM asset_items WHERE alias_code = ? LIMIT 1");
 
         foreach ($dataRows as $r) {
             $rawNo = trim((string)($r[$colNo] ?? ''));
@@ -347,9 +350,8 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             $isDuplicate = false;
             $dupAssetCode = '';
             if ($legacyCode !== '') {
-                $cStmt = $pdo->prepare("SELECT id, asset_code FROM asset_items WHERE alias_code = ? LIMIT 1");
-                $cStmt->execute([$legacyCode]);
-                $dup = $cStmt->fetch(PDO::FETCH_ASSOC);
+                $checkAliasStmt->execute([$legacyCode]);
+                $dup = $checkAliasStmt->fetch(PDO::FETCH_ASSOC);
                 if ($dup) {
                     $isDuplicate = true;
                     $dupAssetCode = $dup['asset_code'];
@@ -502,6 +504,10 @@ function read_uploaded_spreadsheet_rows(string $filePath, string $ext): array
                             $colIdx = $maxCol;
                         }
 
+                        if ($colIdx > 40) {
+                            continue; // Batasi kolom maksimal 40 agar tidak memakan memori berlebih
+                        }
+
                         $val = isset($cell->v) ? (string)$cell->v : '';
                         $type = (string)$cell['t'];
                         if ($type === 's' && isset($sharedStrings[(int)$val])) {
@@ -511,13 +517,14 @@ function read_uploaded_spreadsheet_rows(string $filePath, string $ext): array
                         }
                         $rowMap[$colIdx] = trim($val);
                         if ($colIdx > $maxCol) {
-                            $maxCol = $colIdx;
+                            $maxCol = min($colIdx, 40);
                         }
                     }
 
                     if (!empty($rowMap)) {
                         $row = [];
-                        for ($c = 0; $c <= $maxCol; $c++) {
+                        $limitCol = min($maxCol, 40);
+                        for ($c = 0; $c <= $limitCol; $c++) {
                             $row[$c] = $rowMap[$c] ?? '';
                         }
                         if (!empty(array_filter($row, fn($v) => $v !== ''))) {
@@ -577,6 +584,12 @@ function extract_legacy_code_and_date(string $rawNo): array
  */
 function resolve_or_create_asset_location(PDO $pdo, string $ruko, string $lantai, string $ruangan, ?int $defaultLocId = null, bool $dryRun = false): array
 {
+    static $locCache = [];
+    $cacheKey = $ruko . '|' . $lantai . '|' . $ruangan . '|' . ($defaultLocId ?? 0) . '|' . ($dryRun ? 1 : 0);
+    if (isset($locCache[$cacheKey])) {
+        return $locCache[$cacheKey];
+    }
+
     $ruko = trim($ruko);
     $lantai = trim($lantai);
     $ruangan = trim($ruangan);
@@ -640,12 +653,14 @@ function resolve_or_create_asset_location(PDO $pdo, string $ruko, string $lantai
     }
     $locationLabel = implode(' - ', $detailParts);
 
-    return [
+    $res = [
         'location_id'    => $locationId,
         'location_name'  => $locationName,
         'location_label' => $locationLabel,
         'is_new'         => $isNew,
     ];
+    $locCache[$cacheKey] = $res;
+    return $res;
 }
 
 /**
@@ -663,86 +678,25 @@ function parse_asset_description_by_category(PDO $pdo, string $desc, string $leg
         'specs_map'     => [],
         'specs_summary' => '',
         'custodian_name'=> '',
-        'ai_method'     => 'Smart Rule Engine',
+        'ai_method'     => 'Smart Engine',
     ];
 
     if ($desc === '') {
         return $result;
     }
 
-    // 1. Coba panggil Gemini AI jika API key tersedia
-    $apiKey = trim((string)(config_value('gemini_api_key') ?: getenv('GEMINI_API_KEY') ?: ''));
-    if ($useAi && $apiKey !== '' && function_exists('curl_init')) {
-        try {
-            $prompt = "You are an IT and Facility asset management cataloging expert. The target asset commodity is '{$gCode}' and category type is '{$tCode}'.\n"
-                . "Extract structured asset properties from this legacy asset description text:\n"
-                . "Description: \"{$desc}\"\n"
-                . "Legacy Code: \"{$legacyCode}\"\n\n"
-                . "Extract and return ONLY a valid JSON object without markdown formatting:\n"
-                . "{\n"
-                . "  \"brand\": \"string (e.g. Sharp, Daikin, Lenovo, Dell, etc.)\",\n"
-                . "  \"model\": \"string (e.g. Split 1/2 PK, ThinkPad T480, OptiPlex 3080)\",\n"
-                . "  \"asset_name\": \"string (Clean descriptive asset title)\",\n"
-                . "  \"serial_number\": \"string or empty\",\n"
-                . "  \"mac_address\": \"string or empty\",\n"
-                . "  \"specs\": {\n"
-                . "    \"key\": \"value (e.g. capacity, processor, ram, storage, refrigerant, power_watt)\"\n"
-                . "  }\n"
-                . "}";
+    // SMART HEURISTIC & SEMANTIC ENGINE (Super cepat & tanpa network latency)
+    // ----------------------------------------------------------------------
 
-            $candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-            foreach ($candidateModels as $cMod) {
-                $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . urlencode($cMod) . ':generateContent?key=' . urlencode($apiKey);
-                $payload = json_encode([
-                    'contents' => [['parts' => [['text' => $prompt]]]],
-                    'generationConfig' => ['temperature' => 0.1, 'responseMimeType' => 'application/json']
-                ]);
-                $ch = curl_init($url);
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => $payload,
-                    CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                    CURLOPT_TIMEOUT => 8,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                ]);
-                $resp = curl_exec($ch);
-                $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
+    // Deteksi Brand Terkenal
+    $knownBrands = [
+        'Sharp', 'Daikin', 'Panasonic', 'Mitsubishi', 'LG', 'Gree', 'Samsung', 'AUX', 
+        'Changhong', 'Toshiba', 'Polytron', 'Haier', 'Aqua', 'Midea', 'TCL', 'Hisense', 
+        'Electrolux', 'Lenovo', 'Dell', 'HP', 'Asus', 'Acer', 'Apple', 'Epson', 'Canon', 
+        'Brother', 'Cisco', 'MikroTik', 'Ruijie', 'Ubiquiti', 'TP-Link', 'D-Link',
+        'Perkins', 'Cummins', 'Yanmar', 'Denyo', 'Toyota', 'Honda', 'Yamaha', 'Suzuki', 'Isuzu'
+    ];
 
-                if ($code === 200 && !empty($resp)) {
-                    $json = json_decode($resp, true);
-                    $rawText = $json['candidates'][0]['content']['parts'][0]['text'] ?? '';
-                    if ($rawText !== '') {
-                        $pJson = json_decode($rawText, true);
-                        if (is_array($pJson)) {
-                            $result['brand'] = trim((string)($pJson['brand'] ?? ''));
-                            $result['model'] = trim((string)($pJson['model'] ?? ''));
-                            $result['asset_name'] = trim((string)($pJson['asset_name'] ?? ''));
-                            $result['serial_number'] = trim((string)($pJson['serial_number'] ?? ''));
-                            $result['mac_address'] = trim((string)($pJson['mac_address'] ?? ''));
-                            $result['ai_method'] = 'Gemini AI (' . $cMod . ')';
-                            if (!empty($pJson['specs']) && is_array($pJson['specs'])) {
-                                $result['specs_map'] = $pJson['specs'];
-                                $specLines = [];
-                                foreach ($pJson['specs'] as $k => $v) {
-                                    if ($v) $specLines[] = ucfirst($k) . ': ' . $v;
-                                }
-                                $result['specs_summary'] = implode(' &bull; ', $specLines);
-                            }
-                            return $result;
-                        }
-                    }
-                }
-            }
-        } catch (Throwable $ignored) {}
-    }
-
-    // 2. SMART HEURISTIC REGEX ENGINE (Fallback otomatis sesuai Kategori)
-    // ------------------------------------------------------------------
-
-    // Deteksi Brand
-    $knownBrands = ['Sharp', 'Daikin', 'Panasonic', 'Mitsubishi', 'LG', 'Gree', 'Samsung', 'AUX', 'Changhong', 'Toshiba', 'Lenovo', 'Dell', 'HP', 'Asus', 'Acer', 'Apple', 'Epson', 'Canon', 'Brother', 'Perkins', 'Cummins', 'Yanmar', 'Toyota', 'Honda', 'Yamaha', 'Suzuki'];
     foreach ($knownBrands as $b) {
         if (preg_match('/\b' . preg_quote($b, '/') . '\b/i', $desc)) {
             $result['brand'] = $b;
@@ -750,7 +704,7 @@ function parse_asset_description_by_category(PDO $pdo, string $desc, string $leg
         }
     }
 
-    // Deteksi Serial Number
+    // Deteksi Serial Number (SN / S/N / Serial No / SN:)
     if (preg_match('/\b(?:S\/N|SN|Serial\s*(?:Number|No)?|Tag)\s*[:#]?\s*([A-Za-z0-9_-]{4,32})\b/i', $desc, $mSn)) {
         $result['serial_number'] = trim($mSn[1]);
     }
@@ -762,34 +716,47 @@ function parse_asset_description_by_category(PDO $pdo, string $desc, string $leg
 
     $specs = [];
 
-    // Jika Kategori AC / Pendingin (AC)
+    // JIKA KATEGORI AC / PENDINGIN (AC)
     if ($tCode === 'AC' || stripos($desc, 'AC') !== false) {
-        // Kapasitas (PK / BTU)
-        if (preg_match('/(\d+(?:\/\d+)?(?:\.\d+)?\s*(?:PK|pk|BTU|btu))/i', $desc, $mPk)) {
-            $specs['COOLING_CAP'] = strtoupper(trim($mPk[1]));
+        // Kapasitas Pendinginan (PK / BTU)
+        // Format: 1/2 PK, 3/4 PK, 1 PK, 1.5 PK, 1 1/2 PK, 2 PK, 2.5 PK, 3 PK, 5 PK, dst.
+        if (preg_match('/(\d+(?:\s*\/\s*\d+)?(?:\.\d+)?\s*(?:PK|pk|BTU|btu))/i', $desc, $mPk)) {
+            $specs['COOLING_CAP'] = strtoupper(trim(preg_replace('/\s+/', ' ', $mPk[1])));
             $result['model'] = $specs['COOLING_CAP'];
         }
-        // Jenis AC
-        if (preg_match('/\b(Split(?:\s*Wall)?|Cassette|Floor\s*Standing|Ducting|Portable)\b/i', $desc, $mType)) {
+
+        // Tipe AC
+        if (preg_match('/\b(Split(?:\s*Wall)?|Cassette|Floor\s*Standing|Ducting|Portable|Central|Window)\b/i', $desc, $mType)) {
             $specs['AC_TYPE'] = trim($mType[1]);
         } else {
             $specs['AC_TYPE'] = 'Split Wall';
         }
-        // Freon
-        if (preg_match('/\b(R32|R410A|R22|R290)\b/i', $desc, $mFreon)) {
+
+        // Jenis Freon / Refrigerant
+        if (preg_match('/\b(R32|R410A|R22|R290|R134a)\b/i', $desc, $mFreon)) {
             $specs['REFRIGERANT'] = strtoupper(trim($mFreon[1]));
         }
-        // Inverter
+
+        // Fitur Inverter
         if (stripos($desc, 'inverter') !== false) {
             $specs['INVERTER'] = 'Inverter';
+        } else {
+            $specs['INVERTER'] = 'Standard';
         }
-        // Watt
+
+        // Daya Listrik / Watt
         if (preg_match('/(\d+\s*(?:Watt|W))\b/i', $desc, $mWatt)) {
             $specs['POWER_WATT'] = trim($mWatt[1]);
         }
-        $result['asset_name'] = trim('AC ' . ($result['brand'] ?: '') . ' ' . ($result['model'] ?: ''));
+
+        // Nama Aset Rapi
+        $cleanNameParts = ['AC'];
+        if (!empty($result['brand'])) $cleanNameParts[] = $result['brand'];
+        if (!empty($specs['COOLING_CAP'])) $cleanNameParts[] = $specs['COOLING_CAP'];
+        if ($specs['INVERTER'] === 'Inverter') $cleanNameParts[] = 'Inverter';
+        $result['asset_name'] = implode(' ', $cleanNameParts);
     }
-    // Jika Kategori Komputer / Laptop (CMP / NBK)
+    // JIKA KATEGORI KOMPUTER / LAPTOP / SERVER (CMP / NBK / SRV)
     elseif (in_array($tCode, ['CMP', 'NBK', 'SRV'], true) || stripos($desc, 'core i') !== false || stripos($desc, 'ram') !== false) {
         if (preg_match('/\b(Intel\s+(?:Core\s+)?[iI][3579][\w-]*|Core\s+i[3579][\w-]*|Ryzen\s+[3579][\w-]*|Xeon[\w-]*|Celeron[\w-]*|Apple\s+M[1234][\w\s]*)\b/i', $desc, $mCpu)) {
             $specs['PROCESSOR'] = trim($mCpu[1]);
@@ -806,7 +773,20 @@ function parse_asset_description_by_category(PDO $pdo, string $desc, string $leg
         $prefix = ($tCode === 'NBK') ? 'Laptop' : 'PC';
         $result['asset_name'] = trim($prefix . ' ' . ($result['brand'] ?: '') . ' ' . ($result['model'] ?: ''));
     }
-    // Default Lainnya
+    // KATEGORI KENDARAAN / GENSET / MESIN (VEH / GEN / MAC)
+    elseif (in_array($tCode, ['VEH', 'GEN', 'MAC'], true) || stripos($desc, 'kva') !== false || stripos($desc, 'genset') !== false) {
+        if (preg_match('/(\d+\s*(?:KVA|kva|KW|kw))/i', $desc, $mKva)) {
+            $specs['POWER_CAP'] = strtoupper(trim($mKva[1]));
+        }
+        if (preg_match('/(\d+\s*cc)\b/i', $desc, $mCc)) {
+            $specs['ENGINE_CC'] = trim($mCc[1]);
+        }
+        if (preg_match('/\b(?:No\.?\s*(?:Rangka|Mesin|Polisi)|Plat)\s*[:#]?\s*([A-Za-z0-9\s]{4,15})\b/i', $desc, $mPlat)) {
+            $specs['NO_REG'] = trim($mPlat[1]);
+        }
+        $result['asset_name'] = trim(($result['brand'] ?: '') . ' ' . ($specs['POWER_CAP'] ?? ''));
+    }
+    // DEFAULT UMUM
     else {
         $result['asset_name'] = mb_strimwidth($desc, 0, 45, '...');
     }
