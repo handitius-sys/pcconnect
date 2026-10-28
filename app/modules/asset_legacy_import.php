@@ -411,6 +411,130 @@ function handle_route_asset_legacy_import(PDO $pdo): void
 }
 
 /**
+ * Membaca baris tabel dari file spreadsheet (.xlsx atau .csv) tanpa library eksternal.
+ */
+function read_uploaded_spreadsheet_rows(string $filePath, string $ext): array
+{
+    $rows = [];
+
+    if ($ext === 'csv' || $ext === 'txt') {
+        $handle = fopen($filePath, 'r');
+        if (!$handle) return [];
+
+        // Deteksi delimiter (koma atau titik koma)
+        $firstLine = fgets($handle);
+        rewind($handle);
+        $delimiter = (substr_count($firstLine ?: '', ';') > substr_count($firstLine ?: '', ',')) ? ';' : ',';
+
+        while (($data = fgetcsv($handle, 10000, $delimiter)) !== false) {
+            // Hilangkan BOM pada sel pertama jika ada
+            if (!empty($data[0])) {
+                $data[0] = preg_replace('/^\xEF\xBB\xBF/', '', $data[0]);
+            }
+            if (!empty(array_filter($data, fn($v) => trim((string)$v) !== ''))) {
+                $rows[] = array_map('trim', $data);
+            }
+        }
+        fclose($handle);
+        return $rows;
+    }
+
+    if ($ext === 'xlsx' && class_exists('ZipArchive')) {
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            return [];
+        }
+
+        // 1. Baca shared strings
+        $sharedStrings = [];
+        $sharedXmlStr = $zip->getFromName('xl/sharedStrings.xml');
+        if ($sharedXmlStr !== false) {
+            $xml = @simplexml_load_string($sharedXmlStr);
+            if ($xml) {
+                foreach ($xml->si as $si) {
+                    if (isset($si->t)) {
+                        $sharedStrings[] = (string)$si->t;
+                    } elseif (isset($si->r)) {
+                        $t = '';
+                        foreach ($si->r as $r) {
+                            $t .= (string)$r->t;
+                        }
+                        $sharedStrings[] = $t;
+                    } else {
+                        $sharedStrings[] = '';
+                    }
+                }
+            }
+        }
+
+        // 2. Baca sheet1.xml (atau sheet pertama yang ditemukan)
+        $sheetXmlStr = $zip->getFromName('xl/worksheets/sheet1.xml');
+        if ($sheetXmlStr === false) {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = $zip->getNameIndex($i);
+                if (preg_match('#xl/worksheets/sheet\d*\.xml#i', $name)) {
+                    $sheetXmlStr = $zip->getFromName($name);
+                    break;
+                }
+            }
+        }
+
+        if ($sheetXmlStr !== false) {
+            $sheetXml = @simplexml_load_string($sheetXmlStr);
+            if ($sheetXml && isset($sheetXml->sheetData->row)) {
+                foreach ($sheetXml->sheetData->row as $rowNode) {
+                    $rowMap = [];
+                    $maxCol = 0;
+                    foreach ($rowNode->c as $cell) {
+                        $cellRef = (string)$cell['r'];
+                        $colIdx = 0;
+                        if (!empty($cellRef)) {
+                            preg_match('/^([A-Z]+)/i', $cellRef, $matches);
+                            if (!empty($matches[1])) {
+                                $letters = strtoupper($matches[1]);
+                                $len = strlen($letters);
+                                for ($k = 0; $k < $len; $k++) {
+                                    $colIdx = $colIdx * 26 + (ord($letters[$k]) - ord('A') + 1);
+                                }
+                                $colIdx -= 1;
+                            }
+                        } else {
+                            $colIdx = $maxCol;
+                        }
+
+                        $val = isset($cell->v) ? (string)$cell->v : '';
+                        $type = (string)$cell['t'];
+                        if ($type === 's' && isset($sharedStrings[(int)$val])) {
+                            $val = $sharedStrings[(int)$val];
+                        } elseif ($type === 'inlineStr' && isset($cell->is->t)) {
+                            $val = (string)$cell->is->t;
+                        }
+                        $rowMap[$colIdx] = trim($val);
+                        if ($colIdx > $maxCol) {
+                            $maxCol = $colIdx;
+                        }
+                    }
+
+                    if (!empty($rowMap)) {
+                        $row = [];
+                        for ($c = 0; $c <= $maxCol; $c++) {
+                            $row[$c] = $rowMap[$c] ?? '';
+                        }
+                        if (!empty(array_filter($row, fn($v) => $v !== ''))) {
+                            $rows[] = $row;
+                        }
+                    }
+                }
+            }
+        }
+        $zip->close();
+        return $rows;
+    }
+
+    return $rows;
+}
+
+/**
  * Ekstraksi Tanggal Beli/Perolehan setelah tanda '/' dari kolom 'NO'.
  * Contoh input: '1 /21-2-2023' -> return ['1 /21-2-2023', '2023-02-21']
  */
