@@ -2780,7 +2780,7 @@ function ensure_role_regulations_schema(PDO $pdo): void
             }
         } else {
             $menus = [
-                'asset_items', 'asset_loans', 'asset_mutations',
+                'asset_items', 'asset_legacy_import', 'asset_loans', 'asset_mutations',
                 'maintenance', 'tickets', 'mobile_service',
                 'reports', 'corrective_repairs', 'asset_movements', 'report_asset_loans', 'report_asset_items',
                 'pcs', 'asset_groups', 'corrective_workshops', 'asset_types', 'jobs', 'corrective_job_desks',
@@ -2791,25 +2791,20 @@ function ensure_role_regulations_schema(PDO $pdo): void
         }
 
         $roles = ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer'];
-        $existingCount = (int)$pdo->query("SELECT COUNT(*) FROM role_regulations")->fetchColumn();
-        $expectedMinCount = count($roles) * count($menus);
-
-        if ($existingCount < $expectedMinCount) {
-            $ins = $pdo->prepare("INSERT IGNORE INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete) VALUES (?, ?, ?, ?, ?, ?)");
-            foreach ($roles as $r) {
-                foreach ($menus as $m) {
-                    $def = function_exists('get_default_role_regulation')
-                        ? get_default_role_regulation($r, $m)
-                        : ['view' => 1, 'create' => ($r === 'admin' ? 1 : 0), 'edit' => ($r === 'admin' ? 1 : 0), 'delete' => ($r === 'admin' ? 1 : 0)];
-                    $ins->execute([
-                        $r,
-                        $m,
-                        (int)($def['view'] ?? 0),
-                        (int)($def['create'] ?? 0),
-                        (int)($def['edit'] ?? 0),
-                        (int)($def['delete'] ?? 0),
-                    ]);
-                }
+        $ins = $pdo->prepare("INSERT IGNORE INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete) VALUES (?, ?, ?, ?, ?, ?)");
+        foreach ($roles as $r) {
+            foreach ($menus as $m) {
+                $def = function_exists('get_default_role_regulation')
+                    ? get_default_role_regulation($r, $m)
+                    : ['view' => 1, 'create' => ($r === 'admin' ? 1 : 0), 'edit' => ($r === 'admin' ? 1 : 0), 'delete' => ($r === 'admin' ? 1 : 0)];
+                $ins->execute([
+                    $r,
+                    $m,
+                    (int)($def['view'] ?? 0),
+                    (int)($def['create'] ?? 0),
+                    (int)($def['edit'] ?? 0),
+                    (int)($def['delete'] ?? 0),
+                ]);
             }
         }
     } catch (Throwable $ignored) {}

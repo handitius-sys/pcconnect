@@ -257,14 +257,20 @@ function can_manage_maintenance(?array $user): bool
  *
  * [PROSES & TROUBLESHOOT]:
  * - Urutan kelompok dan nama modul diselaraskan penuh dengan struktur navigasi terbaru (`get_default_sidebar_structure()`).
- * - Jika menambah menu baru di sidebar yang memerlukan kontrol hak akses (View/Create/Edit/Delete),
- *   daftarkan `menu_key` di sini serta tentukan nilai default per role pada `get_default_role_regulation()`.
+ * - Menyertakan seluruh modul transaksi dan pengelolaan aset terupdate:
+ *   1. Transaksi Aset: Unit Aset, Import Aset Legacy (Data Lama), Peminjaman Aset, Mutasi Aset.
+ *   2. Maintenance Aset: Preventive Maintenance, Aset Corrective, Mobile Field Service.
+ *   3. Reports: Report PM, Report Corrective, Report Mutasi, Report Peminjaman, Report Unit Aset.
+ *   4. Data Master: Pendataan PC, Komoditas, Bengkel/Workshop, Kategori, Jobdesk PM & Corrective, Brand, Master Barang, Identifier, Spesifikasi, Lokasi, Company, Pengguna.
+ *   5. Pengaturan: QR Label Unit, Akses Users.
+ * - Jika menambah modul baru, daftarkan `menu_key` di sini serta tentukan nilai default per role pada `get_default_role_regulation()`.
  */
 function get_regulated_menus(): array
 {
     return [
         'Transaksi Aset' => [
             'asset_items' => 'Unit Aset',
+            'asset_legacy_import' => 'Import Aset Legacy (Data Lama)',
             'asset_loans' => 'Peminjaman Aset',
             'asset_mutations' => 'Mutasi Aset',
         ],
@@ -304,23 +310,29 @@ function get_regulated_menus(): array
 
 /**
  * Mengembalikan deskripsi cakupan fungsi (View, Create, Edit, Delete) untuk setiap menu di Regulasi Hak Akses.
+ *
+ * [FITUR & CAKUPAN]:
+ * - Menjelaskan secara spesifik kemampuan View, Create, Edit, dan Delete untuk masing-masing modul.
+ * - Mencakup fitur terbaru seperti Pencarian Kode Baru & Kode Lama (Legacy Code / Alias), Mode Combobox interaktif,
+ *   Mode View Read-Only, Import Data Lama dengan AI / Heuristik Cerdas, dan antarmuka Mobile Field Service.
  */
 function get_regulated_menu_descriptions(): array
 {
     return [
-        'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
-        'asset_loans' => 'Lihat daftar peminjaman aset, pengajuan pinjam aset baru, proses serah terima & pengembalian, batalkan pengajuan',
-        'asset_mutations' => 'Lihat riwayat mutasi unit aset, buat transaksi mutasi lokasi/pengguna/company, edit & batalkan mutasi',
-        'maintenance' => 'Lihat jadwal & block status Preventive Maintenance, tambah schedule maintenance, eksekusi/edit PM, batalkan/hapus jadwal',
-        'tickets' => 'Lihat tiket & block status Aset Corrective (filter Komoditas), buat laporan perbaikan, update progres/bengkel, batalkan/hapus tiket',
-        'mobile_service' => 'Akses antarmuka Mobile Field Service untuk pengerjaan Preventive & Corrective via perangkat mobile (termasuk upload foto progres %)',
-        'reports' => 'Lihat, urutkan (sort kolom), cetak PDF, dan export Excel pada Report Preventive Maintenance',
-        'corrective_repairs' => 'Lihat, urutkan (sort kolom), dan export Excel pada Report Corrective Maintenance',
-        'asset_movements' => 'Lihat, urutkan (sort kolom), dan pantau jejak pergerakan pada Report Mutasi Aset',
-        'report_asset_loans' => 'Lihat, urutkan (sort kolom), dan pantau riwayat pada Report Peminjaman Aset',
-        'report_asset_items' => 'Lihat, urutkan (sort kolom), dan rekapitulasi inventaris pada Report Unit Aset',
+        'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), pencarian bebas (Kode Baru / Kode Lama / SN / PC / Custodian), combobox interaktif, tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
+        'asset_legacy_import' => 'Upload spreadsheet Excel/CSV data lama, ekstraksi kode & tanggal perolehan legacy, pemetaan otomatis AI / Smart heuristic (kategori, brand, spesifikasi, lokasi), verifikasi/edit sebelum import',
+        'asset_loans' => 'Lihat daftar peminjaman aset, buat pengajuan pinjam dengan pencarian kode baru/lama, proses serah terima & pengembalian, cetak bukti pinjam, batalkan pengajuan',
+        'asset_mutations' => 'Lihat riwayat mutasi unit aset, cari unit via kode baru/lama, buat transaksi mutasi lokasi/pengguna/company, edit & batalkan mutasi',
+        'maintenance' => 'Lihat jadwal & block status Preventive Maintenance, filter komoditas, cari kode baru/lama, tambah schedule maintenance, eksekusi/edit PM, batalkan/hapus jadwal',
+        'tickets' => 'Lihat tiket & block status Aset Corrective (filter Komoditas), cari unit via kode baru/lama, buat laporan perbaikan, update progres/bengkel, batalkan/hapus tiket',
+        'mobile_service' => 'Akses antarmuka Mobile Field Service (Direct Service & Scan QR) dengan pencarian kode baru/lama untuk teknisi lapangan, checklist PM & perbaikan tiket, upload foto progres %',
+        'reports' => 'Lihat, urutkan (sort kolom), cetak PDF, dan export Excel pada Report Preventive Maintenance dengan informasi Kode Baru dan Kode Lama (Legacy)',
+        'corrective_repairs' => 'Lihat, urutkan (sort kolom), dan export Excel pada Report Corrective Maintenance (Riwayat Reparasi & Penggantian Sparepart) dengan kolom Kode Aset dan Kode Lama (Legacy)',
+        'asset_movements' => 'Lihat, urutkan (sort kolom), dan pantau jejak pergerakan pada Report Mutasi Aset dengan kolom Kode Lama (Legacy)',
+        'report_asset_loans' => 'Lihat, urutkan (sort kolom), dan pantau riwayat pada Report Peminjaman Aset dengan kolom Kode Lama (Legacy)',
+        'report_asset_items' => 'Lihat, urutkan (sort kolom), dan rekapitulasi inventaris pada Report Unit Aset lengkap dengan kolom Kode Lama (Legacy)',
         'pcs' => 'Lihat daftar telemetri Pendataan PC, tambah/import agen PC, update lokasi/spesifikasi PC, hapus data PC',
-        'asset_groups' => 'Kelola data Master Komoditas (Grup Aset seperti IT, Elektrikal, Mekanikal, dll.)',
+        'asset_groups' => 'Kelola data Master Komoditas (Grup Aset seperti IT, Elektrikal, Mekanikal, Facility, dll.)',
         'corrective_workshops' => 'Kelola data Master Bengkel / Workshop tujuan perbaikan eksternal maupun internal',
         'asset_types' => 'Kelola data Master Kategori (Tipe Aset di bawah Komoditas beserta kode prefix unit)',
         'jobs' => 'Kelola daftar checklist & template Master Jobdesk Preventive Maintenance (PM)',
@@ -328,8 +340,8 @@ function get_regulated_menu_descriptions(): array
         'asset_brands' => 'Kelola daftar Master Brand / Merk perangkat & aset',
         'asset_master_items' => 'Kelola Daftar Master Barang (katalog standar tipe/model barang beserta spesifikasi dasar)',
         'asset_identifiers' => 'Kelola atribut Identifier Aset (Serial Number, MAC Address, Hostname, No. Polisi, dll.) per kategori',
-        'asset_specifications' => 'Kelola atribut Spesifikasi Aset (Processor, RAM, Storage, Kapasitas, dll.) per kategori',
-        'asset_locations' => 'Kelola daftar Master Lokasi penempatan aset (gedung, lantai, ruangan, cabang)',
+        'asset_specifications' => 'Kelola atribut Spesifikasi Aset (Processor, RAM, Storage, Kapasitas, PK, dll.) per kategori',
+        'asset_locations' => 'Kelola daftar Master Lokasi penempatan aset (gedung, ruko, lantai, ruangan, cabang)',
         'asset_companies' => 'Kelola entitas perusahaan (Company) pemilik/pengguna aset',
         'master_pengguna' => 'Kelola direktori Master Pengguna (Karyawan/Custodian) serta konfigurasi sinkronisasi database eksternal',
         'labels' => 'Lihat dan cetak stiker QR Label Unit untuk penandaan fisik aset',
@@ -355,7 +367,7 @@ function get_default_role_regulation(string $role, string $menuKey): array
     if ($role === 'maintenance_admin') {
         $fullCrud = ['maintenance', 'tickets', 'jobs', 'corrective_job_desks', 'corrective_workshops'];
         $createEditOnly = [
-            'asset_items', 'asset_loans', 'asset_mutations', 'mobile_service',
+            'asset_items', 'asset_legacy_import', 'asset_loans', 'asset_mutations', 'mobile_service',
             'pcs', 'asset_groups', 'asset_types', 'asset_brands', 'asset_master_items',
             'asset_identifiers', 'asset_specifications', 'asset_locations', 'master_pengguna', 'labels'
         ];
@@ -420,6 +432,7 @@ function get_default_sidebar_structure(): array
             'order' => 10,
             'items' => [
                 'asset_items' => ['label' => 'Unit Aset', 'icon' => 'box', 'order' => 10, 'reg' => 'asset_items'],
+                'asset_legacy_import' => ['label' => 'Import Aset Lama', 'icon' => 'box', 'order' => 15, 'reg' => 'asset_legacy_import'],
                 'asset_loans' => ['label' => 'Peminjaman Aset', 'icon' => 'loan', 'order' => 20, 'reg' => 'asset_loans'],
                 'asset_mutations' => ['label' => 'Mutasi Aset', 'icon' => 'move', 'order' => 30, 'reg' => 'asset_mutations'],
             ],

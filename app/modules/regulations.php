@@ -5,13 +5,18 @@ declare(strict_types=1);
 /**
  * Modul Setup Regulasi Hak Akses Per Role & Pengaturan Urutan Menu Side Slider (`?route=setup_regulations`).
  *
- * [PROSES & TROUBLESHOOT]:
- * 1. Mengontrol izin Lihat (View / Read-Only), Tambah (Create), Ubah (Edit), dan Hapus/Batal (Delete/Cancel)
- *    untuk seluruh modul terbaru (Transaksi Aset, Maintenance Aset, Reports, Data Master, Pengaturan & Setup).
+ * [PROSES & FITUR TERUPDATE]:
+ * 1. Mengontrol izin granular 4-Aksi: Lihat (View / Read-Only), Tambah (Create), Ubah (Edit), dan Hapus/Batal (Delete/Cancel)
+ *    untuk seluruh modul sistem AsetConnect:
+ *    - Transaksi Aset: Unit Aset, Import Aset Legacy (Data Lama), Peminjaman Aset, Mutasi Aset.
+ *    - Maintenance Aset: Preventive Maintenance, Aset Corrective, Mobile Field Service (Scan & Direct).
+ *    - Reports: Report PM, Report Corrective, Report Mutasi, Report Peminjaman, Report Unit Aset.
+ *    - Data Master: Pendataan PC, Komoditas, Bengkel/Workshop, Kategori, Jobdesk PM & Corrective, Brand, Master Barang, Identifier, Spesifikasi, Lokasi, Company, Pengguna.
+ *    - Pengaturan & Setup: QR Label Unit, Akses Users.
  * 2. Mengontrol waktu Auto Sign-Out (Idle Timeout) per role melalui tabel `role_settings`.
  * 3. Mengontrol urutan tampilan kelompok (accordion) dan sub-menu pada side slider (`system_menu_orders`).
- * 4. Jika tombol "Reset Regulasi ke Default" ditekan (`action=reset_default`), sistem menghapus konfigurasi
- *    role terkait dari `role_regulations` lalu mengisi ulang nilai bawaan via `get_default_role_regulation()`.
+ * 4. Mendukung Reset Regulasi ke Default (`action=reset_default`) yang menyinkronkan kembali izin ke nilai bawaan via `get_default_role_regulation()`.
+ * 5. Integrasi penuh dengan fitur pencarian Kode Baru & Kode Lama (Legacy Code / Alias) dan Mode Combobox interaktif.
  */
 function handle_route_setup_regulations(PDO $pdo): void
 {
@@ -355,13 +360,13 @@ function handle_route_setup_regulations(PDO $pdo): void
                 </div>
 
                 <?php $menuDescriptions = function_exists('get_regulated_menu_descriptions') ? get_regulated_menu_descriptions() : []; ?>
-                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:12.5px;color:#1e3a8a;line-height:1.5;">
-                    <div style="font-weight:700;color:#1e40af;margin-bottom:4px;">📌 Panduan Cakupan Regulasi Hak Akses (Update Sistem Terakhir):</div>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 16px;">
-                        <div>• <strong>Lihat (View):</strong> Membuka menu/tabel, mengurutkan kolom (sort), export laporan, serta membuka <strong>Mode View Detail (Read-Only)</strong> pada Daftar Unit Aset tanpa merubah data.</div>
-                        <div>• <strong>Tambah (Create):</strong> Menambah data baru (Unit Aset + Import PC, Schedule Preventive Maintenance, Tiket Aset Corrective, Peminjaman, Mutasi, Data Master, + Tambah User).</div>
-                        <div>• <strong>Ubah (Edit):</strong> Mengubah data eksisting, mengeksekusi pengerjaan Preventive/Corrective (termasuk upload foto progres %), mengelola anggota bundle, dan serah-terima pinjaman.</div>
-                        <div>• <strong>Hapus / Batal (Delete):</strong> Menghapus/restore unit aset, membatalkan jadwal Preventive Maintenance, membatalkan tiket Corrective, atau menghapus item master.</div>
+                <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:12.5px;color:#1e3a8a;line-height:1.55;">
+                    <div style="font-weight:700;color:#1e40af;margin-bottom:6px;font-size:13px;">📌 Panduan Cakupan Regulasi Hak Akses (Sistem AsetConnect Terupdate):</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px 18px;">
+                        <div>• <strong>Lihat (View):</strong> Membuka menu/tabel, pencarian autocomplete / combobox (Kode Baru & Kode Lama), pengurutan kolom (sort), export Excel & PDF, serta membuka <strong>Mode View Detail (Read-Only)</strong> pada Unit Aset tanpa merubah data.</div>
+                        <div>• <strong>Tambah (Create):</strong> Menambah unit aset baru, <strong>Import Data Aset Lama (Legacy)</strong> dengan AI / Smart Heuristic, buat Schedule PM, catat tiket perbaikan Corrective, buat transaksi Peminjaman & Mutasi, tambah data master, dan buat akun user.</div>
+                        <div>• <strong>Ubah (Edit):</strong> Mengubah data aset & spesifikasi, mengeksekusi pengerjaan Preventive/Corrective (termasuk pengerjaan via Mobile Field Service & upload foto progres %), kelola relasi bundle, verifikasi/edit baris import data lama, dan proses pengembalian pinjaman.</div>
+                        <div>• <strong>Hapus / Batal (Delete):</strong> Menghapus/restore unit aset, membatalkan jadwal Preventive Maintenance, membatalkan tiket Corrective, membatalkan transaksi mutasi/peminjaman, atau menghapus item master.</div>
                     </div>
                 </div>
 

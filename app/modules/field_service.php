@@ -213,7 +213,7 @@ function handle_route_mobile_service(PDO $pdo): void
             <p style="font-size:13px;color:#64748b;margin:10px 0;">Tidak ada tiket kerusakan yang menunggu.</p>
         <?php else: ?>
             <?php foreach ($recentTickets as $t): ?>
-                <div style="background:#fff;;border-radius:8px;padding:12px;margin-bottom:10px;">
+                <div style="background:#fff;border-radius:8px;padding:12px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
                             <span style="font-weight:700;color:#0284c7;font-size:14px;"><?= e($t['ticket_code']) ?></span>
@@ -241,8 +241,19 @@ function handle_route_mobile_service(PDO $pdo): void
 }
 
 /**
- * Modul Field Service: Scan Aset
- * Proses: Membuka antarmuka kamera/scanner barcode bagi teknisi untuk memindai aset di lapangan.
+ * Modul Field Service: Scan QR / Barcode & Input Unit Aset Lapangan
+ *
+ * [PROSES & FITUR]:
+ * 1. Antarmuka kamera live scan berbasis html5-qrcode untuk pemindaian instan di lapangan.
+ * 2. Pencarian interaktif combobox unit aset yang mendukung pencarian fleksibel:
+ *    - Kode Baru (asset_code)
+ *    - Kode Lama / Alias (alias_code / Legacy Code)
+ *    - Nama Barang / Model
+ *    - Serial Number (SN)
+ *    - Nama Pengguna / Custodian & Lokasi Penempatan
+ * 3. Logika Resolusi Otomatis:
+ *    - Jika unit memiliki tiket perbaikan aktif (open/in_progress/pending_part), langsung diarahkan ke detail tiket terkait.
+ *    - Jika belum ada tiket aktif, langsung diarahkan ke halaman pencatatan perbaikan langsung (Direct Service).
  */
 function handle_route_mobile_service_scan(PDO $pdo): void
 {
@@ -296,7 +307,7 @@ function handle_route_mobile_service_scan(PDO $pdo): void
         }
     }
 
-        $comboboxServiceAssets = [];
+    $comboboxServiceAssets = [];
     try {
         $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
                                                      COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
@@ -429,10 +440,16 @@ function handle_route_mobile_service_scan(PDO $pdo): void
 }
 
 /**
- * Modul Field Service: Buat Tiket Baru & Direct Action
- * Proses: Membuat tiket perbaikan corrective maintenance baru langsung dari perangkat mobile teknisi,
- *         lewat scan QR unit aset atau memasukkan ID / Kode unit aset (tanpa memilih Komoditas/Kategori/Unit dari dropdown).
- *         Dilengkapi dengan Foto Sebelum Perbaikan dan Foto Sesudah Perbaikan.
+ * Modul Field Service: Pencatatan Perbaikan Langsung (Direct Service) & Tiket Baru Mobile
+ *
+ * [PROSES & FITUR]:
+ * 1. Memungkinkan teknisi langsung mencatat perbaikan saat berada di hadapan unit fisik tanpa birokrasi dropdown bertingkat.
+ * 2. Input unit aset via combobox interaktif yang mendukung Kode Baru dan Kode Lama (Legacy Code).
+ * 3. Menyertakan dokumentasi visual lengkap:
+ *    - Foto Kondisi Sebelum Perbaikan
+ *    - Foto Hasil Sesudah Perbaikan
+ *    - Upload Kwitansi / Bukti Nota Biaya Sparepart
+ * 4. Mendukung penugasan langsung atau eksekusi tuntas (Resolved) dalam satu alur kerja mobile yang ringkas.
  */
 function handle_route_mobile_service_direct(PDO $pdo): void
 {
@@ -512,7 +529,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
 
     // JIKA UNIT BELUM DITENTUKAN: Tampilkan antarmuka Scan QR atau Masukkan ID / Kode Unit
     if (!$unit) {
-            $comboboxServiceAssets = [];
+        $comboboxServiceAssets = [];
     try {
         $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
                                                      COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
@@ -1173,7 +1190,7 @@ function handle_route_mobile_service_tasks(PDO $pdo): void
             <p style="font-size:14px;color:#10b981;text-align:center;padding:24px 0;">🎉 Luar biasa! Seluruh tiket kerusakan telah selesai ditangani.</p>
         <?php else: ?>
             <?php foreach ($tickets as $t): ?>
-                <div style="background:#fff;;border-radius:10px;padding:14px;margin-bottom:12px;">
+                <div style="background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>
                             <span style="font-weight:700;color:#0284c7;font-size:15px;"><?= e($t['ticket_code']) ?></span>
@@ -1308,7 +1325,7 @@ function handle_route_mobile_service_ticket(PDO $pdo): void
             </label>
 
             <!-- Penggantian Part -->
-            <div style="background:#fff;;border-radius:8px;padding:12px;margin:12px 0;">
+            <div style="background:#fff;border-radius:8px;padding:12px;margin:12px 0;">
                 <span style="font-weight:700;font-size:13px;color:#0284c7;">📦 Pasang Sparepart Baru? (Opsional)</span>
                 <label>Nama Part Baru
                     <input name="parts[0][new_name]" placeholder="Misal: SSD 512GB NVMe">

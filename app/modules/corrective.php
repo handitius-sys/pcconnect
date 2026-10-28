@@ -2298,7 +2298,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </thead>
             <tbody>
                 <?php if (!$repairs): ?>
-                    <tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
+                    <tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
                 <?php else: ?>
                     <?php foreach ($repairs as $r): ?>
                         <?php
