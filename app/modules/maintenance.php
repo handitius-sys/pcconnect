@@ -1107,12 +1107,13 @@ function handle_route_maintenance(PDO $pdo): void
     echo '<section class="panel"><div style="overflow-x:auto;"><table id="pmScheduleTable" class="pm-table-sortable"><thead><tr>'
         . '<th class="sortable" onclick="sortPmTable(0)" title="Klik untuk mengurutkan">Tanggal Rencana / Expired <span class="pm-sort-ind">⇅</span></th>'
         . '<th class="sortable" onclick="sortPmTable(1)" title="Klik untuk mengurutkan">Asset / ID <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(2)" title="Klik untuk mengurutkan">Kategori (Asset Type) <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(3)" title="Klik untuk mengurutkan">Pengguna / Lokasi <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(4)" title="Klik untuk mengurutkan">Komoditas <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(5)" title="Klik untuk mengurutkan">Teknisi <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(6)" title="Klik untuk mengurutkan">Status <span class="pm-sort-ind">⇅</span></th>'
-        . '<th class="sortable" onclick="sortPmTable(7)" title="Klik untuk mengurutkan">Foto <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(2)" title="Klik untuk mengurutkan">Kode Lama (Legacy) <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(3)" title="Klik untuk mengurutkan">Kategori (Asset Type) <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(4)" title="Klik untuk mengurutkan">Pengguna / Lokasi <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(5)" title="Klik untuk mengurutkan">Komoditas <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(6)" title="Klik untuk mengurutkan">Teknisi <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(7)" title="Klik untuk mengurutkan">Status <span class="pm-sort-ind">⇅</span></th>'
+        . '<th class="sortable" onclick="sortPmTable(8)" title="Klik untuk mengurutkan">Foto <span class="pm-sort-ind">⇅</span></th>'
         . '<th>Aksi</th>'
         . '</tr></thead><tbody>';
     $scheduleIds = array_filter(array_map('intval', array_column($rows, 'id')));
@@ -1172,9 +1173,13 @@ function handle_route_maintenance(PDO $pdo): void
             : ($row['asset_type_name'] ?? $row['asset_type'] ?? 'Computer');
         $bundleBadge = ($row['asset_mode'] ?? '') === 'group' ? '<br><span class="badge" style="background:#1e3a8a;color:#fff;font-size:11px;">📦 Induk Bundle</span>' : '';
         $deskBadge = !empty($row['master_job_desk_name']) ? ('<br><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;font-weight:600;margin-top:3px;" title="Terhubung ke Master Jobdesk PM">📋 ' . e($row['master_job_desk_name']) . '</span>') : '';
+        $legacyPmCell = !empty($row['alias_code'])
+            ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($row['alias_code']) . '</span>'
+            : '<span class="muted" style="font-size:12px;">-</span>';
         echo '<tr>'
             . '<td data-sort="' . e($row['scheduled_date']) . '">' . $dateCell . '</td>'
-            . '<td><strong>' . e($row['asset_id']) . '</strong>' . (!empty($row['alias_code']) ? '<br><span style="display:inline-block;padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;margin-top:2px;">Lama: ' . e($row['alias_code']) . '</span>' : '') . $bundleBadge . $deskBadge . '</td>'
+            . '<td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . $deskBadge . '</td>'
+            . '<td>' . $legacyPmCell . '</td>'
             . '<td><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;">' . e($typeDisplay) . '</span></td>'
             . '<td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td>'
             . '<td><span class="badge">' . e($groupBadge) . '</span></td>'
@@ -1808,8 +1813,7 @@ function syncEditExpiredDate(val) {
 
     echo '<div style="position:relative;margin-bottom:14px;">'
         . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">'
-        . '  <span>Unit Aset Terdaftar * (Mode Combobox)</span>'
-        . '  <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>'
+        . '  <span>Unit Aset Terdaftar *</span>'
         . '</label>'
         . '<div style="position:relative;display:flex;align-items:stretch;">'
         . '  <input type="text" id="schedAssetSearchInput" placeholder="🔍 Cari kode baru, kode lama (alias), nama, atau lokasi..." autocomplete="off" required style="width:100%;box-sizing:border-box;padding:9px 36px 9px 12px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:13.5px;" value="' . e($targetAssetLabel) . '">'
@@ -3089,7 +3093,7 @@ function handle_route_reports(PDO $pdo): void
     $pcFilter = trim($_GET['pc_id'] ?? '');
     $techFilter = (int)($_GET['technician_id'] ?? 0);
     $sql = $printerReady
-        ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+        ? "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id, s.printer_id) pc_id, ai.alias_code, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
         : "SELECT r.*, s.id schedule_id, s.pc_id pc_id, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, p.owner_name FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
     $params = [];
     if ($pcFilter !== '') {
@@ -3132,7 +3136,7 @@ function handle_route_reports(PDO $pdo): void
     foreach ($techs as $tech) {
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
-    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><div style="overflow-x:auto;"><table class="sortable-table"><thead><tr><th>Tanggal</th><th>PcID</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
+    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><div style="overflow-x:auto;"><table class="sortable-table"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($stmt as $report) {
         $summary = maintenance_report_summary($pdo, $report);
         $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
@@ -3152,7 +3156,7 @@ function handle_route_reports(PDO $pdo): void
                 . '</div>';
         }
 
-        echo '<tr><td>' . $dateDisplay . '</td><td>' . e($report['pc_id']) . '</td><td>' . e($report['owner_name']) . '</td><td>' . e($report['technician'] ?: '-') . '</td><td>' . $cancelledBanner . '<table><tr><th>Pekerjaan</th><th>Status</th><th>Keterangan</th></tr>';
+        echo '<tr><td>' . $dateDisplay . '</td><td><strong>' . e($report['pc_id']) . '</strong></td><td>' . (!empty($report['alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($report['alias_code']) . '</span>' : '<span class="muted">-</span>') . '</td><td>' . e($report['owner_name']) . '</td><td>' . e($report['technician'] ?: '-') . '</td><td>' . $cancelledBanner . '<table><tr><th>Pekerjaan</th><th>Status</th><th>Keterangan</th></tr>';
         if ($summary['checklist_rows']) {
             foreach ($summary['checklist_rows'] as $job) {
                 echo '<tr><td>' . e($job['title']) . '</td><td>' . e($job['status']) . '</td><td>' . e($job['note'] ?: '-') . '</td></tr>';
@@ -3357,7 +3361,7 @@ function export_excel(PDO $pdo, string $type): never
         $pcFilter = trim((string)($_GET['pc_id'] ?? ''));
         $techFilter = (int)($_GET['technician_id'] ?? 0);
         $sql = $printerReady
-            ? "SELECT r.*, s.id schedule_id, COALESCE(s.pc_id,s.printer_id) pc_id, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
+            ? "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id, s.printer_id) pc_id, ai.alias_code, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
             : "SELECT r.*, s.id schedule_id, s.pc_id, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, p.owner_name, u.name technician FROM maintenance_schedules s JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
         $params = [];
         if ($pcFilter !== '') {
@@ -3384,6 +3388,7 @@ function export_excel(PDO $pdo, string $type): never
                 $report['scheduled_date'],
                 $expDate,
                 $report['pc_id'],
+                $report['alias_code'] ?? '-',
                 $report['owner_name'],
                 $report['asset_type'] ?? 'pc',
                 $report['technician'],
@@ -3401,7 +3406,7 @@ function export_excel(PDO $pdo, string $type): never
                 maintenance_summary_text($summary),
             ];
         }
-        output_tsv(['Tanggal Report', 'Tanggal Schedule', 'Batas Expired', 'Asset ID', 'Owner/Printer', 'Tipe Aset', 'Teknisi', 'Status Schedule', 'Alasan Batal', 'Checklist Pekerjaan / Status / Keterangan', 'Audit Foto Score', 'Audit Foto Status', 'Warning Audit Foto', 'Foto', 'Scan QR', 'Kondisi', 'Catatan Kondisi', 'Catatan Teknisi', 'Summary Lengkap'], $rows);
+        output_tsv(['Tanggal Report', 'Tanggal Schedule', 'Batas Expired', 'Asset ID', 'Kode Lama (Legacy)', 'Owner/Printer', 'Tipe Aset', 'Teknisi', 'Status Schedule', 'Alasan Batal', 'Checklist Pekerjaan / Status / Keterangan', 'Audit Foto Score', 'Audit Foto Status', 'Warning Audit Foto', 'Foto', 'Scan QR', 'Kondisi', 'Catatan Kondisi', 'Catatan Teknisi', 'Summary Lengkap'], $rows);
         exit;
     }
 
@@ -3415,6 +3420,7 @@ function export_excel(PDO $pdo, string $type): never
         $rows = $pdo->query("SELECT s.scheduled_date, 
             {$expSql},
             COALESCE(s.pc_id, s.printer_id, ma.maintenance_asset_code) asset_id, 
+            ai.alias_code,
             s.asset_type, 
             COALESCE(ag.group_name, 'IT Asset') asset_group,
             COALESCE(p.owner_name, pr.printer_name, ma.owner_name) owner_name, 
@@ -3432,6 +3438,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['scheduled_date'],
                 !empty($r['expired_date']) ? $r['expired_date'] : date('Y-m-d', strtotime($r['scheduled_date'] . ' +3 days')),
                 $r['asset_id'],
+                $r['alias_code'] ?? '-',
                 $r['asset_type'],
                 $r['asset_group'],
                 $r['owner_name'],
@@ -3441,7 +3448,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['notes'],
             ];
         }
-        output_tsv(['Tanggal Rencana', 'Batas Expired', 'Asset ID', 'Tipe Aset', 'Asset Group', 'Owner/Lokasi', 'Teknisi', 'Status', 'Alasan Batal', 'Catatan'], $formattedRows);
+        output_tsv(['Tanggal Rencana', 'Batas Expired', 'Asset ID', 'Kode Lama (Legacy)', 'Tipe Aset', 'Asset Group', 'Owner/Lokasi', 'Teknisi', 'Status', 'Alasan Batal', 'Catatan'], $formattedRows);
         exit;
     }
 
@@ -3578,7 +3585,7 @@ function export_excel(PDO $pdo, string $type): never
         }
         $whereSql = implode(' AND ', $where);
 
-        $sql = "SELECT ai.id, ai.asset_code, c.company_name, ag.group_name, 
+        $sql = "SELECT ai.id, ai.asset_code, ai.alias_code, c.company_name, ag.group_name, 
                        COALESCE(at.type_name, ai.asset_type) AS asset_type_name,
                        ai.asset_mode, ai.asset_name, ai.brand_name, ai.model, ai.serial_number, ai.custodian_name, ai.custodian_nik, ai.warranty_until, ai.installed_at, ai.purchase_value, ai.status, l.location_name 
                 FROM asset_items ai 
@@ -3614,6 +3621,7 @@ function export_excel(PDO $pdo, string $type): never
             $catName = ($ai['asset_type_name'] ?? '') ?: (($ai['asset_type'] ?? '') ?: '-');
             $exportRows[] = [
                 $ai['asset_code'],
+                $ai['alias_code'] ?: '-',
                 $ai['asset_name'] ?: $ai['model'],
                 $ai['brand_name'] ?: '-',
                 $ai['serial_number'] ?: '-',
@@ -3631,7 +3639,7 @@ function export_excel(PDO $pdo, string $type): never
                 $ai['status']
             ];
         }
-        output_tsv(['Kode Unit', 'Nama Aset / Model', 'Brand', 'Serial Number', 'Spesifikasi', 'Komoditas', 'Kategori', 'Mode', 'Nama Pengguna', 'NIK Pengguna', 'Company', 'Lokasi', 'Tgl Beli', 'Tgl Garansi', 'Harga', 'Status'], $exportRows);
+        output_tsv(['Kode Unit', 'Kode Lama (Legacy)', 'Nama Aset / Model', 'Brand', 'Serial Number', 'Spesifikasi', 'Komoditas', 'Kategori', 'Mode', 'Nama Pengguna', 'NIK Pengguna', 'Company', 'Lokasi', 'Tgl Beli', 'Tgl Garansi', 'Harga', 'Status'], $exportRows);
         exit;
     }
 
@@ -3660,7 +3668,7 @@ function export_excel(PDO $pdo, string $type): never
             $params[] = $endDate;
         }
         $where[] = '(mv.from_parent_asset_item_id IS NULL AND mv.to_parent_asset_item_id IS NULL AND mv.from_bundle_id IS NULL AND mv.to_bundle_id IS NULL)';
-        $sql = 'SELECT mv.*, ai.asset_code, ai.asset_name, ai.asset_type, fp.asset_code from_parent_code, fp.asset_name from_parent_name, tp.asset_code to_parent_code, tp.asset_name to_parent_name, fc.company_name from_company, tc.company_name to_company 
+        $sql = 'SELECT mv.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.asset_type, fp.asset_code from_parent_code, fp.asset_name from_parent_name, tp.asset_code to_parent_code, tp.asset_name to_parent_name, fc.company_name from_company, tc.company_name to_company 
                 FROM asset_movements mv 
                 JOIN asset_items ai ON ai.id=mv.asset_item_id 
                 LEFT JOIN asset_items fp ON fp.id=mv.from_parent_asset_item_id 
@@ -3699,6 +3707,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['movement_date'],
                 $typeLabel,
                 $r['asset_code'],
+                $r['alias_code'] ?: '-',
                 $r['asset_name'],
                 $r['asset_type'] ?? '-',
                 $from,
@@ -3708,7 +3717,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['pic'] ?: '-',
             ];
         }
-        output_tsv(['Tanggal Mutasi', 'Jenis Mutasi', 'Kode Aset', 'Nama Aset', 'Kategori/Tipe', 'Dari (Pengguna / Asal)', 'Ke (Pengguna / Tujuan)', 'Company', 'Alasan / Keterangan', 'PIC / Petugas'], $exportRows);
+        output_tsv(['Tanggal Mutasi', 'Jenis Mutasi', 'Kode Aset', 'Kode Lama (Legacy)', 'Nama Aset', 'Kategori/Tipe', 'Dari (Pengguna / Asal)', 'Ke (Pengguna / Tujuan)', 'Company', 'Alasan / Keterangan', 'PIC / Petugas'], $exportRows);
         exit;
     }
 
@@ -3801,9 +3810,10 @@ function export_excel(PDO $pdo, string $type): never
         }
 
         $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
-                       ma.maintenance_asset_code, ma.name AS maintenance_asset_name
+                       ma.maintenance_asset_code, ma.name AS maintenance_asset_name, ai.alias_code AS legacy_code
                 FROM corrective_repairs cr
                 JOIN corrective_tickets t ON t.id = cr.ticket_id
+                LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
                 LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
                 WHERE " . implode(' AND ', $where) . "
                 ORDER BY cr.repaired_at DESC, cr.id DESC";
@@ -3828,6 +3838,7 @@ function export_excel(PDO $pdo, string $type): never
                 $r['ticket_code'],
                 $r['asset_category'] ?: '-',
                 $r['maintenance_asset_code'] ?: '-',
+                $r['legacy_code'] ?: '-',
                 $r['maintenance_asset_name'] ?: '-',
                 $r['technician_name'] ?: '-',
                 $r['vendor_name'] ?: '-',
@@ -3839,7 +3850,7 @@ function export_excel(PDO $pdo, string $type): never
             ];
         }
 
-        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
+        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Kode Lama (Legacy)', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
         exit;
     }
 

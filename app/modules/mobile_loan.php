@@ -464,7 +464,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
                     <p id="camStatus" style="color:#0284c7;font-size:11px;margin:6px 0;">Menyiapkan kamera live QR...</p>
                 </div>
 
-                <!-- Manual / Barcode input Single-Box Combobox -->
+                <!-- Manual / Barcode input Unit Aset -->
                 <div style="position:relative;">
                     <div style="display:flex;gap:6px;">
                         <input type="text" id="barcodeAssetInput" placeholder="🔍 Cari kode, nama aset, SN, pengguna..." autocomplete="off" style="font-family:monospace;font-weight:700;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;padding:9px 12px;width:100%;box-sizing:border-box;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();var dd=document.getElementById('assetDropdownList');if(dd)dd.style.display='none';lookupAndAddAsset(this.value);}">
@@ -561,7 +561,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             div.style.borderBottom = "1px solid #f1f5f9";
             div.style.cursor = "pointer";
             div.style.background = "#fff";
-            var aliasPart = item.alias_code ? (" <span style='background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;'>[Lama: " + escapeHtml(item.alias_code) + "]</span>") : "";
+            var aliasPart = item.alias_code ? (" <span style='background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #fde68a;'>🏷️ Kode Lama: " + escapeHtml(item.alias_code) + "</span>") : "";
             div.innerHTML = "<div style='font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;'>" + escapeHtml(item.asset_code) + aliasPart + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
                 + "<div style='font-size:11px;color:#64748b;margin-top:2px;'>" + escapeHtml(subParts.join(" &bull; ")) + "</div>";
             div.onmouseenter = function() { div.style.background = "#f0f9ff"; };

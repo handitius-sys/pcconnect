@@ -208,13 +208,14 @@ function asset_items_table(PDO $pdo, array $rows): string
     $html .= '<table id="assetItemsTable" class="asset-table-sortable">';
     $html .= '<thead><tr>';
     $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Aset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Company <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kategori <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama Barang <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Tanggal Input <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Lama (Legacy) <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Company <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kategori <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama Barang <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
+    $html .= '<th class="sortable" onclick="sortAssetTable(8)" style="cursor:pointer;" title="Klik untuk mengurutkan">Tanggal Input <span class="sort-ind">⇅</span></th>';
     $html .= '<th style="text-align:center;width:124px;">Aksi</th>';
     $html .= '</tr></thead><tbody>';
 
@@ -292,8 +293,13 @@ function asset_items_table(PDO $pdo, array $rows): string
         $modelSub = (!empty($row['model']) && !empty($row['asset_name']) && $row['model'] !== $row['asset_name']) ? '<br><span class="muted">' . e($row['model']) . '</span>' : '';
 
         $aliasBadge = !empty($row['alias_code']) ? '<br><span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;margin-top:3px;border:1px solid #bae6fd;" title="Kode Lama / Legacy Alias">Lama: ' . e($row['alias_code']) . '</span>' : '';
+        $legacyItemCell = !empty($row['alias_code']) 
+            ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($row['alias_code']) . '</span>' 
+            : '<span class="muted" style="font-size:12px;">-</span>';
+
         $html .= '<tr>';
-        $html .= '<td><a href="' . route_url('asset_item_form', ['id' => $row['id'], 'view' => 1]) . '" style="color:#0f172a;text-decoration:none;" title="Klik untuk melihat detail unit aset (Read-Only)"><strong>' . e($row['asset_code']) . '</strong></a>' . $aliasBadge . '<br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span>' . $sourcePcBadge . $idfHtml . '</td>';
+        $html .= '<td><a href="' . route_url('asset_item_form', ['id' => $row['id'], 'view' => 1]) . '" style="color:#0f172a;text-decoration:none;" title="Klik untuk melihat detail unit aset (Read-Only)"><strong>' . e($row['asset_code']) . '</strong></a><br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span>' . $sourcePcBadge . $idfHtml . '</td>';
+        $html .= '<td>' . $legacyItemCell . '</td>';
         $html .= '<td>' . e($row['company_name'] ?: '-') . '</td>';
         $html .= '<td>' . $custodianText . '</td>';
         $html .= '<td><span class="badge" style="background:#f1f5f9;color:#334155;font-weight:600;">' . e($displayCategory) . '</span></td>';
@@ -2197,6 +2203,7 @@ function asset_item_history_panel_html(PDO $pdo, int $itemId): string
         . '<th>Tanggal</th>'
         . '<th>Aksi / Status Mutasi</th>'
         . '<th>Unit Aset</th>'
+        . '<th>Kode Lama (Legacy)</th>'
         . '<th>Bundle Asal</th>'
         . '<th>Bundle Tujuan</th>'
         . '<th>Alasan / Keterangan</th>'
@@ -2689,10 +2696,14 @@ function asset_movements_table(array $rows): string
         }
 
         $mAliasBadge = !empty($row['alias_code']) ? ' <small style="display:inline-block;padding:1px 5px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:10.5px;font-weight:600;">[Lama: ' . e($row['alias_code']) . ']</small>' : '';
+        $legacyMoveCell = !empty($row['alias_code'])
+            ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($row['alias_code']) . '</span>'
+            : '<span class="muted" style="font-size:12px;">-</span>';
         $html .= '<tr>'
             . '<td>' . e($row['movement_date']) . '</td>'
             . '<td>' . $badge . '</td>'
-            . '<td><strong><a href="' . route_url('asset_item_form', ['id' => $row['asset_item_id']]) . '">' . e($row['asset_code']) . '</a></strong>' . $mAliasBadge . '<br><span class="muted">' . e($row['asset_name']) . '</span></td>'
+            . '<td><strong><a href="' . route_url('asset_item_form', ['id' => $row['asset_item_id']]) . '">' . e($row['asset_code']) . '</a></strong><br><span class="muted">' . e($row['asset_name']) . '</span></td>'
+            . '<td>' . $legacyMoveCell . '</td>'
             . '<td>' . e($from) . '</td>'
             . '<td>' . e($to) . '</td>'
             . '<td>' . e($comp) . '</td>'
@@ -6656,7 +6667,7 @@ function handle_route_asset_items(PDO $pdo): void
     echo '  <div style="flex:1;position:relative;">';
     echo '    <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:#334155;font-weight:600;">';
     echo '      <span>Pencarian Bebas (Kode Baru / Kode Lama / Serial Number / PC / Nama Barang / Custodian)</span>';
-    echo '      <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>';
+    
     echo '    </label>';
     echo '    <div style="position:relative;display:flex;align-items:stretch;">';
     echo '      <input type="text" id="assetFreeComboboxInput" name="q" value="' . e($q) . '" placeholder="🔍 Ketik atau pilih kode baru, kode lama (alias), SN, nama barang, PIC..." autocomplete="off" list="assetFreeDatalist" style="height:38px;box-sizing:border-box;width:100%;padding:8px 58px 8px 12px;font-size:13px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;" onfocus="showAssetFreeDropdown(this.value)" oninput="showAssetFreeDropdown(this.value)">';
@@ -7536,6 +7547,7 @@ function handle_route_report_asset_items(PDO $pdo): void
             echo '        <tr>';
             echo '          <th style="width:40px;">No</th>';
             echo '          <th>Kode Unit</th>';
+            echo '          <th>Kode Lama (Legacy)</th>';
             echo '          <th>Nama Aset / Model</th>';
             echo '          <th>Brand / Merk</th>';
             echo '          <th>Kategori</th>';
@@ -7562,9 +7574,13 @@ function handle_route_report_asset_items(PDO $pdo): void
                 $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
                 $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
 
+                $legacyReportCell = !empty($item['alias_code']) 
+                    ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($item['alias_code']) . '</span>' 
+                    : '<span class="muted">-</span>';
                 echo '        <tr>';
                 echo '          <td>' . $no++ . '</td>';
                 echo '          <td><strong><a href="' . route_url('asset_items', ['q' => $item['asset_code']]) . '">' . e($item['asset_code']) . '</a></strong></td>';
+                echo '          <td>' . $legacyReportCell . '</td>';
                 echo '          <td>' . e($assetName) . '</td>';
                 echo '          <td>' . e($brandName) . '</td>';
                 echo '          <td>' . e($categoryName) . '</td>';

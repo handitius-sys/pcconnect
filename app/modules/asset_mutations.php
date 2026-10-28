@@ -315,7 +315,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '    <div style="position:relative;flex:1.5;min-width:280px;">';
     echo '      <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">';
     echo '        <span>Cari & Pilih Unit Aset (Kode Baru / Kode Lama / Nama / SN / Pengguna)</span>';
-    echo '        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>';
+    echo '        ';
     echo '      </label>';
     echo '      <div style="position:relative;display:flex;align-items:stretch;">';
     echo '        <input type="text" id="mutationAssetSearch" name="q" value="' . e($q) . '" placeholder="🔍 Ketik kode, nama, SN, pengguna..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 58px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMutationDropdown(this.value)" oninput="showMutationDropdown(this.value)" onkeydown="onMutationKeyDown(event)">';
@@ -338,8 +338,8 @@ function handle_route_asset_mutations(PDO $pdo): void
     if (($filterGroup <= 0 || $filterType <= 0) && $q === '') {
         echo '<div style="text-align:center;padding:48px 24px;color:#475569;background:#f8fafc;border-radius:8px;border:2px dashed #cbd5e1;margin-bottom:24px;">';
         echo '  <div style="font-size:36px;margin-bottom:10px;">📦</div>';
-        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Pilih Komoditas & Kategori, atau Gunakan Combo Box</h3>';
-        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> & <strong>Kategori</strong> pada filter, atau gunakan <strong>Combo Box Pencarian</strong> untuk langsung mencari dan memilih unit aset yang ingin dimutasi.</p>';
+        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Pilih Komoditas & Kategori, atau Cari Unit Aset</h3>';
+        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> & <strong>Kategori</strong> pada filter, atau gunakan <strong>Pencarian Aset</strong> untuk langsung mencari dan memilih unit aset yang ingin dimutasi.</p>';
         echo '</div>';
     } else {
         $whereClauses = ["LOWER(a.status) <> 'deleted'"];
@@ -407,6 +407,7 @@ function handle_route_asset_mutations(PDO $pdo): void
             echo '<thead><tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;text-align:left;">';
             echo '  <th style="width:36px;text-align:center;">No</th>';
             echo '  <th>Kode Unit</th>';
+            echo '  <th>Kode Lama (Legacy)</th>';
             echo '  <th>Nama Aset / Model</th>';
             echo '  <th>Serial Number</th>';
             echo '  <th>Company Saat Ini</th>';
@@ -438,9 +439,13 @@ function handle_route_asset_mutations(PDO $pdo): void
                     'custodian_name' => (string)($row['custodian_name'] ?? '-'),
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
 
+                $legacyMutCell = !empty($row['alias_code']) 
+                    ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($row['alias_code']) . '</span>' 
+                    : '<span class="muted">-</span>';
                 echo '<tr style="border-bottom:1px solid #e2e8f0;">';
                 echo '  <td style="text-align:center;">' . $no++ . '</td>';
                 echo '  <td><strong><a href="' . route_url('asset_item_form', ['id' => $row['id']]) . '">' . e($row['asset_code']) . '</a></strong></td>';
+                echo '  <td>' . $legacyMutCell . '</td>';
                 echo '  <td>' . e($row['display_name']) . '</td>';
                 echo '  <td><code>' . e($row['serial_number'] ?: '-') . '</code></td>';
                 echo '  <td>' . e($row['company_name'] ?: '-') . '</td>';
@@ -473,7 +478,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '    <a class="btn" href="' . route_url('asset_movements') . '" style="font-size:12px;">Lihat Seluruh Riwayat Mutasi &rarr;</a>';
     echo '  </div>';
 
-    $recentStmt = $pdo->query("SELECT mv.*, ai.asset_code, ai.asset_name, ai.asset_type,
+    $recentStmt = $pdo->query("SELECT mv.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.asset_type,
                                       fc.company_name AS from_company, tc.company_name AS to_company,
                                       floc.location_name AS from_loc_name, tloc.location_name AS to_loc_name
                                FROM asset_movements mv
@@ -495,6 +500,7 @@ function handle_route_asset_mutations(PDO $pdo): void
         echo '  <th>Tanggal</th>';
         echo '  <th>Jenis Mutasi</th>';
         echo '  <th>Unit Aset</th>';
+        echo '  <th>Kode Lama (Legacy)</th>';
         echo '  <th>Asal (Sebelum)</th>';
         echo '  <th>Tujuan (Sesudah)</th>';
         echo '  <th>Alasan / Keterangan</th>';
@@ -516,10 +522,14 @@ function handle_route_asset_mutations(PDO $pdo): void
             if (!empty($mr['to_custodian_name'])) $toParts[] = '👤 ' . $mr['to_custodian_name'];
             $toStr = !empty($toParts) ? implode('<br>', array_map('e', $toParts)) : '<span class="muted">-</span>';
 
+            $legacyRecCell = !empty($mr['alias_code']) 
+                ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($mr['alias_code']) . '</span>' 
+                : '<span class="muted">-</span>';
             echo '<tr style="border-bottom:1px solid #f1f5f9;">';
             echo '  <td>' . date('d/m/Y', strtotime($mr['movement_date'])) . '</td>';
             echo '  <td><span class="badge" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;font-size:11px;">' . e($mType) . '</span></td>';
             echo '  <td><strong>' . e($mr['asset_code']) . '</strong><br><span class="muted">' . e($mr['asset_name'] ?: '-') . '</span></td>';
+            echo '  <td>' . $legacyRecCell . '</td>';
             echo '  <td>' . $fromStr . '</td>';
             echo '  <td>' . $toStr . '</td>';
             echo '  <td>' . nl2br(e($mr['reason'] ?: '-')) . '</td>';

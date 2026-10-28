@@ -734,6 +734,7 @@ function handle_route_tickets(PDO $pdo): void
                     <th>Tiket & Tanggal</th>
                     <th>Komoditas & Prioritas</th>
                     <th>Unit Aset</th>
+                    <th>Kode Lama (Legacy)</th>
                     <th>Kendala / Subjek</th>
                     <th>Pelapor & Lokasi</th>
                     <th>Status & Penanganan</th>
@@ -779,6 +780,7 @@ function handle_route_tickets(PDO $pdo): void
                                 <div style="margin-top:4px;"><?= ticket_priority_badge($t['priority']) ?></div>
                             </td>
                             <td><?= $assetLabel ?></td>
+                            <td><?= !empty($t['item_alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($t['item_alias_code']) . '</span>' : '<span class="muted">-</span>' ?></td>
                             <td>
                                 <strong><?= e($t['subject']) ?></strong><br>
                                 <span class="muted" style="font-size:12px;"><?= e(mb_strimwidth((string)$t['description'], 0, 60, '...')) ?></span>
@@ -1374,7 +1376,7 @@ function handle_route_ticket_form(PDO $pdo): void
                 <div style="position:relative;">
                     <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">
                         <span>Unit Aset *</span>
-                        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>
+                        
                     </label>
                     <div style="position:relative;display:flex;align-items:stretch;">
                         <input type="text" id="maintAssetCombobox" placeholder="🔍 Cari / Pilih unit aset (Kode Baru, Kode Lama, Nama, PIC)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 36px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMaintAssetDropdown(this.value)" oninput="showMaintAssetDropdown(this.value)">
@@ -2258,9 +2260,10 @@ function handle_route_corrective_repairs(PDO $pdo): void
     ensure_corrective_maintenance_schema($pdo);
 
     $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
-                   ma.maintenance_asset_code, ma.name AS maintenance_asset_name
+                   ma.maintenance_asset_code, ma.name AS maintenance_asset_name, ai.alias_code AS legacy_code
             FROM corrective_repairs cr
             JOIN corrective_tickets t ON t.id = cr.ticket_id
+            LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
             LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
             ORDER BY cr.repaired_at DESC, cr.id DESC";
     $repairs = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
@@ -2285,6 +2288,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 <tr>
                     <th>Tanggal & Tiket</th>
                     <th>Maintenance Asset</th>
+                    <th>Kode Lama (Legacy)</th>
                     <th>Teknisi / Vendor</th>
                     <th>Tindakan & Solusi</th>
                     <th>Sparepart Diganti</th>
@@ -2313,6 +2317,9 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                 <?= ticket_category_badge($r['asset_category']) ?><br>
                                 <?= e($r['maintenance_asset_code'] ?: '-') ?><br>
                                 <small class="muted"><?= e(mb_strimwidth((string)$r['maintenance_asset_name'], 0, 35, '...')) ?></small>
+                            </td>
+                            <td>
+                                <?= !empty($r['legacy_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($r['legacy_code']) . '</span>' : '<span class="muted">-</span>' ?>
                             </td>
                             <td>
                                 <?= e($r['technician_name']) ?><br>

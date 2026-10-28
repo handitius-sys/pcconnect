@@ -398,6 +398,7 @@ function handle_route_api_lookup_asset_for_loan(PDO $pdo): void
         'data' => [
             'id' => (int)$item['id'],
             'asset_code' => (string)$item['asset_code'],
+            'alias_code' => (string)($item['alias_code'] ?? ''),
             'asset_name' => (string)$item['asset_name'],
             'brand' => (string)($item['brand'] ?? ''),
             'model' => (string)($item['model'] ?? ''),

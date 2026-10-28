@@ -430,7 +430,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
             flash('Data peminjaman tidak ditemukan.', 'err');
             redirect_to('asset_loans');
         }
-        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name
+        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, g.group_name, t.type_name, loc.location_name
                                    FROM asset_loan_items ali
                                    JOIN asset_items ai ON ai.id = ali.asset_item_id
                                    LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
@@ -651,6 +651,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         $initialItemsJs[] = [
             'id' => (int)$it['asset_item_id'],
             'asset_code' => (string)$it['asset_code'],
+            'alias_code' => (string)($it['alias_code'] ?? ''),
             'asset_name' => (string)$it['asset_name'],
             'brand' => (string)($it['brand'] ?? ''),
             'model' => (string)($it['model'] ?? ''),
@@ -755,8 +756,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         // Input Single-Box Combobox Unit Aset (Terdaftar) & Barcode Input
         . '    <div style="position:relative;margin-top:12px;">'
         . '      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-        . '        <span style="font-size:12.5px;font-weight:600;color:#0369a1;">Pilih atau Ketik Unit Aset (Mode Combobox):</span>'
-        . '        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>'
+        . '        <span style="font-size:12.5px;font-weight:600;color:#0369a1;">Pilih atau Ketik Unit Aset:</span>'
         . '      </div>'
         . '      <div style="display:flex;gap:8px;position:relative;">'
         . '        <div style="flex:1;position:relative;display:flex;align-items:stretch;">'
@@ -783,6 +783,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '        <tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;text-align:left;">'
         . '          <th style="padding:8px 10px;width:36px;text-align:center;">No</th>'
         . '          <th style="padding:8px 10px;">Kode Unit</th>'
+        . '          <th style="padding:8px 10px;">Kode Lama (Legacy)</th>'
         . '          <th style="padding:8px 10px;">Nama & Model Barang</th>'
         . '          <th style="padding:8px 10px;">Komoditas / Kategori</th>'
         . '          <th style="padding:8px 10px;width:150px;">Kondisi Awal</th>'
@@ -863,7 +864,8 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 div.style.borderBottom = "1px solid #f1f5f9";
                 div.style.cursor = "pointer";
                 div.style.background = "#fff";
-                div.innerHTML = "<div style=\'font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;\'>" + escapeHtml(item.asset_code) + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
+                var aliasPart = item.alias_code ? (" <span style=\'background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #fde68a;\'>🏷️ Kode Lama: " + escapeHtml(item.alias_code) + "</span>") : "";
+                div.innerHTML = "<div style=\'font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;\'>" + escapeHtml(item.asset_code) + aliasPart + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
                     + "<div style=\'font-size:11px;color:#64748b;margin-top:2px;\'>" + escapeHtml(subParts.join(" &bull; ")) + "</div>";
                 div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
                 div.onmouseleave = function() { div.style.background = "#fff"; };
@@ -922,8 +924,9 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 tr.innerHTML = "<td style=\'padding:8px 10px;text-align:center;\'>" + (idx + 1) + "</td>"
                     + "<td style=\'padding:8px 10px;font-family:monospace;font-weight:700;color:#0284c7;\'>"
                     + "<input type=\'hidden\' name=\'asset_item_ids[]\' value=\'" + item.id + "\'>"
-                    + item.asset_code
+                    + escapeHtml(item.asset_code)
                     + "</td>"
+                    + "<td style=\'padding:8px 10px;font-family:monospace;color:#92400e;background:#fffbeb;font-weight:600;\'>" + (item.alias_code ? escapeHtml(item.alias_code) : "<span style=\'color:#94a3b8;\'>-</span>") + "</td>"
                     + "<td style=\'padding:8px 10px;\'>"
                     + "<div style=\'font-weight:600;color:#1e293b;\'>" + (item.asset_name || "-") + "</div>"
                     + "<div style=\'font-size:11px;color:#64748b;\'>" + (item.brand ? (item.brand + " ") : "") + (item.model || "") + "</div>"
@@ -1012,6 +1015,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
                     scannedItems.push({
                         id: item.id,
                         asset_code: item.asset_code,
+                        alias_code: item.alias_code || "",
                         asset_name: item.asset_name,
                         brand: item.brand,
                         model: item.model,
@@ -1195,7 +1199,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         redirect_to('asset_loans');
     }
 
-    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
+    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
         g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name, comp.company_name AS asset_company_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
@@ -1281,6 +1285,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         . '      <tr style="background:#f1f5f9;color:#0f172a;">'
         . '        <th style="border:1px solid #cbd5e1;padding:12px 8px;text-align:center;width:40px;">No</th>'
         . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Kode Aset</th>'
+        . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Kode Lama (Legacy)</th>'
         . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Nama Barang</th>'
         . '        <th style="border:1px solid #cbd5e1;padding:12px 14px;text-align:left;">Kategori</th>'
         . '      </tr>'
@@ -1292,6 +1297,7 @@ function handle_route_asset_loan_detail(PDO $pdo): void
         echo '      <tr>'
             . '        <td style="border:1px solid #cbd5e1;padding:10px 8px;text-align:center;">' . ($idx + 1) . '</td>'
             . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;font-family:monospace;font-size:14px;font-weight:bold;">' . e($it['asset_code']) . '</td>'
+            . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;font-family:monospace;font-size:13px;color:#92400e;background:#fffbeb;font-weight:600;">' . (!empty($it['alias_code']) ? e($it['alias_code']) : '-') . '</td>'
             . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;">' . e($it['asset_name'] ?: $it['model']) . '</td>'
             . '        <td style="border:1px solid #cbd5e1;padding:10px 14px;">' . e($catLabel) . '</td>'
             . '      </tr>';
@@ -1420,7 +1426,7 @@ function handle_route_asset_loan_return(PDO $pdo): void
     }
 
     // Ambil item yang dipinjam
-    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
+    $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
         FROM asset_loan_items ali
         JOIN asset_items ai ON ai.id = ali.asset_item_id
         LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
@@ -1461,6 +1467,7 @@ function handle_route_asset_loan_return(PDO $pdo): void
         . '  <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #cbd5e1;">'
         . '    <thead><tr style="background:#f1f5f9;border-bottom:1px solid #cbd5e1;text-align:left;">'
         . '      <th style="padding:10px 12px;">Unit Aset</th>'
+        . '      <th style="padding:10px 12px;">Kode Lama (Legacy)</th>'
         . '      <th style="padding:10px 12px;">Kondisi Saat Keluar</th>'
         . '      <th style="padding:10px 12px;width:170px;">Status Pengembalian</th>'
         . '      <th style="padding:10px 12px;">Kondisi Fisik Saat Masuk</th>'
@@ -1471,12 +1478,14 @@ function handle_route_asset_loan_return(PDO $pdo): void
     foreach ($items as $it) {
         $iid = (int)$it['id'];
         $desc = e($it['asset_name'] ?: ($it['brand'] . ' ' . $it['model']));
+        $legacyRetCell = !empty($it['alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($it['alias_code']) . '</span>' : '<span class="muted">-</span>';
         echo '<tr style="border-bottom:1px solid #e2e8f0;background:#fff;">'
             . '  <td style="padding:10px 12px;">'
             . '    <strong style="color:#0369a1;font-family:monospace;">' . e($it['asset_code']) . '</strong>'
             . '    <div style="font-weight:600;color:#1e293b;">' . $desc . '</div>'
             . '    <div style="font-size:11px;color:#64748b;">' . e(($it['group_name'] ?? '') . ' - ' . ($it['type_name'] ?? '')) . '</div>'
             . '  </td>'
+            . '  <td style="padding:10px 12px;">' . $legacyRetCell . '</td>'
             . '  <td style="padding:10px 12px;color:#475569;">'
             . '    <div>' . e($it['condition_out']) . '</div>'
             . (!empty($it['notes_out']) ? '<div style="font-size:11px;color:#64748b;">' . e($it['notes_out']) . '</div>' : '')
