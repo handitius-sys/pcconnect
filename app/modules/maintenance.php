@@ -1023,6 +1023,7 @@ function handle_route_maintenance(PDO $pdo): void
             COALESCE(at.type_name, CASE WHEN s.printer_id IS NOT NULL OR LOWER(s.asset_type)='printer' THEN 'Printer' WHEN s.pc_id IS NOT NULL OR LOWER(s.asset_type) IN ('pc','cmp') THEN 'Computer' ELSE s.asset_type END, 'Computer') AS asset_type_name,
             COALESCE(at.type_code, UPPER(s.asset_type), 'CMP') AS asset_type_code,
             ai.asset_mode,
+            ai.alias_code,
             COALESCE(pjd.job_desk_name, ai.job_desk_name, ma.job_desk_name, 'Master Jobdesk PM') AS master_job_desk_name
         FROM maintenance_schedules s 
         LEFT JOIN asset_items ai ON ai.id = s.asset_item_id
@@ -1173,7 +1174,7 @@ function handle_route_maintenance(PDO $pdo): void
         $deskBadge = !empty($row['master_job_desk_name']) ? ('<br><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;font-weight:600;margin-top:3px;" title="Terhubung ke Master Jobdesk PM">📋 ' . e($row['master_job_desk_name']) . '</span>') : '';
         echo '<tr>'
             . '<td data-sort="' . e($row['scheduled_date']) . '">' . $dateCell . '</td>'
-            . '<td><strong>' . e($row['asset_id']) . '</strong>' . $bundleBadge . $deskBadge . '</td>'
+            . '<td><strong>' . e($row['asset_id']) . '</strong>' . (!empty($row['alias_code']) ? '<br><span style="display:inline-block;padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;margin-top:2px;">Lama: ' . e($row['alias_code']) . '</span>' : '') . $bundleBadge . $deskBadge . '</td>'
             . '<td><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;">' . e($typeDisplay) . '</span></td>'
             . '<td>' . e($row['owner_name'] ?: '-') . '<br><span class="muted">' . e($row['computer_name'] ?: '-') . '</span></td>'
             . '<td><span class="badge">' . e($groupBadge) . '</span></td>'
@@ -1646,8 +1647,8 @@ function syncEditExpiredDate(val) {
     $targetAssetId = (int)($existingSchedule['asset_item_id'] ?? $_GET['asset_item_id'] ?? $_GET['maintenance_asset_id'] ?? $_GET['asset_id'] ?? 0);
     $assetParam = trim((string)($_GET['asset'] ?? ''));
     if ($targetAssetId === 0 && $assetParam !== '') {
-        $stCode = $pdo->prepare('SELECT id FROM asset_items WHERE asset_code = ? LIMIT 1');
-        $stCode->execute([$assetParam]);
+        $stCode = $pdo->prepare('SELECT id FROM asset_items WHERE asset_code = ? OR (alias_code IS NOT NULL AND alias_code = ?) LIMIT 1');
+        $stCode->execute([$assetParam, $assetParam]);
         $targetAssetId = (int)($stCode->fetchColumn() ?: 0);
     }
 
@@ -1676,7 +1677,7 @@ function syncEditExpiredDate(val) {
         if ($at['type_code'] === 'PRT') { $prtTypeId = (int)$at['id']; }
     }
 
-    $sqlAi = "SELECT ai.id, ai.asset_code, ai.asset_name, ai.asset_group_id, ai.asset_type_id, ai.asset_type, ai.asset_category, ai.job_desk_name,
+    $sqlAi = "SELECT ai.id, ai.asset_code, ai.alias_code, ai.asset_name, ai.asset_group_id, ai.asset_type_id, ai.asset_type, ai.asset_category, ai.job_desk_name,
                      ai.asset_mode,
                      ai.serial_number, ai.brand, ai.model,
                      ag.group_name, ag.group_code,
@@ -1794,11 +1795,12 @@ function syncEditExpiredDate(val) {
         foreach ($maintenanceAssets as $maRow) {
             if ((int)$maRow['id'] === $targetAssetId) {
                 $mCode = $maRow['asset_code'];
+                $mAlias = !empty($maRow['alias_code']) ? (' [Lama: ' . $maRow['alias_code'] . ']') : '';
                 $mName = $maRow['display_name'] ?: $maRow['asset_name'];
                 $mSub = $maRow['display_sub'] ?: '';
                 $mMode = (string)($maRow['asset_mode'] ?? 'standalone');
                 $badgePrefix = ($mMode === 'group') ? '[📦 INDUK BUNDLE] ' : (($mMode === 'child') ? '[🔗 ANGGOTA] ' : '');
-                $targetAssetLabel = $badgePrefix . $mCode . ' - ' . $mName . ($mSub ? ' (' . $mSub . ')' : '');
+                $targetAssetLabel = $badgePrefix . $mCode . $mAlias . ' - ' . $mName . ($mSub ? ' (' . $mSub . ')' : '');
                 break;
             }
         }
@@ -2014,9 +2016,10 @@ window.syncCreateExpiredDate = function(val) {
 
             if (!q) return true;
             var code = (item.asset_code || "").toLowerCase();
+            var alias = (item.alias_code || "").toLowerCase();
             var name = (item.display_name || item.asset_name || "").toLowerCase();
             var sub = (item.display_sub || "").toLowerCase();
-            return code.includes(q) || name.includes(q) || sub.includes(q);
+            return code.includes(q) || alias.includes(q) || name.includes(q) || sub.includes(q);
         }).slice(0, 40);
 
         assetDropdownList.innerHTML = "";
@@ -2038,7 +2041,8 @@ window.syncCreateExpiredDate = function(val) {
             div.style.cursor = "pointer";
             div.style.borderBottom = "1px solid #f1f5f9";
             div.style.fontSize = "13px";
-            div.innerHTML = "<strong style=\"color:#0f172a;\">" + badgePrefix + mCode + " - " + mName + "</strong>"
+            var mAlias = item.alias_code ? (" <span style=\"background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;\">[Lama: " + item.alias_code + "]</span>") : "";
+            div.innerHTML = "<strong style=\"color:#0f172a;\">" + badgePrefix + mCode + mAlias + " - " + mName + "</strong>"
                 + (mSub ? (" <span style=\"color:#64748b;\">(" + mSub + ")</span>") : "")
                 + (item.group_name ? (" &bull; <span style=\"color:#0284c7;font-weight:600;\">" + item.group_name + " / " + (item.type_name || "") + "</span>") : "");
             

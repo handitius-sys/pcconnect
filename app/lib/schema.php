@@ -2643,6 +2643,9 @@ function ensure_unified_asset_schema(PDO $pdo): void
             $pdo->exec("ALTER TABLE asset_items ADD COLUMN alias_code VARCHAR(150) NULL AFTER asset_code");
         } catch (Throwable $ignored) {}
     }
+    try {
+        $pdo->exec("ALTER TABLE asset_items ADD INDEX idx_ai_alias (alias_code)");
+    } catch (Throwable $ignored) {}
 
     // Salin koordinat & job_desk dari maintenance_assets ke asset_items jika ada
     if (db_table_exists($pdo, 'maintenance_assets')) {

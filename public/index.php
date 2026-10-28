@@ -125,6 +125,7 @@ if (str_starts_with($route, 'api_') || $route === 'employee_search') {
         'app/lib/qr.php',
         'app/modules/pc.php',
         'app/modules/asset.php',
+        'app/modules/asset_legacy_import.php',
         'app/modules/asset_mutations.php',
     ];
 } elseif (in_array($route, ['maintenance', 'maintenance_cleanup', 'maintenance_categories', 'maintenance_do', 'maintenance_unlock', 'maintenance_status_report', 'schedule_form', 'report_print', 'export_excel', 'jobs', 'calendar', 'reports'], true)) {
@@ -306,6 +307,9 @@ switch ($route) {
         break;
     case 'asset_items':
         handle_route_asset_items($pdo);
+        break;
+    case 'asset_legacy_import':
+        handle_route_asset_legacy_import($pdo);
         break;
     case 'asset_item_form':
         handle_route_asset_item_form($pdo);

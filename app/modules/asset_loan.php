@@ -213,10 +213,10 @@ function handle_route_asset_loans(PDO $pdo): void
         $where[] = "(al.loan_code LIKE ? OR al.borrower_name LIKE ? OR al.borrower_nik LIKE ? OR al.borrower_department LIKE ? OR al.purpose LIKE ? OR EXISTS (
             SELECT 1 FROM asset_loan_items ali2 
             JOIN asset_items ai2 ON ai2.id = ali2.asset_item_id 
-            WHERE ali2.loan_id = al.id AND (ai2.asset_code LIKE ? OR ai2.asset_name LIKE ? OR ai2.model LIKE ?)
+            WHERE ali2.loan_id = al.id AND (ai2.asset_code LIKE ? OR (ai2.alias_code IS NOT NULL AND ai2.alias_code LIKE ?) OR ai2.asset_name LIKE ? OR ai2.model LIKE ?)
         ))";
         $w = '%' . $q . '%';
-        $params = array_merge($params, [$w, $w, $w, $w, $w, $w, $w, $w]);
+        $params = array_merge($params, [$w, $w, $w, $w, $w, $w, $w, $w, $w]);
     }
 
     $sql = "SELECT al.*, u1.name AS officer_name, u2.name AS return_officer_name,
@@ -237,7 +237,7 @@ function handle_route_asset_loans(PDO $pdo): void
     $loanItems = [];
     if (!empty($loanIds)) {
         $inPlaceholders = implode(',', array_fill(0, count($loanIds), '?'));
-        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
+        $itemStmt = $pdo->prepare("SELECT ali.*, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name
             FROM asset_loan_items ali
             JOIN asset_items ai ON ai.id = ali.asset_item_id
             LEFT JOIN asset_groups g ON g.id = ai.asset_group_id
@@ -346,7 +346,8 @@ function handle_route_asset_loans(PDO $pdo): void
             // HTML daftar item
             $itemsHtml = '<div style="display:flex;flex-direction:column;gap:4px;">';
             foreach ($items as $it) {
-                $codeBadge = '<strong style="color:#0369a1;font-family:monospace;">' . e($it['asset_code']) . '</strong>';
+                $aliasBadge = !empty($it['alias_code']) ? ' <span style="font-size:10px;color:#0284c7;background:#e0f2fe;padding:1px 5px;border-radius:4px;border:1px solid #bae6fd;">[Lama: ' . e($it['alias_code']) . ']</span>' : '';
+                $codeBadge = '<strong style="color:#0369a1;font-family:monospace;">' . e($it['asset_code']) . '</strong>' . $aliasBadge;
                 $nameDesc = e($it['asset_name'] ?: ($it['brand'] . ' ' . $it['model']));
                 $itemStatus = '';
                 if ($it['status'] === 'returned') {
@@ -632,7 +633,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
                                                    ai.custodian_name, ai.custodian_nik,
                                                    g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                                             FROM asset_items ai
@@ -1539,7 +1540,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
 
     $sql = "SELECT al.*, u1.name AS officer_name, u2.name AS return_officer_name,
             (SELECT COUNT(*) FROM asset_loan_items WHERE loan_id = al.id) AS total_items,
-            (SELECT GROUP_CONCAT(CONCAT(ai.asset_code, ' (', COALESCE(NULLIF(ai.asset_name,''), ai.model), ')') SEPARATOR ', ') 
+            (SELECT GROUP_CONCAT(CONCAT(ai.asset_code, IF(ai.alias_code IS NOT NULL AND ai.alias_code != '', CONCAT(' [Lama: ', ai.alias_code, ']'), ''), ' (', COALESCE(NULLIF(ai.asset_name,''), ai.model), ')') SEPARATOR ', ') 
              FROM asset_loan_items ali2 
              JOIN asset_items ai ON ai.id = ali2.asset_item_id 
              WHERE ali2.loan_id = al.id) AS asset_items_summary

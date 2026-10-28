@@ -602,14 +602,15 @@ function handle_route_tickets(PDO $pdo): void
         $params[] = $statusFilter;
     }
     if ($q !== '') {
-        $where[] = '(t.ticket_code LIKE ? OR t.subject LIKE ? OR t.reporter_name LIKE ? OR t.location_label LIKE ? OR ma.maintenance_asset_code LIKE ? OR ma.name LIKE ? OR t.pc_id LIKE ?)';
+        $where[] = '(t.ticket_code LIKE ? OR t.subject LIKE ? OR t.reporter_name LIKE ? OR t.location_label LIKE ? OR ai.asset_code LIKE ? OR (ai.alias_code IS NOT NULL AND ai.alias_code LIKE ?) OR ai.asset_name LIKE ? OR ma.maintenance_asset_code LIKE ? OR ma.name LIKE ? OR t.pc_id LIKE ?)';
         $like = '%' . $q . '%';
-        array_push($params, $like, $like, $like, $like, $like, $like, $like);
+        array_push($params, $like, $like, $like, $like, $like, $like, $like, $like, $like, $like);
     }
 
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $sql = "SELECT t.*, 
                    COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
+                   ai.alias_code AS item_alias_code,
                    COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
                    ag.group_code AS commodity_code,
                    ag.group_name AS commodity_name,
@@ -748,7 +749,8 @@ function handle_route_tickets(PDO $pdo): void
                         <?php
                         $assetLabel = '-';
                         if (!empty($t['maintenance_asset_code'])) {
-                            $assetLabel = '<strong>' . e($t['maintenance_asset_code']) . '</strong><br><small class="muted">' . e(mb_strimwidth((string)$t['maintenance_asset_name'], 0, 35, '...')) . '</small>';
+                            $aliasBadge = !empty($t['item_alias_code']) ? '<br><span style="display:inline-block;padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;margin-top:2px;">Lama: ' . e($t['item_alias_code']) . '</span>' : '';
+                            $assetLabel = '<strong>' . e($t['maintenance_asset_code']) . '</strong>' . $aliasBadge . '<br><small class="muted">' . e(mb_strimwidth((string)$t['maintenance_asset_name'], 0, 35, '...')) . '</small>';
                         } elseif (!empty($t['pc_id'])) {
                             $assetLabel = 'PC: <strong>' . e($t['pc_id']) . '</strong>';
                         }
@@ -1651,7 +1653,8 @@ function handle_route_ticket_form(PDO $pdo): void
             if (Array.isArray(assets) && assets.length > 0) {
                 assets.forEach(function(m) {
                     let badge = (m.asset_mode === 'group') ? '[📦 INDUK BUNDLE] ' : ((m.asset_mode === 'child') ? '[🔗 ANGGOTA] ' : '');
-                    let desc = badge + m.asset_code + ' - ' + m.asset_name + (m.custodian_name ? ' (' + m.custodian_name + ')' : '');
+                    let aliasPart = m.alias_code ? (' [Lama: ' + m.alias_code + ']') : '';
+                    let desc = badge + m.asset_code + aliasPart + ' - ' + m.asset_name + (m.custodian_name ? ' (' + m.custodian_name + ')' : '');
                     let opt = document.createElement('option');
                     opt.value = m.id;
                     opt.setAttribute('data-loc', m.location_label || '');
@@ -3092,7 +3095,7 @@ function handle_route_api_corrective_data(PDO $pdo): void
     if ($action === 'get_assets') {
         $groupId = (int)($_GET['group_id'] ?? 0);
         $typeId = (int)($_GET['type_id'] ?? 0);
-        $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status NOT IN ('inactive', 'deleted') ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
+        $stmt = $pdo->prepare("SELECT id, asset_code, alias_code, asset_name, location_label, custodian_name, asset_mode FROM asset_items WHERE asset_group_id = ? AND asset_type_id = ? AND status NOT IN ('inactive', 'deleted') ORDER BY (asset_mode = 'group') DESC, asset_code ASC");
         $stmt->execute([$groupId, $typeId]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;
