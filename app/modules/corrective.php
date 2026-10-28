@@ -459,8 +459,8 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
 
         // h. Match via asset_items directly (auto-link / auto-create maintenance_asset if needed)
         if ($hasAssetItems) {
-            $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, asset_group_id, asset_type_id, asset_category, location_label, custodian_name, custodian_nik FROM asset_items WHERE asset_code = ? LIMIT 1");
-            $stmt->execute([$code]);
+            $stmt = $pdo->prepare("SELECT id, asset_code, asset_name, asset_group_id, asset_type_id, asset_category, location_label, custodian_name, custodian_nik FROM asset_items WHERE asset_code = ? OR alias_code = ? LIMIT 1");
+            $stmt->execute([$code, $code]);
             $aiRow = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($aiRow) {
                 // Periksa apakah sudah ada maintenance_asset yang terhubung via asset_item_id atau kode
@@ -2287,7 +2287,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             <thead>
                 <tr>
                     <th>Tanggal & Tiket</th>
-                    <th>Maintenance Asset</th>
+                    <th>Kode Aset</th>
                     <th>Kode Lama (Legacy)</th>
                     <th>Teknisi / Vendor</th>
                     <th>Tindakan & Solusi</th>

@@ -261,8 +261,8 @@ function handle_route_mobile_service_scan(PDO $pdo): void
                 $assetItemId = (int)($stAi->fetchColumn() ?: 0);
             }
             if ($assetItemId <= 0) {
-                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE asset_code = ? LIMIT 1");
-                $stAi->execute([$rawInput]);
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE (asset_code = ? OR alias_code = ?) AND status <> 'deleted' LIMIT 1");
+                $stAi->execute([$rawInput, $rawInput]);
                 $assetItemId = (int)($stAi->fetchColumn() ?: 0);
             }
         }
@@ -296,6 +296,21 @@ function handle_route_mobile_service_scan(PDO $pdo): void
         }
     }
 
+        $comboboxServiceAssets = [];
+    try {
+        $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
+                                                     COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
+                                                     ai.serial_number, ai.custodian_name, 
+                                                     COALESCE(loc.location_name, ai.location_label, '-') AS location_name,
+                                                     COALESCE(t.type_name, ai.asset_type, '-') AS type_name
+                                              FROM asset_items ai
+                                              LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                              LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                              WHERE ai.status NOT IN ('inactive', 'deleted')
+                                              ORDER BY ai.asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+    $cbServiceAssetsJson = json_encode($comboboxServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
     render_mobile_header('Scan QR Unit Lapangan', $user);
     ?>
     <div class="panel" style="text-align:center;">
@@ -305,12 +320,15 @@ function handle_route_mobile_service_scan(PDO $pdo): void
         <div id="reader" style="width:100%;max-width:320px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000;"></div>
         <p id="camStatus" style="font-size:12px;color:#0284c7;margin-top:8px;">Menyiapkan kamera live scan...</p>
 
-        <form method="post" id="scanForm" style="margin-top:16px;">
+        <form method="post" id="scanForm" style="margin-top:16px;text-align:left;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <label style="text-align:left;">Atau Masukkan ID / Kode Unit Aset:
-                <input name="code" id="codeManual" placeholder="Contoh: IT-CMP-000001 atau ID Unit" required>
-            </label>
-            <button class="btn btn-primary" style="margin-top:8px;">Lanjut Eksekusi</button>
+            <div style="position:relative;">
+                <label style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:6px;display:block;">Atau Masukkan ID / Kode Unit Aset:
+                    <input name="code" id="codeManual" placeholder="🔍 Ketik kode baru, kode lama (legacy), nama barang, PIC..." required autocomplete="off" style="width:100%;box-sizing:border-box;font-size:13.5px;font-weight:600;padding:10px 36px 10px 12px;border:2px solid #0284c7;border-radius:6px;background:#fff;" onfocus="showMobileAssetDropdown(this.value)" oninput="showMobileAssetDropdown(this.value)">
+                </label>
+                <div id="mobileAssetDropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;text-align:left;"></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:10px;width:100%;padding:11px;font-size:14px;font-weight:700;">Lanjut Eksekusi →</button>
         </form>
     </div>
 
@@ -319,6 +337,72 @@ function handle_route_mobile_service_scan(PDO $pdo): void
     (function() {
         var html5QrcodeScanner = null;
         var submitted = false;
+
+        var availableServiceAssets = <?= $cbServiceAssetsJson ?>;
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        window.showMobileAssetDropdown = function(q) {
+            var dd = document.getElementById('mobileAssetDropdown');
+            if (!dd) return;
+            q = (q || '').trim().toLowerCase();
+
+            var matches = availableServiceAssets.filter(function(item) {
+                if (!q) return true;
+                var code = (item.asset_code || '').toLowerCase();
+                var alias = (item.alias_code || '').toLowerCase();
+                var name = (item.asset_name || '').toLowerCase();
+                var sn = (item.serial_number || '').toLowerCase();
+                var cust = (item.custodian_name || '').toLowerCase();
+                var loc = (item.location_name || '').toLowerCase();
+                var typ = (item.type_name || '').toLowerCase();
+                return code.includes(q) || alias.includes(q) || name.includes(q) || sn.includes(q) || cust.includes(q) || loc.includes(q) || typ.includes(q);
+            });
+
+            if (matches.length === 0) {
+                dd.innerHTML = '<div style="padding:12px;font-size:12px;color:#64748b;text-align:center;">Tidak ada unit aset cocok dengan kata kunci &ldquo;' + escapeHtml(q) + '&rdquo;</div>';
+                dd.style.display = 'block';
+                return;
+            }
+
+            dd.innerHTML = '';
+            matches.slice(0, 25).forEach(function(item) {
+                var div = document.createElement('div');
+                div.style.cssText = 'padding:10px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;transition:background 0.15s ease;';
+
+                var aliasPart = item.alias_code ? (' <span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #fde68a;">🏷️ Kode Lama: ' + escapeHtml(item.alias_code) + '</span>') : '';
+                var subParts = [];
+                if (item.type_name && item.type_name !== '-') subParts.push(item.type_name);
+                if (item.serial_number && item.serial_number !== '-') subParts.push('SN: ' + item.serial_number);
+                if (item.location_name && item.location_name !== '-') subParts.push('📍 ' + item.location_name);
+                if (item.custodian_name) subParts.push('👤 ' + item.custodian_name);
+
+                div.innerHTML = '<div style="font-size:13px;font-weight:700;color:#0f172a;"><span style="color:#0284c7;font-family:monospace;">' + escapeHtml(item.asset_code) + '</span>' + aliasPart + ' &bull; ' + escapeHtml(item.asset_name) + '</div>'
+                    + (subParts.length > 0 ? ('<div style="font-size:11px;color:#64748b;margin-top:2px;">' + escapeHtml(subParts.join(' &bull; ')) + '</div>') : '');
+
+                div.onmouseenter = function() { div.style.background = '#f0f9ff'; };
+                div.onmouseleave = function() { div.style.background = '#fff'; };
+                div.onmousedown = function() {
+                    var inp = document.getElementById('codeManual');
+                    if (inp) inp.value = item.asset_code;
+                    dd.style.display = 'none';
+                    document.getElementById('scanForm').submit();
+                };
+                dd.appendChild(div);
+            });
+            dd.style.display = 'block';
+        };
+
+        document.addEventListener('click', function(e) {
+            var dd = document.getElementById('mobileAssetDropdown');
+            var inp = document.getElementById('codeManual');
+            if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
+                dd.style.display = 'none';
+            }
+        });
 
         function onScanSuccess(decodedText, decodedResult) {
             if (submitted) return;
@@ -388,8 +472,8 @@ function handle_route_mobile_service_direct(PDO $pdo): void
             if ($resMaintId && $resMaintId > 0) {
                 $preMntId = $resMaintId;
             } else {
-                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE (asset_code = ? OR asset_code LIKE ?) AND status <> 'deleted' LIMIT 1");
-                $stAi->execute([$rawInput, $rawInput . '%']);
+                $stAi = $pdo->prepare("SELECT id FROM asset_items WHERE (asset_code = ? OR asset_code LIKE ? OR alias_code = ? OR alias_code LIKE ?) AND status <> 'deleted' LIMIT 1");
+                $stAi->execute([$rawInput, $rawInput . '%', $rawInput, $rawInput . '%']);
                 $aiId = (int)($stAi->fetchColumn() ?: 0);
                 if ($aiId > 0) {
                     $preAssetId = $aiId;
@@ -428,6 +512,21 @@ function handle_route_mobile_service_direct(PDO $pdo): void
 
     // JIKA UNIT BELUM DITENTUKAN: Tampilkan antarmuka Scan QR atau Masukkan ID / Kode Unit
     if (!$unit) {
+            $comboboxServiceAssets = [];
+    try {
+        $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
+                                                     COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
+                                                     ai.serial_number, ai.custodian_name, 
+                                                     COALESCE(loc.location_name, ai.location_label, '-') AS location_name,
+                                                     COALESCE(t.type_name, ai.asset_type, '-') AS type_name
+                                              FROM asset_items ai
+                                              LEFT JOIN asset_locations loc ON loc.id = ai.location_id
+                                              LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                                              WHERE ai.status NOT IN ('inactive', 'deleted')
+                                              ORDER BY ai.asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+    $cbServiceAssetsJson = json_encode($comboboxServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         render_mobile_header('Pilih Unit Aset', $user);
         ?>
         <div class="panel" style="text-align:center;">
@@ -440,12 +539,15 @@ function handle_route_mobile_service_direct(PDO $pdo): void
 
         <div class="panel">
             <h2 style="font-size:16px;color:#0284c7;margin-top:0;">⌨️ Atau Masukkan ID / Kode Unit Aset</h2>
-            <p style="font-size:12px;color:#64748b;margin:0 0 10px;">Ketik ID angka atau Kode Unit Aset (misal: <code>IT-CMP-000001</code> atau <code>15</code>).</p>
+            <p style="font-size:12px;color:#64748b;margin:0 0 10px;">Ketik atau pilih ID angka, Kode Unit Baru, atau <strong>Kode Lama (Legacy)</strong>.</p>
             <form method="get" action="<?= route_url('mobile_service_direct') ?>" id="scanForm">
                 <input type="hidden" name="route" value="mobile_service_direct">
-                <label style="font-size:13px;font-weight:600;margin-top:0;">ID atau Kode Unit:
-                    <input name="code" id="codeManual" placeholder="Contoh: IT-CMP-000001 atau 12" required autofocus autocomplete="off" style="font-size:15px;font-weight:600;padding:12px;">
-                </label>
+                <div style="position:relative;">
+                    <label style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:6px;display:block;">ID, Kode Baru, atau Kode Lama (Legacy):
+                        <input name="code" id="codeManual" placeholder="🔍 Ketik kode baru, kode lama (legacy), nama barang, PIC..." required autofocus autocomplete="off" style="width:100%;box-sizing:border-box;font-size:14px;font-weight:600;padding:11px 36px 11px 12px;border:2px solid #0284c7;border-radius:6px;background:#fff;" onfocus="showMobileAssetDropdown(this.value)" oninput="showMobileAssetDropdown(this.value)">
+                    </label>
+                    <div id="mobileAssetDropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;text-align:left;"></div>
+                </div>
                 <button class="btn btn-primary" style="margin-top:12px;font-size:15px;padding:12px;width:100%;font-weight:700;background:#0284c7;border-color:#0369a1;color:#fff;">
                     🔍 Verifikasi Unit & Lanjutkan →
                 </button>
@@ -456,6 +558,72 @@ function handle_route_mobile_service_direct(PDO $pdo): void
         <script>
         (function() {
             var submitted = false;
+            var availableServiceAssets = <?= $cbServiceAssetsJson ?>;
+
+            function escapeHtml(str) {
+                if (!str) return '';
+                return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+            }
+
+            window.showMobileAssetDropdown = function(q) {
+                var dd = document.getElementById('mobileAssetDropdown');
+                if (!dd) return;
+                q = (q || '').trim().toLowerCase();
+
+                var matches = availableServiceAssets.filter(function(item) {
+                    if (!q) return true;
+                    var code = (item.asset_code || '').toLowerCase();
+                    var alias = (item.alias_code || '').toLowerCase();
+                    var name = (item.asset_name || '').toLowerCase();
+                    var sn = (item.serial_number || '').toLowerCase();
+                    var cust = (item.custodian_name || '').toLowerCase();
+                    var loc = (item.location_name || '').toLowerCase();
+                    var typ = (item.type_name || '').toLowerCase();
+                    return code.includes(q) || alias.includes(q) || name.includes(q) || sn.includes(q) || cust.includes(q) || loc.includes(q) || typ.includes(q);
+                });
+
+                if (matches.length === 0) {
+                    dd.innerHTML = '<div style="padding:12px;font-size:12px;color:#64748b;text-align:center;">Tidak ada unit aset cocok dengan kata kunci &ldquo;' + escapeHtml(q) + '&rdquo;</div>';
+                    dd.style.display = 'block';
+                    return;
+                }
+
+                dd.innerHTML = '';
+                matches.slice(0, 25).forEach(function(item) {
+                    var div = document.createElement('div');
+                    div.style.cssText = 'padding:10px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;transition:background 0.15s ease;';
+
+                    var aliasPart = item.alias_code ? (' <span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #fde68a;">🏷️ Kode Lama: ' + escapeHtml(item.alias_code) + '</span>') : '';
+                    var subParts = [];
+                    if (item.type_name && item.type_name !== '-') subParts.push(item.type_name);
+                    if (item.serial_number && item.serial_number !== '-') subParts.push('SN: ' + item.serial_number);
+                    if (item.location_name && item.location_name !== '-') subParts.push('📍 ' + item.location_name);
+                    if (item.custodian_name) subParts.push('👤 ' + item.custodian_name);
+
+                    div.innerHTML = '<div style="font-size:13px;font-weight:700;color:#0f172a;"><span style="color:#0284c7;font-family:monospace;">' + escapeHtml(item.asset_code) + '</span>' + aliasPart + ' &bull; ' + escapeHtml(item.asset_name) + '</div>'
+                        + (subParts.length > 0 ? ('<div style="font-size:11px;color:#64748b;margin-top:2px;">' + escapeHtml(subParts.join(' &bull; ')) + '</div>') : '');
+
+                    div.onmouseenter = function() { div.style.background = '#f0f9ff'; };
+                    div.onmouseleave = function() { div.style.background = '#fff'; };
+                    div.onmousedown = function() {
+                        var inp = document.getElementById('codeManual');
+                        if (inp) inp.value = item.asset_code;
+                        dd.style.display = 'none';
+                        document.getElementById('scanForm').submit();
+                    };
+                    dd.appendChild(div);
+                });
+                dd.style.display = 'block';
+            };
+
+            document.addEventListener('click', function(e) {
+                var dd = document.getElementById('mobileAssetDropdown');
+                var inp = document.getElementById('codeManual');
+                if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
+                    dd.style.display = 'none';
+                }
+            });
+
             function onScanSuccess(decodedText) {
                 if (submitted) return;
                 submitted = true;
