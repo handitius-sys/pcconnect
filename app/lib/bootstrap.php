@@ -270,7 +270,6 @@ function get_regulated_menus(): array
     return [
         'Transaksi Aset' => [
             'asset_items' => 'Unit Aset',
-            'asset_legacy_import' => 'Import Aset Legacy (Data Lama)',
             'asset_loans' => 'Peminjaman Aset',
             'asset_mutations' => 'Mutasi Aset',
         ],
@@ -320,7 +319,6 @@ function get_regulated_menu_descriptions(): array
 {
     return [
         'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), pencarian bebas (Kode Baru / Kode Lama / SN / PC / Custodian), combobox interaktif, tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
-        'asset_legacy_import' => 'Upload spreadsheet Excel/CSV data lama, ekstraksi kode & tanggal perolehan legacy, pemetaan otomatis AI / Smart heuristic (kategori, brand, spesifikasi, lokasi), verifikasi/edit sebelum import',
         'asset_loans' => 'Lihat daftar peminjaman aset, buat pengajuan pinjam dengan pencarian kode baru/lama, proses serah terima & pengembalian, cetak bukti pinjam, batalkan pengajuan',
         'asset_mutations' => 'Lihat riwayat mutasi unit aset, cari unit via kode baru/lama, buat transaksi mutasi lokasi/pengguna/company, edit & batalkan mutasi',
         'maintenance' => 'Lihat jadwal & block status Preventive Maintenance, filter komoditas, cari kode baru/lama, tambah schedule maintenance, eksekusi/edit PM, batalkan/hapus jadwal',
@@ -367,7 +365,7 @@ function get_default_role_regulation(string $role, string $menuKey): array
     if ($role === 'maintenance_admin') {
         $fullCrud = ['maintenance', 'tickets', 'jobs', 'corrective_job_desks', 'corrective_workshops'];
         $createEditOnly = [
-            'asset_items', 'asset_legacy_import', 'asset_loans', 'asset_mutations', 'mobile_service',
+            'asset_items', 'asset_loans', 'asset_mutations', 'mobile_service',
             'pcs', 'asset_groups', 'asset_types', 'asset_brands', 'asset_master_items',
             'asset_identifiers', 'asset_specifications', 'asset_locations', 'master_pengguna', 'labels'
         ];
@@ -432,7 +430,6 @@ function get_default_sidebar_structure(): array
             'order' => 10,
             'items' => [
                 'asset_items' => ['label' => 'Unit Aset', 'icon' => 'box', 'order' => 10, 'reg' => 'asset_items'],
-                'asset_legacy_import' => ['label' => 'Import Aset Lama', 'icon' => 'box', 'order' => 15, 'reg' => 'asset_legacy_import'],
                 'asset_loans' => ['label' => 'Peminjaman Aset', 'icon' => 'loan', 'order' => 20, 'reg' => 'asset_loans'],
                 'asset_mutations' => ['label' => 'Mutasi Aset', 'icon' => 'move', 'order' => 30, 'reg' => 'asset_mutations'],
             ],
@@ -500,6 +497,8 @@ function ensure_menu_orders_schema(PDO $pdo): void
             display_order INT NOT NULL DEFAULT 10,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Pastikan asset_legacy_import tidak muncul di sidebar main menu Transaksi Aset
+        $pdo->exec("DELETE FROM system_menu_orders WHERE item_key = 'asset_legacy_import'");
     } catch (Throwable $e) {}
 }
 

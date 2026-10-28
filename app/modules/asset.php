@@ -6636,7 +6636,7 @@ function handle_route_asset_items(PDO $pdo): void
             . '</div>';
     }
 
-    $importBtn = (has_regulation('asset_legacy_import', 'view', $user) || has_regulation('asset_items', 'create', $user)) ? '<a class="btn" href="' . route_url('asset_legacy_import') . '" style="background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600;">📥 Import Aset Lama (Excel)</a>' : '';
+    $importBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn" href="' . route_url('asset_legacy_import') . '" style="background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600;">📥 Import Aset Lama (Excel)</a>' : '';
 
     echo '<div class="split"><h1>' . $filterTitle . '</h1><div class="actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $backdoorBtn . $importBtn . $addBtn . '<a class="btn" href="' . route_url('export_excel', array_merge(['type' => 'asset_items'], $showBackdoor ? ['status' => 'deleted'] : [])) . '">Export Excel</a></div></div>';
 

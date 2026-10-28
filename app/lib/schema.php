@@ -2780,7 +2780,7 @@ function ensure_role_regulations_schema(PDO $pdo): void
             }
         } else {
             $menus = [
-                'asset_items', 'asset_legacy_import', 'asset_loans', 'asset_mutations',
+                'asset_items', 'asset_loans', 'asset_mutations',
                 'maintenance', 'tickets', 'mobile_service',
                 'reports', 'corrective_repairs', 'asset_movements', 'report_asset_loans', 'report_asset_items',
                 'pcs', 'asset_groups', 'corrective_workshops', 'asset_types', 'jobs', 'corrective_job_desks',
@@ -2789,6 +2789,10 @@ function ensure_role_regulations_schema(PDO $pdo): void
                 'labels', 'users'
             ];
         }
+
+        try {
+            $pdo->exec("DELETE FROM system_menu_orders WHERE item_key = 'asset_legacy_import'");
+        } catch (Throwable $ignored) {}
 
         $roles = ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance', 'loan_officer'];
         $ins = $pdo->prepare("INSERT IGNORE INTO role_regulations (role, menu_key, can_view, can_create, can_edit, can_delete) VALUES (?, ?, ?, ?, ?, ?)");

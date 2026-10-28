@@ -27,8 +27,8 @@ declare(strict_types=1);
  * 
  * [PROSES & REGULASI HAK AKSES]:
  * 1. Regulasi Hak Akses:
- *    - View: Membuka formulir awal dan mengunduh template spreadsheet contoh (.xlsx / .csv).
- *    - Create: Mengunggah spreadsheet, melakukan ekstraksi heuristik AI, serta mengeksekusi impor ke database.
+ *    - Terintegrasi penuh di bawah izin Tambah (Create) pada Unit Aset (`asset_items`).
+ *    - Hanya dapat diakses dan dieksekusi oleh pengguna yang memiliki hak Tambah pada Unit Aset atau Administrator.
  * 2. Step 1: Pemilihan Komoditas (Grup Aset) & Kategori (Tipe Aset) tujuan via dropdown dependen + upload file.
  * 3. Step 2: Preview interaktif checklist dengan ekstraksi tanggal beli setelah tanda '/', bedah spesifikasi AI,
  *    dan alokasi Master Lokasi (ruko/lantai/ruangan).
@@ -37,7 +37,7 @@ declare(strict_types=1);
 function handle_route_asset_legacy_import(PDO $pdo): void
 {
     $user = require_login();
-    if (!is_full_admin($user) && !has_regulation('asset_legacy_import', 'view', $user) && !has_regulation('asset_items', 'create', $user)) {
+    if (!is_full_admin($user) && !has_regulation('asset_items', 'create', $user)) {
         http_response_code(403);
         exit('Akses ditolak ke menu Import Aset Lama.');
     }
@@ -67,7 +67,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
     // 2. Eksekusi Simpan Data Terpilih ke Database (Step 3)
     if ($action === 'execute_import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
-        if (!is_full_admin($user) && !has_regulation('asset_legacy_import', 'create', $user) && !has_regulation('asset_items', 'create', $user)) {
+        if (!is_full_admin($user) && !has_regulation('asset_items', 'create', $user)) {
             http_response_code(403);
             exit('Akses ditolak. Role Anda tidak memiliki izin untuk menyimpan data hasil import aset lama.');
         }
@@ -264,7 +264,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
     // 3. Upload File & Proses Preview dengan AI / Smart Heuristic (Step 2)
     if ($action === 'upload_preview' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
-        if (!is_full_admin($user) && !has_regulation('asset_legacy_import', 'create', $user) && !has_regulation('asset_items', 'create', $user)) {
+        if (!is_full_admin($user) && !has_regulation('asset_items', 'create', $user)) {
             http_response_code(403);
             exit('Akses ditolak. Role Anda tidak memiliki izin untuk mengunggah file import aset lama.');
         }
