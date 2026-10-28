@@ -5,13 +5,21 @@ declare(strict_types=1);
 /**
  * Modul: Import Data Aset Lama (Legacy) dengan AI-Assisted Parsing
  * 
- * Fungsi modul ini:
- * 1. Mengimpor data aset lama dari file Excel (.xlsx) atau CSV (.csv).
- * 2. Memetakan kolom:
- *    - Kode Aset Lama -> Disimpan sebagai `alias_code` pada unit aset.
- *    - Deskripsi Bebas -> Dibedah oleh AI / Smart Heuristic Engine menjadi Identifiers (SN, MAC) & Spesifikasi (CPU, RAM, Storage, dll.).
- *    - Tanggal Masuk -> Disimpan sebagai `installed_at`.
- * 3. Menyediakan mode Preview & Konfirmasi sebelum data disimpan permanen ke database `asset_items`.
+ * Alur Proses Terstruktur:
+ * 1. Step 1 (Pemilihan Awal):
+ *    - User memilih Komoditas (Grup Aset) & Kategori (Tipe Aset) terlebih dahulu.
+ *    - User mengunggah file Excel (.xlsx) / CSV (.csv) data inventaris lama.
+ * 2. Step 2 (Preview & Seleksi Interaktif):
+ *    - Kolom 'NO' dibaca sebagai Kode Legacy Lama (alias_code).
+ *    - Tanggal perolehan/beli otomatis diekstrak dari teks setelah tanda '/' pada kolom 'NO'.
+ *    - Kolom 'NAMA INVENTARIS + SPESIFIKASI' dibedah oleh AI / Smart Heuristic sesuai Kategori yang dipilih.
+ *    - Kolom 'RUKO', 'LANTAI', 'RUANGAN' dialokasikan ke Master Lokasi (dibuatkan baru jika belum ada)
+ *      serta mengisi detail ruangan pada location_label.
+ *    - Menampilkan list interaktif dengan checkbox checklist agar user bisa memilih baris mana saja
+ *      yang akan diimpor ke Komoditas & Kategori tersebut.
+ * 3. Step 3 (Eksekusi Simpan):
+ *    - Menyimpan seluruh item terpilih ke database `asset_items` lengkap dengan `alias_code`,
+ *      relasi Master Lokasi, `asset_identifiers`, dan `asset_specifications`.
  */
 
 function handle_route_asset_legacy_import(PDO $pdo): void
@@ -29,17 +37,22 @@ function handle_route_asset_legacy_import(PDO $pdo): void
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename="Template_Import_Aset_Lama.csv"');
         $out = fopen('php://output', 'w');
-        // Tambahkan BOM agar karakter terbaca rapi di Microsoft Excel Windows
-        fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
-        fputcsv($out, ['Kode Lama', 'Deskripsi / Spesifikasi Lengkap', 'Tanggal Masuk', 'Lokasi', 'Pengguna']);
-        fputcsv($out, ['PC-IT-001', 'Laptop Lenovo ThinkPad T480 Intel Core i5-8250U RAM 16GB SSD 512GB Windows 11 Pro SN: PF1A2B3C MAC: 00:11:22:33:44:55', '2021-06-15', 'Ruang IT Lt 2', 'Budi Santoso']);
-        fputcsv($out, ['PC-FIN-02', 'PC Desktop Dell OptiPlex 3080 Core i7-10700 RAM 32GB HDD 1TB VGA GTX 1650 SN: 9XYZ8765', '2020-11-20', 'Ruang Finance', 'Siti Aminah']);
-        fputcsv($out, ['PRN-OPS-01', 'Printer HP LaserJet Pro M404dn SN: VNC3K01928', '2022-03-10', 'Ruang Operasional', 'Andi Pratama']);
+        fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF)); // BOM UTF-8
+        fputcsv($out, ['NO', 'NAMA INVENTARIS + SPESIFIKASI', 'RUANGAN', 'LANTAI', 'RUKO']);
+        fputcsv($out, ['1 /21-2-2023', 'AC SHARP 1/2 PK R32', 'RUANG MAKAN', '4', 'BLOK AY NO. 16 A']);
+        fputcsv($out, ['2 /15-05-2022', 'Laptop Lenovo ThinkPad T480 Intel Core i5-8250U RAM 16GB SSD 512GB Windows 11 Pro SN: PF1A2B3C', 'RUANG IT', '2', 'KANTOR PUSAT']);
+        fputcsv($out, ['3 /10-08-2021', 'PC Desktop Dell OptiPlex 3080 Core i7-10700 RAM 32GB HDD 1TB', 'FINANCE', '1', 'KANTOR PUSAT']);
         fclose($out);
         exit;
     }
 
-    // 2. Eksekusi Simpan Data ke Database (Step 3)
+    // Reset Session Preview
+    if ($action === 'reset') {
+        unset($_SESSION['asset_legacy_import_preview'], $_SESSION['asset_legacy_import_opts']);
+        redirect_to('asset_legacy_import');
+    }
+
+    // 2. Eksekusi Simpan Data Terpilih ke Database (Step 3)
     if ($action === 'execute_import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
         $previewData = $_SESSION['asset_legacy_import_preview'] ?? [];
@@ -48,48 +61,66 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             redirect_to('asset_legacy_import');
         }
 
+        $selectedIndexes = $_POST['selected_rows'] ?? [];
+        if (empty($selectedIndexes)) {
+            flash('Tidak ada item yang dipilih untuk diimpor. Berikan tanda centang pada item yang ingin diimpor.', 'err');
+            redirect_to('asset_legacy_import');
+        }
+
+        $companyId = (int)($_POST['company_id'] ?? 0) ?: null;
+        $groupId = (int)($_POST['asset_group_id'] ?? 0);
+        $typeId = (int)($_POST['asset_type_id'] ?? 0);
+
+        if ($groupId <= 0 || $typeId <= 0) {
+            flash('Komoditas dan Kategori tujuan wajib dipilih.', 'err');
+            redirect_to('asset_legacy_import');
+        }
+
+        // Ambil info Group & Type
+        $gStmt = $pdo->prepare("SELECT group_code, group_name FROM asset_groups WHERE id = ?");
+        $gStmt->execute([$groupId]);
+        $gRow = $gStmt->fetch(PDO::FETCH_ASSOC);
+        $gCode = strtoupper(trim((string)($gRow['group_code'] ?? 'IT')));
+
+        $tStmt = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+        $tStmt->execute([$typeId]);
+        $tRow = $tStmt->fetch(PDO::FETCH_ASSOC);
+        $tCode = strtoupper(trim((string)($tRow['type_code'] ?? 'CMP')));
+        $typeName = (string)($tRow['type_name'] ?? 'Computer');
+
+        // Status aktif ID
+        $activeStatusId = (int)($pdo->query("SELECT id FROM asset_statuses WHERE status_code = 'ACTIVE' LIMIT 1")->fetchColumn() ?: 1);
+
         $importedCount = 0;
         $skippedCount = 0;
-        $companyId = (int)($_POST['company_id'] ?? 0) ?: null;
-        $locationId = (int)($_POST['location_id'] ?? 0) ?: null;
-        $defaultGroupId = (int)($_POST['asset_group_id'] ?? 0) ?: 1;
-
-        // Ambil peta groups dan types
-        $groups = [];
-        foreach ($pdo->query("SELECT id, UPPER(TRIM(group_code)) AS code, group_name FROM asset_groups")->fetchAll(PDO::FETCH_ASSOC) as $g) {
-            $groups[$g['code']] = (int)$g['id'];
-        }
-        $types = [];
-        foreach ($pdo->query("SELECT id, asset_group_id, UPPER(TRIM(type_code)) AS code, type_name FROM asset_types")->fetchAll(PDO::FETCH_ASSOC) as $t) {
-            $types[$t['asset_group_id'] . '_' . $t['code']] = (int)$t['id'];
-            $types['NAME_' . strtoupper(trim($t['type_name']))] = (int)$t['id'];
-        }
-
-        // Ambil ID status aktif
-        $activeStatusId = (int)($pdo->query("SELECT id FROM asset_statuses WHERE status_code = 'ACTIVE' LIMIT 1")->fetchColumn() ?: 1);
 
         $pdo->beginTransaction();
         try {
-            foreach ($previewData as $row) {
+            foreach ($selectedIndexes as $idxStr) {
+                $idx = (int)$idxStr;
+                if (!isset($previewData[$idx])) {
+                    continue;
+                }
+                $row = $previewData[$idx];
                 $legacyCode = trim((string)($row['legacy_code'] ?? ''));
+
                 if ($legacyCode === '') {
                     $skippedCount++;
                     continue;
                 }
 
-                // Cek apakah alias_code sudah ada
-                $checkStmt = $pdo->prepare("SELECT id, asset_code FROM asset_items WHERE alias_code = ? LIMIT 1");
+                // Cek duplikasi kode legacy di database
+                $checkStmt = $pdo->prepare("SELECT id FROM asset_items WHERE alias_code = ? LIMIT 1");
                 $checkStmt->execute([$legacyCode]);
-                $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
-                if ($existing) {
+                if ($checkStmt->fetchColumn()) {
                     $skippedCount++;
                     continue;
                 }
 
-                $gCode = strtoupper(trim((string)($row['group_code'] ?? 'IT')));
-                $tCode = strtoupper(trim((string)($row['type_code'] ?? 'CMP')));
-                $gId = $groups[$gCode] ?? ($groups['IT'] ?? $defaultGroupId);
-                $tId = $types[$gId . '_' . $tCode] ?? ($types['NAME_' . strtoupper($row['category_name'] ?? '')] ?? (int)($pdo->query("SELECT id FROM asset_types WHERE asset_group_id = {$gId} LIMIT 1")->fetchColumn() ?: 1));
+                // Resolusi / Buat Baru Master Lokasi (Ruko / Gedung)
+                $locResolution = resolve_or_create_asset_location($pdo, (string)($row['ruko'] ?? ''), (string)($row['lantai'] ?? ''), (string)($row['ruangan'] ?? ''));
+                $locId = $locResolution['location_id'];
+                $locLabel = $locResolution['location_label'];
 
                 // Generate Kode Aset Baru
                 $newAssetCode = generate_next_asset_code($pdo, $gCode, $tCode);
@@ -119,15 +150,9 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                 $installedAt = !empty($row['installed_at']) ? $row['installed_at'] : null;
                 $serialNumber = trim((string)($row['serial_number'] ?? ''));
                 $custodianName = trim((string)($row['custodian_name'] ?? ''));
-                $locLabel = trim((string)($row['location_label'] ?? ''));
-                $rawNotes = 'Diimpor dari data lama. Deskripsi asli: ' . trim((string)($row['raw_description'] ?? ''));
+                $rawNotes = 'Diimpor dari data lama (Legacy). Deskripsi asli: ' . trim((string)($row['raw_description'] ?? ''));
 
-                // Tipe nama
-                $tNameStmt = $pdo->prepare("SELECT type_name FROM asset_types WHERE id = ?");
-                $tNameStmt->execute([$tId]);
-                $typeName = (string)($tNameStmt->fetchColumn() ?: 'Computer');
-
-                // Insert asset_items
+                // Insert ke tabel asset_items
                 $insSql = "INSERT INTO asset_items (
                     master_item_id, brand_id, asset_code, alias_code, asset_group_id, asset_type_id,
                     asset_status_id, asset_mode, asset_name, brand, model, serial_number,
@@ -144,8 +169,8 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     $brandId,
                     $newAssetCode,
                     $legacyCode,
-                    $gId,
-                    $tId,
+                    $groupId,
+                    $typeId,
                     $activeStatusId,
                     $assetName,
                     $brandName,
@@ -154,7 +179,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     $custodianName ?: null,
                     $rawNotes,
                     $companyId,
-                    $locationId,
+                    $locId,
                     $locLabel ?: null,
                     $installedAt,
                     $typeName,
@@ -162,10 +187,10 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                 ]);
                 $newId = (int)$pdo->lastInsertId();
 
-                // Simpan Identifiers (Serial Number, MAC Address)
+                // Simpan Identifiers (Serial Number, MAC, Tag No, dll.)
                 if (!empty($serialNumber)) {
-                    $idfStmt = $pdo->prepare("SELECT id FROM asset_type_identifiers WHERE asset_type_id = ? AND UPPER(identifier_code) LIKE '%SERIAL%' LIMIT 1");
-                    $idfStmt->execute([$tId]);
+                    $idfStmt = $pdo->prepare("SELECT id FROM asset_type_identifiers WHERE asset_type_id = ? AND (UPPER(identifier_code) LIKE '%SERIAL%' OR UPPER(identifier_code) LIKE '%SN%') LIMIT 1");
+                    $idfStmt->execute([$typeId]);
                     $idfId = (int)($idfStmt->fetchColumn() ?: 0);
                     if ($idfId > 0) {
                         $pdo->prepare("INSERT INTO asset_identifiers (asset_item_id, asset_type_identifier_id, identifier_value) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE identifier_value=VALUES(identifier_value)")
@@ -173,32 +198,24 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     }
                 }
                 if (!empty($row['mac_address'])) {
-                    $macVal = trim((string)$row['mac_address']);
                     $idfMacStmt = $pdo->prepare("SELECT id FROM asset_type_identifiers WHERE asset_type_id = ? AND UPPER(identifier_code) LIKE '%MAC%' LIMIT 1");
-                    $idfMacStmt->execute([$tId]);
+                    $idfMacStmt->execute([$typeId]);
                     $macIdfId = (int)($idfMacStmt->fetchColumn() ?: 0);
                     if ($macIdfId > 0) {
                         $pdo->prepare("INSERT INTO asset_identifiers (asset_item_id, asset_type_identifier_id, identifier_value) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE identifier_value=VALUES(identifier_value)")
-                            ->execute([$newId, $macIdfId, $macVal]);
+                            ->execute([$newId, $macIdfId, trim((string)$row['mac_address'])]);
                     }
                 }
 
-                // Simpan Spesifikasi (Processor, RAM, Storage, OS, VGA)
-                $specsToSave = [
-                    'PROCESSOR' => $row['processor'] ?? '',
-                    'RAM'       => $row['ram'] ?? '',
-                    'STORAGE'   => $row['storage'] ?? '',
-                    'OS'        => $row['os'] ?? '',
-                    'VGA'       => $row['vga'] ?? '',
-                ];
+                // Simpan Spesifikasi (Disesuaikan dengan Kategori)
+                $specsToSave = $row['specs_map'] ?? [];
                 foreach ($specsToSave as $spCode => $spVal) {
                     $spVal = trim((string)$spVal);
                     if ($spVal === '') continue;
-                    $spFindStmt = $pdo->prepare("SELECT id, specification_name FROM asset_type_specifications WHERE asset_type_id = ? AND UPPER(specification_code) LIKE ? LIMIT 1");
-                    $spFindStmt->execute([$tId, '%' . $spCode . '%']);
-                    $spRow = $spFindStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($spRow) {
-                        $spId = (int)$spRow['id'];
+                    $spFindStmt = $pdo->prepare("SELECT id FROM asset_type_specifications WHERE asset_type_id = ? AND UPPER(specification_code) = UPPER(?) LIMIT 1");
+                    $spFindStmt->execute([$typeId, $spCode]);
+                    $spId = (int)($spFindStmt->fetchColumn() ?: 0);
+                    if ($spId > 0) {
                         $pdo->prepare("INSERT INTO asset_specifications (asset_item_id, asset_type_specification_id, specification_value) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE specification_value=VALUES(specification_value)")
                             ->execute([$newId, $spId, $spVal]);
                     }
@@ -206,9 +223,10 @@ function handle_route_asset_legacy_import(PDO $pdo): void
 
                 $importedCount++;
             }
+
             $pdo->commit();
-            unset($_SESSION['asset_legacy_import_preview']);
-            flash("Berhasil mengimpor {$importedCount} unit aset lama ke sistem AsetConnect!" . ($skippedCount > 0 ? " ({$skippedCount} baris dilewati karena duplikat atau kode kosong)." : ""));
+            unset($_SESSION['asset_legacy_import_preview'], $_SESSION['asset_legacy_import_opts']);
+            flash("Berhasil mengimpor {$importedCount} unit aset ke kategori '{$typeName}'!" . ($skippedCount > 0 ? " ({$skippedCount} baris dilewati karena duplikat atau kode kosong)." : ""));
             redirect_to('asset_items');
         } catch (Throwable $e) {
             $pdo->rollBack();
@@ -220,6 +238,16 @@ function handle_route_asset_legacy_import(PDO $pdo): void
     // 3. Upload File & Proses Preview dengan AI / Smart Heuristic (Step 2)
     if ($action === 'upload_preview' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
+
+        $groupId = (int)($_POST['asset_group_id'] ?? 0);
+        $typeId = (int)($_POST['asset_type_id'] ?? 0);
+        $companyId = (int)($_POST['company_id'] ?? 0);
+
+        if ($groupId <= 0 || $typeId <= 0) {
+            flash('Silakan pilih Komoditas dan Kategori aset tujuan terlebih dahulu sebelum mengunggah file.', 'err');
+            redirect_to('asset_legacy_import');
+        }
+
         if (empty($_FILES['import_file']['name']) || empty($_FILES['import_file']['tmp_name'])) {
             flash('Silakan pilih file Excel (.xlsx) atau CSV (.csv) untuk diimpor.', 'err');
             redirect_to('asset_legacy_import');
@@ -242,67 +270,85 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             redirect_to('asset_legacy_import');
         }
 
+        // Ambil info Kategori & Komoditas yang dipilih
+        $gInfo = $pdo->query("SELECT group_code, group_name FROM asset_groups WHERE id = {$groupId}")->fetch(PDO::FETCH_ASSOC);
+        $tInfo = $pdo->query("SELECT type_code, type_name FROM asset_types WHERE id = {$typeId}")->fetch(PDO::FETCH_ASSOC);
+        $gCode = strtoupper(trim((string)($gInfo['group_code'] ?? 'IT')));
+        $tCode = strtoupper(trim((string)($tInfo['type_code'] ?? 'CMP')));
+        $typeName = (string)($tInfo['type_name'] ?? 'Computer');
+
         // Deteksi Header Baris Pertama
         $headerRow = array_map(function($h) {
             return strtolower(trim((string)$h));
         }, $rows[0]);
 
-        $colCode = -1;
+        $colNo = -1;
         $colDesc = -1;
-        $colDate = -1;
-        $colLoc = -1;
-        $colUser = -1;
+        $colRuangan = -1;
+        $colLantai = -1;
+        $colRuko = -1;
 
         foreach ($headerRow as $idx => $headerText) {
-            if ($colCode === -1 && (str_contains($headerText, 'kode') || str_contains($headerText, 'code') || str_contains($headerText, 'barcode') || str_contains($headerText, 'no aset'))) {
-                $colCode = $idx;
-            } elseif ($colDesc === -1 && (str_contains($headerText, 'deskripsi') || str_contains($headerText, 'description') || str_contains($headerText, 'spek') || str_contains($headerText, 'spesifikasi') || str_contains($headerText, 'nama'))) {
+            // Kolom NO / Kode Legacy
+            if ($colNo === -1 && in_array($headerText, ['no', 'no.', 'no aset', 'kode', 'kode lama', 'barcode', 'code'])) {
+                $colNo = $idx;
+            } elseif ($colNo === -1 && str_starts_with($headerText, 'no')) {
+                $colNo = $idx;
+            }
+            // Kolom Deskripsi / Nama Inventaris + Spesifikasi
+            if ($colDesc === -1 && (str_contains($headerText, 'inventaris') || str_contains($headerText, 'spesifikasi') || str_contains($headerText, 'deskripsi') || str_contains($headerText, 'nama') || str_contains($headerText, 'barang'))) {
                 $colDesc = $idx;
-            } elseif ($colDate === -1 && (str_contains($headerText, 'tanggal') || str_contains($headerText, 'tgl') || str_contains($headerText, 'date') || str_contains($headerText, 'masuk') || str_contains($headerText, 'beli'))) {
-                $colDate = $idx;
-            } elseif ($colLoc === -1 && (str_contains($headerText, 'lokasi') || str_contains($headerText, 'ruangan') || str_contains($headerText, 'location'))) {
-                $colLoc = $idx;
-            } elseif ($colUser === -1 && (str_contains($headerText, 'pengguna') || str_contains($headerText, 'user') || str_contains($headerText, 'pic') || str_contains($headerText, 'custodian'))) {
-                $colUser = $idx;
+            }
+            // Kolom Ruangan
+            if ($colRuangan === -1 && (str_contains($headerText, 'ruang') || str_contains($headerText, 'room'))) {
+                $colRuangan = $idx;
+            }
+            // Kolom Lantai
+            if ($colLantai === -1 && (str_contains($headerText, 'lant') || str_contains($headerText, 'floor'))) {
+                $colLantai = $idx;
+            }
+            // Kolom Ruko / Gedung
+            if ($colRuko === -1 && (str_contains($headerText, 'ruko') || str_contains($headerText, 'gedung') || str_contains($headerText, 'building') || str_contains($headerText, 'lokasi'))) {
+                $colRuko = $idx;
             }
         }
 
-        // Fallback urutan kolom jika header tidak terdeteksi
-        if ($colCode === -1) $colCode = 0;
+        // Fallback jika header tidak terdeteksi
+        if ($colNo === -1) $colNo = 0;
         if ($colDesc === -1) $colDesc = count($headerRow) > 1 ? 1 : 0;
-        if ($colDate === -1 && count($headerRow) > 2) $colDate = 2;
+        if ($colRuangan === -1 && count($headerRow) > 2) $colRuangan = 2;
+        if ($colLantai === -1 && count($headerRow) > 3) $colLantai = 3;
+        if ($colRuko === -1 && count($headerRow) > 4) $colRuko = 4;
 
         $dataRows = array_slice($rows, 1);
         $previewList = [];
 
         foreach ($dataRows as $r) {
-            $rawCode = trim((string)($r[$colCode] ?? ''));
+            $rawNo = trim((string)($r[$colNo] ?? ''));
             $rawDesc = trim((string)($r[$colDesc] ?? ''));
-            $rawDate = $colDate >= 0 ? trim((string)($r[$colDate] ?? '')) : '';
-            $rawLoc = $colLoc >= 0 ? trim((string)($r[$colLoc] ?? '')) : '';
-            $rawUser = $colUser >= 0 ? trim((string)($r[$colUser] ?? '')) : '';
+            $rawRuangan = $colRuangan >= 0 ? trim((string)($r[$colRuangan] ?? '')) : '';
+            $rawLantai = $colLantai >= 0 ? trim((string)($r[$colLantai] ?? '')) : '';
+            $rawRuko = $colRuko >= 0 ? trim((string)($r[$colRuko] ?? '')) : '';
 
-            if ($rawCode === '' && $rawDesc === '') {
+            if ($rawNo === '' && $rawDesc === '') {
                 continue;
             }
 
-            // Normalisasi Tanggal Masuk
-            $normDate = null;
-            if ($rawDate !== '') {
-                $ts = strtotime(str_replace('/', '-', $rawDate));
-                if ($ts && $ts > 0) {
-                    $normDate = date('Y-m-d', $ts);
-                }
-            }
+            // 1. Ekstrak Kode Legacy & Tanggal Beli dari Kolom 'NO'
+            [$legacyCode, $installedAt] = extract_legacy_code_and_date($rawNo);
 
-            // AI / Smart Parsing Deskripsi
-            $parsed = parse_asset_description_ai($pdo, $rawDesc, $rawCode, $useAi);
+            // 2. AI / Smart Parsing Deskripsi sesuai Kategori yang dipilih
+            $parsed = parse_asset_description_by_category($pdo, $rawDesc, $legacyCode, $gCode, $tCode, $useAi);
 
-            // Cek apakah kode lama sudah ada di database
+            // 3. Resolusi Alokasi Lokasi (Ruko + Lantai + Ruangan)
+            $locSim = resolve_or_create_asset_location($pdo, $rawRuko, $rawLantai, $rawRuangan, null, true); // simulation
+
+            // 4. Cek apakah kode lama sudah ada di database (Duplikat)
             $isDuplicate = false;
-            if ($rawCode !== '') {
+            $dupAssetCode = '';
+            if ($legacyCode !== '') {
                 $cStmt = $pdo->prepare("SELECT id, asset_code FROM asset_items WHERE alias_code = ? LIMIT 1");
-                $cStmt->execute([$rawCode]);
+                $cStmt->execute([$legacyCode]);
                 $dup = $cStmt->fetch(PDO::FETCH_ASSOC);
                 if ($dup) {
                     $isDuplicate = true;
@@ -311,196 +357,213 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             }
 
             $previewList[] = [
-                'legacy_code'      => $rawCode,
+                'legacy_code'      => $legacyCode,
+                'installed_at'     => $installedAt,
                 'raw_description'  => $rawDesc,
-                'installed_at'     => $normDate,
-                'location_label'   => $rawLoc ?: ($parsed['location_label'] ?? ''),
-                'custodian_name'   => $rawUser ?: ($parsed['custodian_name'] ?? ''),
-                'group_code'       => $parsed['group_code'] ?? 'IT',
-                'type_code'        => $parsed['type_code'] ?? 'CMP',
-                'category_name'    => $parsed['category_name'] ?? 'Computer',
+                'ruko'             => $rawRuko,
+                'lantai'           => $rawLantai,
+                'ruangan'          => $rawRuangan,
+                'loc_master_name'  => $locSim['location_name'],
+                'loc_label'        => $locSim['location_label'],
+                'loc_is_new'       => $locSim['is_new'],
                 'brand'            => $parsed['brand'] ?? '',
                 'model'            => $parsed['model'] ?? '',
                 'asset_name'       => $parsed['asset_name'] ?? '',
                 'serial_number'    => $parsed['serial_number'] ?? '',
                 'mac_address'      => $parsed['mac_address'] ?? '',
-                'processor'        => $parsed['processor'] ?? '',
-                'ram'              => $parsed['ram'] ?? '',
-                'storage'          => $parsed['storage'] ?? '',
-                'vga'              => $parsed['vga'] ?? '',
-                'os'               => $parsed['os'] ?? '',
+                'specs_map'        => $parsed['specs_map'] ?? [],
+                'specs_summary'    => $parsed['specs_summary'] ?? '',
+                'custodian_name'   => $parsed['custodian_name'] ?? '',
                 'ai_method'        => $parsed['ai_method'] ?? 'Smart Engine',
                 'is_duplicate'     => $isDuplicate,
-                'dup_asset_code'   => $dupAssetCode ?? '',
+                'dup_asset_code'   => $dupAssetCode,
             ];
         }
 
         $_SESSION['asset_legacy_import_preview'] = $previewList;
         $_SESSION['asset_legacy_import_opts'] = [
-            'company_id'     => (int)($_POST['company_id'] ?? 0),
-            'location_id'    => (int)($_POST['location_id'] ?? 0),
-            'asset_group_id' => (int)($_POST['asset_group_id'] ?? 0),
+            'company_id'     => $companyId,
+            'asset_group_id' => $groupId,
+            'asset_type_id'  => $typeId,
+            'group_code'     => $gCode,
+            'group_name'     => $gInfo['group_name'] ?? 'IT Asset',
+            'type_code'      => $tCode,
+            'type_name'      => $typeName,
         ];
     }
 
     // TAMPILAN HALAMAN (STEP 1 atau STEP 2 PREVIEW)
-    render_header('Import Data Aset Lama (Excel)', $user);
+    render_header('Import Data Aset Lama (Legacy)', $user);
     echo asset_nav_html();
 
     $previewList = $_SESSION['asset_legacy_import_preview'] ?? null;
+    $opts = $_SESSION['asset_legacy_import_opts'] ?? [];
 
     if ($previewList !== null && !empty($previewList)) {
-        // STEP 2: PREVIEW & VERIFIKASI SEBELUM SIMPAN
-        render_legacy_import_preview_html($pdo, $previewList, $_SESSION['asset_legacy_import_opts'] ?? []);
+        // STEP 2: PREVIEW & SELEKSI CHECKLIST
+        render_legacy_import_preview_selection_html($pdo, $previewList, $opts);
     } else {
-        // STEP 1: FORM UPLOAD & OPSIONAL
-        render_legacy_import_upload_form_html($pdo);
+        // STEP 1: FORM PEMILIHAN KOMODITAS, KATEGORI & UPLOAD
+        render_legacy_import_init_form_html($pdo);
     }
 
     render_footer();
 }
 
 /**
- * Membaca baris tabel dari file spreadsheet (.xlsx atau .csv) tanpa library eksternal.
+ * Ekstraksi Tanggal Beli/Perolehan setelah tanda '/' dari kolom 'NO'.
+ * Contoh input: '1 /21-2-2023' -> return ['1 /21-2-2023', '2023-02-21']
  */
-function read_uploaded_spreadsheet_rows(string $filePath, string $ext): array
+function extract_legacy_code_and_date(string $rawNo): array
 {
-    $rows = [];
+    $rawNo = trim($rawNo);
+    $legacyCode = $rawNo;
+    $installedAt = null;
 
-    if ($ext === 'csv' || $ext === 'txt') {
-        $handle = fopen($filePath, 'r');
-        if (!$handle) return [];
+    if (strpos($rawNo, '/') !== false) {
+        $parts = explode('/', $rawNo, 2);
+        $afterSlash = trim($parts[1]);
 
-        // Deteksi delimiter (koma atau titik koma)
-        $firstLine = fgets($handle);
-        rewind($handle);
-        $delimiter = (substr_count($firstLine ?: '', ';') > substr_count($firstLine ?: '', ',')) ? ';' : ',';
-
-        while (($data = fgetcsv($handle, 10000, $delimiter)) !== false) {
-            // Hilangkan BOM pada sel pertama jika ada
-            if (!empty($data[0])) {
-                $data[0] = preg_replace('/^\xEF\xBB\xBF/', '', $data[0]);
+        // Pattern 1: DD-MM-YYYY atau DD/MM/YYYY atau DD.MM.YYYY
+        if (preg_match('/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/', $afterSlash, $m)) {
+            $d = (int)$m[1];
+            $mon = (int)$m[2];
+            $y = (int)$m[3];
+            if ($y < 100) { $y += 2000; }
+            if ($d > 12 && $mon <= 12) {
+                $installedAt = sprintf('%04d-%02d-%02d', $y, $mon, $d);
+            } elseif ($mon > 12 && $d <= 12) {
+                $installedAt = sprintf('%04d-%02d-%02d', $y, $d, $mon);
+            } else {
+                $installedAt = sprintf('%04d-%02d-%02d', $y, $mon, $d);
             }
-            if (!empty(array_filter($data, fn($v) => trim((string)$v) !== ''))) {
-                $rows[] = array_map('trim', $data);
-            }
+        } elseif (preg_match('/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/', $afterSlash, $m)) {
+            // Pattern 2: YYYY-MM-DD
+            $installedAt = sprintf('%04d-%02d-%02d', (int)$m[1], (int)$m[2], (int)$m[3]);
         }
-        fclose($handle);
-        return $rows;
     }
 
-    if ($ext === 'xlsx' && class_exists('ZipArchive')) {
-        $zip = new ZipArchive();
-        if ($zip->open($filePath) !== true) {
-            return [];
-        }
-
-        // 1. Baca shared strings
-        $sharedStrings = [];
-        $sharedXmlStr = $zip->getFromName('xl/sharedStrings.xml');
-        if ($sharedXmlStr !== false) {
-            $xml = @simplexml_load_string($sharedXmlStr);
-            if ($xml) {
-                foreach ($xml->si as $si) {
-                    if (isset($si->t)) {
-                        $sharedStrings[] = (string)$si->t;
-                    } elseif (isset($si->r)) {
-                        $t = '';
-                        foreach ($si->r as $r) {
-                            $t .= (string)$r->t;
-                        }
-                        $sharedStrings[] = $t;
-                    } else {
-                        $sharedStrings[] = '';
-                    }
-                }
-            }
-        }
-
-        // 2. Baca sheet1.xml
-        $sheetXmlStr = $zip->getFromName('xl/worksheets/sheet1.xml');
-        if ($sheetXmlStr === false) {
-            $sheetXmlStr = $zip->getFromName('xl/worksheets/sheet.xml');
-        }
-        if ($sheetXmlStr !== false) {
-            $sheetXml = @simplexml_load_string($sheetXmlStr);
-            if ($sheetXml && isset($sheetXml->sheetData->row)) {
-                foreach ($sheetXml->sheetData->row as $rowNode) {
-                    $row = [];
-                    foreach ($rowNode->c as $cell) {
-                        $val = (string)$cell->v;
-                        $type = (string)$cell['t'];
-                        if ($type === 's' && isset($sharedStrings[(int)$val])) {
-                            $val = $sharedStrings[(int)$val];
-                        }
-                        $row[] = trim($val);
-                    }
-                    if (!empty(array_filter($row, fn($v) => $v !== ''))) {
-                        $rows[] = $row;
-                    }
-                }
-            }
-        }
-        $zip->close();
-        return $rows;
-    }
-
-    return $rows;
+    return [$legacyCode, $installedAt];
 }
 
 /**
- * Mesin Parsing Cerdas AI + Heuristik Regex untuk membedah deskripsi bebas menjadi:
- * Category, Brand, Model, Serial Number, MAC, Processor, RAM, Storage, OS, VGA, Custodian, Lokasi.
+ * Resolusi Alokasi Lokasi dari Kolom Ruko, Lantai, dan Ruangan.
+ * Menghubungkan ke tabel `asset_locations` (dibuat baru jika belum ada),
+ * dan merangkum detail ruangan ke `location_label`.
  */
-function parse_asset_description_ai(PDO $pdo, string $desc, string $legacyCode = '', bool $useAi = true): array
+function resolve_or_create_asset_location(PDO $pdo, string $ruko, string $lantai, string $ruangan, ?int $defaultLocId = null, bool $dryRun = false): array
+{
+    $ruko = trim($ruko);
+    $lantai = trim($lantai);
+    $ruangan = trim($ruangan);
+
+    $locationId = $defaultLocId ?: null;
+    $locationName = '-';
+    $isNew = false;
+
+    if ($ruko !== '') {
+        // Standarisasi nama Master Lokasi (misal: "Ruko BLOK AY NO. 16 A" atau sesuai teks)
+        $cleanMasterName = (stripos($ruko, 'ruko') === false && stripos($ruko, 'gedung') === false && stripos($ruko, 'kantor') === false)
+            ? 'Ruko ' . $ruko
+            : $ruko;
+
+        // Cari di asset_locations
+        $stmt = $pdo->prepare("SELECT id, location_name FROM asset_locations WHERE UPPER(TRIM(location_name)) = UPPER(TRIM(?)) OR UPPER(TRIM(location_name)) = UPPER(TRIM(?)) LIMIT 1");
+        $stmt->execute([$cleanMasterName, $ruko]);
+        $found = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($found) {
+            $locationId = (int)$found['id'];
+            $locationName = $found['location_name'];
+            $isNew = false;
+        } else {
+            // Cek fuzzy like
+            $stmtFuzzy = $pdo->prepare("SELECT id, location_name FROM asset_locations WHERE location_name LIKE ? LIMIT 1");
+            $stmtFuzzy->execute(['%' . $ruko . '%']);
+            $fuzzy = $stmtFuzzy->fetch(PDO::FETCH_ASSOC);
+            if ($fuzzy) {
+                $locationId = (int)$fuzzy['id'];
+                $locationName = $fuzzy['location_name'];
+                $isNew = false;
+            } else {
+                // Lokasi baru
+                $locationName = $cleanMasterName;
+                $isNew = true;
+                if (!$dryRun) {
+                    // Buat kode unik
+                    $slug = preg_replace('/[^A-Za-z0-9]/', '', strtoupper($ruko));
+                    $baseCode = 'LOC-' . substr($slug ?: 'RUKO', 0, 10);
+                    $locCode = $baseCode;
+                    $counter = 1;
+                    while ($pdo->query("SELECT id FROM asset_locations WHERE location_code = " . $pdo->quote($locCode))->fetchColumn()) {
+                        $locCode = $baseCode . '-' . $counter++;
+                    }
+                    $ins = $pdo->prepare("INSERT INTO asset_locations (location_code, location_name, is_active) VALUES (?, ?, 1)");
+                    $ins->execute([$locCode, $locationName]);
+                    $locationId = (int)$pdo->lastInsertId();
+                }
+            }
+        }
+    }
+
+    // Susun detail Ruangan & Lantai
+    $detailParts = [];
+    if ($lantai !== '') {
+        $detailParts[] = 'Lantai ' . $lantai;
+    }
+    if ($ruangan !== '') {
+        $detailParts[] = $ruangan;
+    }
+    $locationLabel = implode(' - ', $detailParts);
+
+    return [
+        'location_id'    => $locationId,
+        'location_name'  => $locationName,
+        'location_label' => $locationLabel,
+        'is_new'         => $isNew,
+    ];
+}
+
+/**
+ * AI & Heuristic Parser yang spesifik disesuaikan dengan Kategori yang dipilih (AC, Laptop, Komputer, Kendaraan, dll.).
+ */
+function parse_asset_description_by_category(PDO $pdo, string $desc, string $legacyCode, string $gCode, string $tCode, bool $useAi = true): array
 {
     $desc = trim($desc);
     $result = [
-        'group_code'     => 'IT',
-        'type_code'      => 'CMP',
-        'category_name'  => 'Computer',
-        'brand'          => '',
-        'model'          => '',
-        'asset_name'     => '',
-        'serial_number'  => '',
-        'mac_address'    => '',
-        'processor'      => '',
-        'ram'            => '',
-        'storage'        => '',
-        'vga'            => '',
-        'os'             => '',
-        'custodian_name' => '',
-        'location_label' => '',
-        'ai_method'      => 'Smart Rule Engine',
+        'brand'         => '',
+        'model'         => '',
+        'asset_name'    => '',
+        'serial_number' => '',
+        'mac_address'   => '',
+        'specs_map'     => [],
+        'specs_summary' => '',
+        'custodian_name'=> '',
+        'ai_method'     => 'Smart Rule Engine',
     ];
 
     if ($desc === '') {
         return $result;
     }
 
-    // 1. Coba panggil Gemini AI jika API key tersedia dan opsi AI diaktifkan
+    // 1. Coba panggil Gemini AI jika API key tersedia
     $apiKey = trim((string)(config_value('gemini_api_key') ?: getenv('GEMINI_API_KEY') ?: ''));
     if ($useAi && $apiKey !== '' && function_exists('curl_init')) {
         try {
-            $prompt = "You are an expert IT hardware and asset management cataloger. Extract structured asset information from this legacy asset inventory description text:\n"
+            $prompt = "You are an IT and Facility asset management cataloging expert. The target asset commodity is '{$gCode}' and category type is '{$tCode}'.\n"
+                . "Extract structured asset properties from this legacy asset description text:\n"
                 . "Description: \"{$desc}\"\n"
-                . "Legacy Asset Code: \"{$legacyCode}\"\n\n"
-                . "Extract these specific fields and return ONLY a valid JSON object without markdown fences:\n"
+                . "Legacy Code: \"{$legacyCode}\"\n\n"
+                . "Extract and return ONLY a valid JSON object without markdown formatting:\n"
                 . "{\n"
-                . "  \"type_code\": \"string (NBK for Laptop/Notebook, CMP for PC/Desktop/All-in-One, PRT for Printer, SRV for Server, or OTH for Other)\",\n"
-                . "  \"category_name\": \"string (Notebook, Computer, Printer, Server, or Other)\",\n"
-                . "  \"brand\": \"string (e.g. Lenovo, Dell, HP, Asus, Acer, Apple, Epson, Canon, etc.)\",\n"
-                . "  \"model\": \"string (e.g. ThinkPad T480, OptiPlex 3080, LaserJet M404, etc.)\",\n"
-                . "  \"asset_name\": \"string (Descriptive clean name, e.g. Laptop ThinkPad T480)\",\n"
-                . "  \"serial_number\": \"string or empty if none\",\n"
-                . "  \"mac_address\": \"string or empty if none\",\n"
-                . "  \"processor\": \"string or empty (e.g. Intel Core i5-8250U, Ryzen 5 5600G)\",\n"
-                . "  \"ram\": \"string or empty (e.g. 16GB DDR4)\",\n"
-                . "  \"storage\": \"string or empty (e.g. SSD 512GB, HDD 1TB)\",\n"
-                . "  \"vga\": \"string or empty (e.g. NVIDIA GTX 1650, Intel UHD)\",\n"
-                . "  \"os\": \"string or empty (e.g. Windows 11 Pro)\",\n"
-                . "  \"custodian_name\": \"string or empty if none\",\n"
-                . "  \"location_label\": \"string or empty if none\"\n"
+                . "  \"brand\": \"string (e.g. Sharp, Daikin, Lenovo, Dell, etc.)\",\n"
+                . "  \"model\": \"string (e.g. Split 1/2 PK, ThinkPad T480, OptiPlex 3080)\",\n"
+                . "  \"asset_name\": \"string (Clean descriptive asset title)\",\n"
+                . "  \"serial_number\": \"string or empty\",\n"
+                . "  \"mac_address\": \"string or empty\",\n"
+                . "  \"specs\": {\n"
+                . "    \"key\": \"value (e.g. capacity, processor, ram, storage, refrigerant, power_watt)\"\n"
+                . "  }\n"
                 . "}";
 
             $candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
@@ -527,62 +590,44 @@ function parse_asset_description_ai(PDO $pdo, string $desc, string $legacyCode =
                     $json = json_decode($resp, true);
                     $rawText = $json['candidates'][0]['content']['parts'][0]['text'] ?? '';
                     if ($rawText !== '') {
-                        $parsedJson = json_decode($rawText, true);
-                        if (is_array($parsedJson)) {
-                            $result['type_code'] = !empty($parsedJson['type_code']) ? strtoupper($parsedJson['type_code']) : 'CMP';
-                            $result['category_name'] = !empty($parsedJson['category_name']) ? $parsedJson['category_name'] : 'Computer';
-                            $result['brand'] = !empty($parsedJson['brand']) ? $parsedJson['brand'] : '';
-                            $result['model'] = !empty($parsedJson['model']) ? $parsedJson['model'] : '';
-                            $result['asset_name'] = !empty($parsedJson['asset_name']) ? $parsedJson['asset_name'] : '';
-                            $result['serial_number'] = !empty($parsedJson['serial_number']) ? $parsedJson['serial_number'] : '';
-                            $result['mac_address'] = !empty($parsedJson['mac_address']) ? $parsedJson['mac_address'] : '';
-                            $result['processor'] = !empty($parsedJson['processor']) ? $parsedJson['processor'] : '';
-                            $result['ram'] = !empty($parsedJson['ram']) ? $parsedJson['ram'] : '';
-                            $result['storage'] = !empty($parsedJson['storage']) ? $parsedJson['storage'] : '';
-                            $result['vga'] = !empty($parsedJson['vga']) ? $parsedJson['vga'] : '';
-                            $result['os'] = !empty($parsedJson['os']) ? $parsedJson['os'] : '';
-                            $result['custodian_name'] = !empty($parsedJson['custodian_name']) ? $parsedJson['custodian_name'] : '';
-                            $result['location_label'] = !empty($parsedJson['location_label']) ? $parsedJson['location_label'] : '';
+                        $pJson = json_decode($rawText, true);
+                        if (is_array($pJson)) {
+                            $result['brand'] = trim((string)($pJson['brand'] ?? ''));
+                            $result['model'] = trim((string)($pJson['model'] ?? ''));
+                            $result['asset_name'] = trim((string)($pJson['asset_name'] ?? ''));
+                            $result['serial_number'] = trim((string)($pJson['serial_number'] ?? ''));
+                            $result['mac_address'] = trim((string)($pJson['mac_address'] ?? ''));
                             $result['ai_method'] = 'Gemini AI (' . $cMod . ')';
+                            if (!empty($pJson['specs']) && is_array($pJson['specs'])) {
+                                $result['specs_map'] = $pJson['specs'];
+                                $specLines = [];
+                                foreach ($pJson['specs'] as $k => $v) {
+                                    if ($v) $specLines[] = ucfirst($k) . ': ' . $v;
+                                }
+                                $result['specs_summary'] = implode(' &bull; ', $specLines);
+                            }
                             return $result;
                         }
                     }
                 }
             }
-        } catch (Throwable $ignored) {
-            // Fallback ke Smart Heuristic Regex Engine jika koneksi AI gagal
-        }
+        } catch (Throwable $ignored) {}
     }
 
-    // 2. SMART HEURISTIC REGEX ENGINE (Fallback otomatis & Offline-Ready)
-    // -----------------------------------------------------------------
-    
-    // Deteksi Kategori / Tipe Aset
-    if (preg_match('/\b(laptop|notebook|thinkpad|macbook|zenbook|ideapad|latitude|elitebook|probook|vivobook|legion)\b/i', $desc)) {
-        $result['type_code'] = 'NBK';
-        $result['category_name'] = 'Notebook';
-    } elseif (preg_match('/\b(printer|laserjet|deskjet|inkjet|dotmatrix|l3110|l3210|epson|canon|brother)\b/i', $desc)) {
-        $result['type_code'] = 'PRT';
-        $result['category_name'] = 'Printer';
-    } elseif (preg_match('/\b(server|poweredge|proliant|rackmount)\b/i', $desc)) {
-        $result['type_code'] = 'SRV';
-        $result['category_name'] = 'Server';
-    } else {
-        $result['type_code'] = 'CMP';
-        $result['category_name'] = 'Computer';
-    }
+    // 2. SMART HEURISTIC REGEX ENGINE (Fallback otomatis sesuai Kategori)
+    // ------------------------------------------------------------------
 
-    // Deteksi Brand / Merek
-    $brands = ['Lenovo', 'Dell', 'HP', 'Hewlett-Packard', 'Asus', 'Acer', 'Apple', 'MSI', 'Toshiba', 'Samsung', 'Epson', 'Canon', 'Brother', 'Cisco', 'Mikrotik', 'Logitech', 'ViewSonic', 'BenQ', 'Philips', 'LG', 'APC', 'ICA'];
-    foreach ($brands as $b) {
+    // Deteksi Brand
+    $knownBrands = ['Sharp', 'Daikin', 'Panasonic', 'Mitsubishi', 'LG', 'Gree', 'Samsung', 'AUX', 'Changhong', 'Toshiba', 'Lenovo', 'Dell', 'HP', 'Asus', 'Acer', 'Apple', 'Epson', 'Canon', 'Brother', 'Perkins', 'Cummins', 'Yanmar', 'Toyota', 'Honda', 'Yamaha', 'Suzuki'];
+    foreach ($knownBrands as $b) {
         if (preg_match('/\b' . preg_quote($b, '/') . '\b/i', $desc)) {
-            $result['brand'] = ($b === 'Hewlett-Packard') ? 'HP' : $b;
+            $result['brand'] = $b;
             break;
         }
     }
 
     // Deteksi Serial Number
-    if (preg_match('/\b(?:S\/N|SN|Serial\s*(?:Number|No)?|Service\s*Tag)\s*[:#]?\s*([A-Za-z0-9_-]{4,32})\b/i', $desc, $mSn)) {
+    if (preg_match('/\b(?:S\/N|SN|Serial\s*(?:Number|No)?|Tag)\s*[:#]?\s*([A-Za-z0-9_-]{4,32})\b/i', $desc, $mSn)) {
         $result['serial_number'] = trim($mSn[1]);
     }
 
@@ -591,72 +636,87 @@ function parse_asset_description_ai(PDO $pdo, string $desc, string $legacyCode =
         $result['mac_address'] = strtoupper(trim($mMac[1]));
     }
 
-    // Deteksi Processor (CPU)
-    if (preg_match('/\b(Intel\s+(?:Core\s+)?[iI][3579][\w-]*|Core\s+i[3579][\w-]*|Intel\s+Xeon[\w-]*|Intel\s+Celeron[\w-]*|Intel\s+Pentium[\w-]*|AMD\s+Ryzen\s+[3579][\w-]*|Ryzen\s+[3579][\w-]*|Apple\s+M[1234][\w\s]*)\b/i', $desc, $mCpu)) {
-        $result['processor'] = trim($mCpu[1]);
-    }
+    $specs = [];
 
-    // Deteksi RAM
-    if (preg_match('/\b(?:RAM\s*:?\s*)?(\d+\s*(?:GB|MB)(?:\s*DDR\d)?)\b/i', $desc, $mRam)) {
-        $result['ram'] = trim($mRam[1]);
+    // Jika Kategori AC / Pendingin (AC)
+    if ($tCode === 'AC' || stripos($desc, 'AC') !== false) {
+        // Kapasitas (PK / BTU)
+        if (preg_match('/(\d+(?:\/\d+)?(?:\.\d+)?\s*(?:PK|pk|BTU|btu))/i', $desc, $mPk)) {
+            $specs['COOLING_CAP'] = strtoupper(trim($mPk[1]));
+            $result['model'] = $specs['COOLING_CAP'];
+        }
+        // Jenis AC
+        if (preg_match('/\b(Split(?:\s*Wall)?|Cassette|Floor\s*Standing|Ducting|Portable)\b/i', $desc, $mType)) {
+            $specs['AC_TYPE'] = trim($mType[1]);
+        } else {
+            $specs['AC_TYPE'] = 'Split Wall';
+        }
+        // Freon
+        if (preg_match('/\b(R32|R410A|R22|R290)\b/i', $desc, $mFreon)) {
+            $specs['REFRIGERANT'] = strtoupper(trim($mFreon[1]));
+        }
+        // Inverter
+        if (stripos($desc, 'inverter') !== false) {
+            $specs['INVERTER'] = 'Inverter';
+        }
+        // Watt
+        if (preg_match('/(\d+\s*(?:Watt|W))\b/i', $desc, $mWatt)) {
+            $specs['POWER_WATT'] = trim($mWatt[1]);
+        }
+        $result['asset_name'] = trim('AC ' . ($result['brand'] ?: '') . ' ' . ($result['model'] ?: ''));
     }
-
-    // Deteksi Storage (SSD / HDD)
-    if (preg_match('/\b(\d+\s*(?:GB|TB)\s*(?:SSD|HDD|NVMe))\b/i', $desc, $mSto)) {
-        $result['storage'] = trim($mSto[1]);
-    } elseif (preg_match('/\b(?:SSD|HDD|Storage)\s*:?\s*(\d+\s*(?:GB|TB))\b/i', $desc, $mSto2)) {
-        $result['storage'] = trim($mSto2[1]);
+    // Jika Kategori Komputer / Laptop (CMP / NBK)
+    elseif (in_array($tCode, ['CMP', 'NBK', 'SRV'], true) || stripos($desc, 'core i') !== false || stripos($desc, 'ram') !== false) {
+        if (preg_match('/\b(Intel\s+(?:Core\s+)?[iI][3579][\w-]*|Core\s+i[3579][\w-]*|Ryzen\s+[3579][\w-]*|Xeon[\w-]*|Celeron[\w-]*|Apple\s+M[1234][\w\s]*)\b/i', $desc, $mCpu)) {
+            $specs['PROCESSOR'] = trim($mCpu[1]);
+        }
+        if (preg_match('/\b(?:RAM\s*:?\s*)?(\d+\s*(?:GB|MB)(?:\s*DDR\d)?)\b/i', $desc, $mRam)) {
+            $specs['RAM'] = trim($mRam[1]);
+        }
+        if (preg_match('/\b(\d+\s*(?:GB|TB)\s*(?:SSD|HDD|NVMe))\b/i', $desc, $mSto)) {
+            $specs['STORAGE'] = trim($mSto[1]);
+        }
+        if (preg_match('/\b(Windows\s+(?:11|10|8|7|Server)\s*(?:Pro|Home)?|Ubuntu|macOS|Linux)\b/i', $desc, $mOs)) {
+            $specs['OS'] = trim($mOs[1]);
+        }
+        $prefix = ($tCode === 'NBK') ? 'Laptop' : 'PC';
+        $result['asset_name'] = trim($prefix . ' ' . ($result['brand'] ?: '') . ' ' . ($result['model'] ?: ''));
     }
-
-    // Deteksi Operating System
-    if (preg_match('/\b(Windows\s+(?:11|10|8|7|Server)\s*(?:Pro|Home|Enterprise|Professional)?|Ubuntu|Debian|CentOS|macOS|Linux)\b/i', $desc, $mOs)) {
-        $result['os'] = trim($mOs[1]);
-    }
-
-    // Deteksi VGA
-    if (preg_match('/\b(GTX\s*\d+|RTX\s*\d+|Radeon\s*[\w\d]+|Intel\s+UHD|Intel\s+Iris)\b/i', $desc, $mVga)) {
-        $result['vga'] = trim($mVga[1]);
-    }
-
-    // Deteksi Model & Nama Aset
-    if (preg_match('/\b(ThinkPad\s+[\w\d]+|OptiPlex\s+[\w\d]+|Latitude\s+[\w\d]+|EliteBook\s+[\w\d]+|ProBook\s+[\w\d]+|LaserJet\s+[\w\d]+|EcoTank\s+[\w\d]+)\b/i', $desc, $mMod)) {
-        $result['model'] = trim($mMod[1]);
-    }
-
-    // Nama Aset Bersih
-    $prefixName = ($result['type_code'] === 'NBK') ? 'Laptop' : (($result['type_code'] === 'PRT') ? 'Printer' : 'PC');
-    $result['asset_name'] = trim($prefixName . ' ' . $result['brand'] . ' ' . $result['model']);
-    if (strlen($result['asset_name']) < 5) {
+    // Default Lainnya
+    else {
         $result['asset_name'] = mb_strimwidth($desc, 0, 45, '...');
     }
 
-    // Deteksi Pengguna (PIC / User)
-    if (preg_match('/\b(?:User|Pengguna|PIC)\s*:\s*([A-Za-z\s]+?)(?:,|$|\n)/i', $desc, $mUser)) {
-        $result['custodian_name'] = trim($mUser[1]);
+    if (empty($result['asset_name'])) {
+        $result['asset_name'] = mb_strimwidth($desc, 0, 45, '...');
     }
 
-    // Deteksi Lokasi
-    if (preg_match('/\b(?:Lokasi|Ruang|Ruangan|Gedung)\s*:\s*([A-Za-z0-9\s]+?)(?:,|$|\n)/i', $desc, $mLoc)) {
-        $result['location_label'] = trim($mLoc[1]);
+    $result['specs_map'] = $specs;
+    $summaryLines = [];
+    foreach ($specs as $k => $v) {
+        $summaryLines[] = "<strong>{$k}:</strong> {$v}";
     }
+    $result['specs_summary'] = implode(' &bull; ', $summaryLines);
 
     return $result;
 }
 
 /**
- * Merender Step 1: Form Upload File Excel / CSV & Opsi Bantuan AI.
+ * Merender Step 1: Form Pemilihan Komoditas & Kategori (Dropdown Dependen) dan Upload File.
  */
-function render_legacy_import_upload_form_html(PDO $pdo): void
+function render_legacy_import_init_form_html(PDO $pdo): void
 {
+    $groups = $pdo->query("SELECT id, group_code, group_name FROM asset_groups ORDER BY group_name")->fetchAll(PDO::FETCH_ASSOC);
+    $types = $pdo->query("SELECT id, asset_group_id, type_code, type_name FROM asset_types WHERE (is_active=1 OR is_active IS NULL) ORDER BY type_name")->fetchAll(PDO::FETCH_ASSOC);
+
+    $jsonTypes = json_encode($types, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
     $companies = company_options($pdo, 0, true, '- Pilih Company -');
-    $locations = asset_location_options($pdo, 0, true, '- Pilih Lokasi Unit Aset -');
-    $groups = asset_group_options($pdo, 0, true, '- Default Komoditas (IT Asset) -');
 
     echo '<section class="panel">'
         . '<div class="split" style="align-items:center;margin-bottom:14px;">'
         . '  <div>'
         . '    <h1 style="margin:0;">📥 Import Data Aset Lama (Legacy)</h1>'
-        . '    <p class="muted" style="margin:4px 0 0 0;">Upload data aset lama dari file Excel (.xlsx) atau CSV. Kode lama otomatis disimpan sebagai <strong>Alias Aset</strong> dan deskripsi bebas dibedah otomatis oleh AI.</p>'
+        . '    <p class="muted" style="margin:4px 0 0 0;">Pilih Komoditas dan Kategori tujuan terlebih dahulu, kemudian upload file Excel (.xlsx) / CSV inventaris lama Anda.</p>'
         . '  </div>'
         . '  <div>'
         . '    <a class="btn" href="' . route_url('asset_legacy_import', ['action' => 'download_template']) . '" style="background:#0284c7;color:#fff;border-color:#0284c7;font-weight:600;">📥 Download Template Excel / CSV</a>'
@@ -664,124 +724,180 @@ function render_legacy_import_upload_form_html(PDO $pdo): void
         . '</div>';
 
     echo '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#1e40af;line-height:1.6;">'
-        . '📌 <strong>Format File yang Didukung:</strong><br>'
-        . '&bull; File Microsoft Excel (<strong>.xlsx</strong>) atau File Teks Terpisah Koma (<strong>.csv</strong>).<br>'
-        . '&bull; Kolom utama yang dibaca: <code>Kode Lama</code>, <code>Deskripsi / Spesifikasi</code>, dan <code>Tanggal Masuk</code>.<br>'
-        . '&bull; <strong>Fitur AI Parsing:</strong> Kecerdasan Buatan (Gemini AI & Smart Heuristic Engine) akan otomatis membedah teks deskripsi dan memisahkannya menjadi <em>Serial Number</em>, <em>MAC Address</em>, <em>Processor</em>, <em>RAM</em>, <em>Storage (SSD/HDD)</em>, <em>OS</em>, serta merek dan model.'
+        . '📌 <strong>Struktur Data Kolom yang Dibaca Otomatis:</strong><br>'
+        . '&bull; <strong>NO:</strong> Kode Legacy lama (misal <code>1 /21-2-2023</code>). Tanggal setelah tanda <code>/</code> otomatis diekstrak menjadi <strong>Tanggal Perolehan / Beli</strong>.<br>'
+        . '&bull; <strong>NAMA INVENTARIS + SPESIFIKASI:</strong> Dibedah oleh AI & Smart Engine menjadi Merek, Model, Serial Number, dan Spesifikasi sesuai Kategori pilihan Anda.<br>'
+        . '&bull; <strong>RUKO, LANTAI, RUANGAN:</strong> Otomatis dialokasikan ke <strong>Master Lokasi</strong> (dibuatkan baru jika belum ada) dan detail ruangan dicatat pada label lokasi.<br>'
+        . '&bull; <strong>Seleksi Interaktif:</strong> Setelah file diunggah, seluruh data akan muncul dalam bentuk list checklist sehingga Anda dapat memilih item per Komoditas dan per Kategori.'
         . '</div>';
 
     echo '<form method="post" enctype="multipart/form-data" action="' . route_url('asset_legacy_import', ['action' => 'upload_preview']) . '">'
         . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
-        . '<div class="grid two">'
-        . '  <label>File Excel (.xlsx) / CSV (.csv) *<input type="file" name="import_file" accept=".xlsx,.csv,.txt" required style="padding:8px;background:#fff;"></label>'
-        . '  <label>Default Komoditas Aset<select name="asset_group_id">' . $groups . '</select></label>'
+        . '<div class="grid two" style="background:#f8fafc;padding:16px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;">'
+        . '  <label style="font-weight:700;color:#0f172a;">1. Pilih Komoditas Aset *'
+        . '    <select id="importGroupSelect" name="asset_group_id" required onchange="filterImportCategoryOptions()" style="height:42px;margin-top:6px;font-size:14px;background:#fff;border:2px solid #2563eb;">'
+        . '      <option value="">-- Pilih Komoditas Terlebih Dahulu --</option>';
+    foreach ($groups as $g) {
+        echo '<option value="' . (int)$g['id'] . '">' . e($g['group_code'] . ' - ' . $g['group_name']) . '</option>';
+    }
+    echo '    </select>'
+        . '  </label>'
+        . '  <label style="font-weight:700;color:#0f172a;">2. Pilih Kategori Aset *'
+        . '    <select id="importTypeSelect" name="asset_type_id" required style="height:42px;margin-top:6px;font-size:14px;background:#fff;border:2px solid #2563eb;">'
+        . '      <option value="">-- Pilih Komoditas Terlebih Dahulu --</option>'
+        . '    </select>'
+        . '  </label>'
         . '</div>'
         . '<div class="grid two">'
-        . '  <label>Default Company Pemilik<select name="company_id">' . $companies . '</select></label>'
-        . '  <label>Default Lokasi Penempatan<select name="location_id">' . $locations . '</select></label>'
+        . '  <label>File Excel (.xlsx) / CSV (.csv) *<input type="file" name="import_file" accept=".xlsx,.csv,.txt" required style="padding:8px;background:#fff;"></label>'
+        . '  <label>Company Pemilik Aset<select name="company_id">' . $companies . '</select></label>'
         . '</div>'
         . '<div style="background:#f8fafc;padding:12px 16px;border:1px solid #e2e8f0;border-radius:6px;margin:14px 0;">'
         . '  <label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer;font-weight:600;color:#0f172a;">'
         . '    <input type="checkbox" name="use_ai" value="1" checked style="width:18px;height:18px;accent-color:#2563eb;">'
-        . '    <span>🤖 Aktifkan AI Parsing Otomatis (Ekstrak SN, MAC, CPU, RAM, SSD/HDD dari Teks Deskripsi Bebas)</span>'
+        . '    <span>🤖 Aktifkan AI Parsing Otomatis (Ekstrak SN, Spesifikasi, Alokasi Lokasi & Tanggal dari Kode)</span>'
         . '  </label>'
         . '</div>'
         . '<div class="actions" style="margin-top:20px;">'
-        . '  <button type="submit" class="btn primary" style="padding:10px 22px;font-size:14px;font-weight:700;">🔍 Upload & Preview Hasil Parsing AI</button>'
+        . '  <button type="submit" class="btn primary" style="padding:10px 24px;font-size:14px;font-weight:700;">🔍 Upload & Buka List Pilihan Import</button>'
         . '  <a class="btn" href="' . route_url('asset_items') . '">Kembali ke Daftar Aset</a>'
         . '</div>'
         . '</form>'
         . '</section>';
+
+    echo '<script>
+    var allTypes = ' . $jsonTypes . ';
+    function filterImportCategoryOptions() {
+        var gSel = document.getElementById("importGroupSelect");
+        var tSel = document.getElementById("importTypeSelect");
+        if (!gSel || !tSel) return;
+        var gid = parseInt(gSel.value, 10) || 0;
+        tSel.innerHTML = "";
+        if (gid <= 0) {
+            tSel.innerHTML = "<option value=\"\">-- Pilih Komoditas Terlebih Dahulu --</option>";
+            return;
+        }
+        var filtered = allTypes.filter(function(t) {
+            return parseInt(t.asset_group_id, 10) === gid;
+        });
+        if (filtered.length === 0) {
+            tSel.innerHTML = "<option value=\"\">-- Belum ada kategori di komoditas ini --</option>";
+            return;
+        }
+        tSel.innerHTML = "<option value=\"\">-- Pilih Kategori Aset --</option>";
+        filtered.forEach(function(t) {
+            var opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.type_code + " - " + t.type_name;
+            tSel.appendChild(opt);
+        });
+    }
+    </script>';
 }
 
 /**
- * Merender Step 2: Halaman Preview Hasil Ekstraksi AI & Verifikasi Sebelum Simpan.
+ * Merender Step 2: Halaman Preview List Checklist Interaktif agar user bisa memilih baris per kategori.
  */
-function render_legacy_import_preview_html(PDO $pdo, array $previewList, array $opts): void
+function render_legacy_import_preview_selection_html(PDO $pdo, array $previewList, array $opts): void
 {
-    $companyName = '-';
-    if (!empty($opts['company_id'])) {
-        $companyName = (string)$pdo->query("SELECT company_name FROM asset_companies WHERE id = " . (int)$opts['company_id'])->fetchColumn() ?: '-';
-    }
-    $locationName = '-';
-    if (!empty($opts['location_id'])) {
-        $locationName = (string)$pdo->query("SELECT location_name FROM asset_locations WHERE id = " . (int)$opts['location_id'])->fetchColumn() ?: '-';
-    }
-
     $totalRows = count($previewList);
     $dupCount = count(array_filter($previewList, fn($x) => !empty($x['is_duplicate'])));
     $readyCount = $totalRows - $dupCount;
 
+    $targetGroupName = $opts['group_name'] ?? 'Facility';
+    $targetTypeName = $opts['type_name'] ?? 'AC / Pendingin';
+
     echo '<section class="panel">'
         . '<div class="split" style="align-items:center;margin-bottom:14px;">'
         . '  <div>'
-        . '    <h1 style="margin:0;">🔍 Verifikasi Hasil Parsing AI Aset Lama</h1>'
-        . '    <p class="muted" style="margin:4px 0 0 0;">Periksa hasil ekstraksi AI di bawah ini sebelum menyimpan permanen ke database unit aset.</p>'
+        . '    <h1 style="margin:0;">📋 Pilih Baris yang Akan Diimpor</h1>'
+        . '    <p class="muted" style="margin:4px 0 0 0;">Centang unit yang ingin diimpor ke kategori target di bawah ini. Anda dapat melakukan uncheck atau filter baris sesuai kebutuhan.</p>'
         . '  </div>'
         . '  <div style="display:flex;gap:8px;">'
-        . '    <span class="badge ok" style="font-size:13px;padding:6px 14px;">Siap Impor: ' . $readyCount . ' Unit</span>'
-        . ($dupCount > 0 ? ('<span class="badge danger" style="font-size:13px;padding:6px 14px;">Duplikat Dilewati: ' . $dupCount . ' Unit</span>') : '')
+        . '    <span class="badge ok" style="font-size:13px;padding:6px 14px;">Terbaca: ' . $totalRows . ' Unit</span>'
+        . ($dupCount > 0 ? ('<span class="badge danger" style="font-size:13px;padding:6px 14px;">Duplikat Dilewati: ' . $dupCount . '</span>') : '')
         . '  </div>'
         . '</div>';
 
-    echo '<div style="background:#f8fafc;padding:12px 18px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:18px;display:flex;gap:24px;flex-wrap:wrap;font-size:13px;">'
-        . '<div><strong>Company:</strong> ' . e($companyName) . '</div>'
-        . '<div><strong>Lokasi:</strong> ' . e($locationName) . '</div>'
-        . '<div><strong>Total Baris Terbaca:</strong> ' . $totalRows . ' Data</div>'
+    // Banner Target Komoditas & Kategori
+    echo '<div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;padding:14px 18px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">'
+        . '<div>'
+        . '  <span style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">Target Impor Saat Ini:</span><br>'
+        . '  <strong style="font-size:16px;color:#1e3a8a;">📁 Komoditas: ' . e($targetGroupName) . ' &bull; 🏷️ Kategori: ' . e($targetTypeName) . '</strong>'
+        . '</div>'
+        . '<div>'
+        . '  <a class="btn" href="' . route_url('asset_legacy_import', ['action' => 'reset']) . '" style="background:#fff;color:#dc2626;border-color:#fca5a5;font-size:12.5px;">🔄 Ganti Kategori / File</a>'
+        . '</div>'
         . '</div>';
 
-    echo '<form method="post" action="' . route_url('asset_legacy_import', ['action' => 'execute_import']) . '">'
+    echo '<form id="importExecForm" method="post" action="' . route_url('asset_legacy_import', ['action' => 'execute_import']) . '">'
         . '<input type="hidden" name="csrf" value="' . csrf_token() . '">'
         . '<input type="hidden" name="company_id" value="' . (int)($opts['company_id'] ?? 0) . '">'
-        . '<input type="hidden" name="location_id" value="' . (int)($opts['location_id'] ?? 0) . '">'
-        . '<input type="hidden" name="asset_group_id" value="' . (int)($opts['asset_group_id'] ?? 0) . '">';
+        . '<input type="hidden" name="asset_group_id" value="' . (int)($opts['asset_group_id'] ?? 0) . '">'
+        . '<input type="hidden" name="asset_type_id" value="' . (int)($opts['asset_type_id'] ?? 0) . '">';
 
-    echo '<div style="overflow-x:auto;max-height:550px;border:1px solid #e2e8f0;border-radius:8px;">'
-        . '<table style="margin:0;font-size:12.5px;min-width:1050px;">'
-        . '<thead><tr>'
+    // Kontrol Checklist & Filter Klien
+    echo '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">'
+        . '  <div style="display:flex;gap:8px;align-items:center;">'
+        . '    <button type="button" class="btn" onclick="toggleSelectAll(true)" style="padding:6px 12px;font-size:12px;background:#fff;">✓ Pilih Semua</button>'
+        . '    <button type="button" class="btn" onclick="toggleSelectAll(false)" style="padding:6px 12px;font-size:12px;background:#fff;">✕ Batal Pilih Semua</button>'
+        . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">' . $readyCount . ' Item Terpilih</span>'
+        . '  </div>'
+        . '  <div style="flex:1;max-width:320px;">'
+        . '    <input type="text" id="filterInput" placeholder="🔍 Cari nama barang / lokasi / kode..." oninput="filterTableRows(this.value)" style="padding:7px 12px;width:100%;box-sizing:border-box;font-size:13px;">'
+        . '  </div>'
+        . '</div>';
+
+    echo '<div style="overflow-x:auto;max-height:550px;border:1px solid #cbd5e1;border-radius:8px;">'
+        . '<table id="previewTable" style="margin:0;font-size:12.5px;min-width:1150px;">'
+        . '<thead><tr style="position:sticky;top:0;background:#f8fafc;z-index:10;box-shadow:0 1px 2px rgba(0,0,0,0.06);">'
+        . '<th style="width:40px;text-align:center;"><input type="checkbox" id="masterCheckbox" checked onclick="toggleSelectAll(this.checked)"></th>'
         . '<th style="width:40px;text-align:center;">No</th>'
-        . '<th style="width:130px;">Kode Lama (Alias)</th>'
-        . '<th style="width:110px;">Kategori</th>'
-        . '<th style="width:180px;">Nama Barang / Model</th>'
-        . '<th style="width:140px;">Identifier (SN / MAC)</th>'
-        . '<th>Spesifikasi Hasil AI (CPU / RAM / SSD / OS)</th>'
-        . '<th style="width:95px;">Tgl Masuk</th>'
-        . '<th style="width:120px;text-align:center;">Status</th>'
+        . '<th style="width:130px;">Kode Legacy (NO)</th>'
+        . '<th style="width:100px;">Tgl Perolehan</th>'
+        . '<th style="width:200px;">Nama Barang & Merek (AI)</th>'
+        . '<th>Spesifikasi & Identifiers</th>'
+        . '<th style="width:220px;">Alokasi Master Lokasi & Ruangan</th>'
+        . '<th style="width:110px;text-align:center;">Status</th>'
         . '</tr></thead><tbody>';
 
     $no = 0;
-    foreach ($previewList as $item) {
+    foreach ($previewList as $idx => $item) {
         $no++;
         $isDup = !empty($item['is_duplicate']);
         $rowBg = $isDup ? 'background:#fff1f2;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
+        $isChecked = !$isDup ? 'checked' : '';
 
         $statusBadge = $isDup
-            ? '<span class="badge danger" title="Sudah terdaftar sebagai unit ' . e($item['dup_asset_code']) . '">Duplikat (Lewati)</span>'
-            : '<span class="badge ok">✓ Siap Disimpan</span>';
+            ? '<span class="badge danger" title="Sudah terdaftar sebagai unit ' . e($item['dup_asset_code']) . '">Duplikat</span>'
+            : '<span class="badge ok">✓ Siap Impor</span>';
 
-        $specParts = [];
-        if (!empty($item['processor'])) $specParts[] = '<strong>CPU:</strong> ' . e($item['processor']);
-        if (!empty($item['ram'])) $specParts[] = '<strong>RAM:</strong> ' . e($item['ram']);
-        if (!empty($item['storage'])) $specParts[] = '<strong>Disk:</strong> ' . e($item['storage']);
-        if (!empty($item['os'])) $specParts[] = '<strong>OS:</strong> ' . e($item['os']);
-        if (!empty($item['vga'])) $specParts[] = '<strong>VGA:</strong> ' . e($item['vga']);
-        $specText = $specParts ? implode(' &bull; ', $specParts) : '<span class="muted">-</span>';
+        // Tampilan Lokasi
+        $locMasterText = e($item['loc_master_name'] ?: '-');
+        $locBadge = !empty($item['loc_is_new'])
+            ? ' <span style="font-size:10px;color:#166534;background:#dcfce7;padding:1px 5px;border-radius:4px;border:1px solid #bbf7d0;font-weight:700;">+ Buat Lokasi Baru</span>'
+            : '';
+        $locDetailText = !empty($item['loc_label']) ? '<div style="font-size:11.5px;color:#475569;margin-top:2px;">📍 ' . e($item['loc_label']) . '</div>' : '';
 
-        $idfParts = [];
-        if (!empty($item['serial_number'])) $idfParts[] = 'SN: <code>' . e($item['serial_number']) . '</code>';
-        if (!empty($item['mac_address'])) $idfParts[] = 'MAC: <code>' . e($item['mac_address']) . '</code>';
-        $idfText = $idfParts ? implode('<br>', $idfParts) : '<span class="muted">-</span>';
+        // Tampilan Tanggal Perolehan hasil ekstrak dari NO
+        $dateText = !empty($item['installed_at'])
+            ? '<span style="font-weight:700;color:#15803d;">' . date('d/m/Y', strtotime($item['installed_at'])) . '</span>'
+            : '<span class="muted" style="font-size:11px;">Tidak ada tgl</span>';
 
-        $aiBadge = '<div style="font-size:10px;color:#0284c7;margin-top:3px;">🤖 ' . e($item['ai_method']) . '</div>';
+        // Tampilan Spesifikasi & Identifiers
+        $specText = !empty($item['specs_summary']) ? $item['specs_summary'] : '<span class="muted">-</span>';
+        if (!empty($item['serial_number'])) {
+            $specText .= '<div style="margin-top:3px;font-size:11.5px;">SN: <code>' . e($item['serial_number']) . '</code></div>';
+        }
 
-        echo '<tr style="' . $rowBg . '">'
+        echo '<tr class="preview-row" style="' . $rowBg . '" data-search="' . e(strtolower($item['legacy_code'] . ' ' . $item['asset_name'] . ' ' . $item['brand'] . ' ' . $item['loc_master_name'] . ' ' . $item['loc_label'] . ' ' . $item['raw_description'])) . '">'
+            . '<td style="text-align:center;"><input type="checkbox" name="selected_rows[]" value="' . $idx . '" ' . $isChecked . ' onchange="updateSelectedCount()"></td>'
             . '<td style="text-align:center;">' . $no . '</td>'
-            . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong>' . $aiBadge . '</td>'
-            . '<td><span class="badge">' . e($item['category_name']) . '</span></td>'
-            . '<td><strong>' . e($item['asset_name'] ?: '-') . '</strong>' . (!empty($item['model']) && $item['model'] !== $item['asset_name'] ? ('<br><span class="muted">' . e($item['model']) . '</span>') : '') . '</td>'
-            . '<td>' . $idfText . '</td>'
-            . '<td>' . $specText . '<div class="muted" style="font-size:11px;margin-top:2px;">Teks Asli: ' . e(mb_strimwidth((string)$item['raw_description'], 0, 50, '...')) . '</div></td>'
-            . '<td>' . e($item['installed_at'] ?: '-') . '</td>'
+            . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong></td>'
+            . '<td>' . $dateText . '</td>'
+            . '<td><strong>' . e($item['asset_name'] ?: '-') . '</strong>' . (!empty($item['brand']) ? ('<br><span class="muted" style="font-size:11.5px;">Merek: ' . e($item['brand']) . '</span>') : '') . '</td>'
+            . '<td>' . $specText . '<div class="muted" style="font-size:11px;margin-top:3px;">Asli: ' . e(mb_strimwidth((string)$item['raw_description'], 0, 45, '...')) . '</div></td>'
+            . '<td><strong>🏢 ' . $locMasterText . '</strong>' . $locBadge . $locDetailText . '</td>'
             . '<td style="text-align:center;">' . $statusBadge . '</td>'
             . '</tr>';
     }
@@ -789,9 +905,44 @@ function render_legacy_import_preview_html(PDO $pdo, array $previewList, array $
     echo '</tbody></table></div>';
 
     echo '<div class="actions" style="margin-top:20px;display:flex;gap:12px;align-items:center;">'
-        . '  <button type="submit" class="btn primary" style="padding:10px 24px;font-size:14px;font-weight:700;">💾 Konfirmasi & Simpan Unit Aset ke Database</button>'
-        . '  <a class="btn" href="' . route_url('asset_legacy_import') . '">← Batal / Upload Ulang File</a>'
+        . '  <button type="submit" class="btn primary" style="padding:12px 28px;font-size:15px;font-weight:700;">💾 Import Item Terpilih ke Kategori \'' . e($targetTypeName) . '\'</button>'
+        . '  <a class="btn" href="' . route_url('asset_legacy_import', ['action' => 'reset']) . '">← Batal / Ganti Kategori & File</a>'
         . '</div>'
         . '</form>'
         . '</section>';
+
+    echo '<script>
+    function updateSelectedCount() {
+        var cbs = document.querySelectorAll("#previewTable tbody input[type=\'checkbox\']");
+        var cnt = 0;
+        cbs.forEach(function(cb) {
+            if (cb.checked) cnt++;
+        });
+        var disp = document.getElementById("selectedCountDisplay");
+        if (disp) disp.textContent = cnt + " Item Terpilih";
+    }
+
+    function toggleSelectAll(status) {
+        var cbs = document.querySelectorAll("#previewTable tbody tr:not([style*=\'display: none\']) input[type=\'checkbox\']");
+        cbs.forEach(function(cb) {
+            cb.checked = status;
+        });
+        var mCb = document.getElementById("masterCheckbox");
+        if (mCb) mCb.checked = status;
+        updateSelectedCount();
+    }
+
+    function filterTableRows(q) {
+        q = (q || "").toLowerCase().trim();
+        var rows = document.querySelectorAll("#previewTable tbody tr.preview-row");
+        rows.forEach(function(r) {
+            var searchTxt = r.getAttribute("data-search") || "";
+            if (!q || searchTxt.includes(q)) {
+                r.style.display = "";
+            } else {
+                r.style.display = "none";
+            }
+        });
+    }
+    </script>';
 }
