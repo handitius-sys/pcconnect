@@ -254,7 +254,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     // telah memilih Komoditas dan Kategori tertentu.
     $comboAssets = [];
     try {
-        $cSql = "SELECT a.id, a.asset_code, a.brand, a.model, a.serial_number,
+        $cSql = "SELECT a.id, a.asset_code, a.alias_code, a.brand, a.model, a.serial_number,
                         COALESCE(NULLIF(a.asset_name, ''), a.model, a.asset_code) AS asset_name,
                         a.asset_group_id, a.asset_type_id,
                         COALESCE(g.group_name, 'IT') AS group_name,
@@ -314,7 +314,7 @@ function handle_route_asset_mutations(PDO $pdo): void
 
     echo '    <div style="position:relative;flex:1.5;min-width:280px;">';
     echo '      <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">';
-    echo '        <span>Cari & Pilih Unit Aset (Kode / Nama / SN / Pengguna)</span>';
+    echo '        <span>Cari & Pilih Unit Aset (Kode Baru / Kode Lama / Nama / SN / Pengguna)</span>';
     echo '        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>';
     echo '      </label>';
     echo '      <div style="position:relative;display:flex;align-items:stretch;">';
@@ -371,9 +371,9 @@ function handle_route_asset_mutations(PDO $pdo): void
         }
 
         if ($q !== '') {
-            $whereClauses[] = "(a.asset_code LIKE ? OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";
+            $whereClauses[] = "(a.asset_code LIKE ? OR (a.alias_code IS NOT NULL AND a.alias_code LIKE ?) OR a.asset_name LIKE ? OR a.model LIKE ? OR a.serial_number LIKE ? OR a.custodian_name LIKE ? OR a.custodian_nik LIKE ?)";
             $w = '%' . $q . '%';
-            $params = array_merge($params, [$w, $w, $w, $w, $w, $w]);
+            $params = array_merge($params, [$w, $w, $w, $w, $w, $w, $w]);
         }
 
         // Query unit aset terfilter berdasarkan Komoditas & Kategori atau kata kunci Combo Box
@@ -726,6 +726,7 @@ function handle_route_asset_mutations(PDO $pdo): void
         currentComboMatches = comboMutationAssets.filter(function(item) {
             if (!term) return true;
             var code = (item.asset_code || "").toLowerCase();
+            var alias = (item.alias_code || "").toLowerCase();
             var name = (item.asset_name || "").toLowerCase();
             var brand = (item.brand || "").toLowerCase();
             var model = (item.model || "").toLowerCase();
@@ -734,7 +735,7 @@ function handle_route_asset_mutations(PDO $pdo): void
             var custNik = (item.custodian_nik || "").toLowerCase();
             var comp = (item.company_name || "").toLowerCase();
             var loc = (item.display_location || "").toLowerCase();
-            return code.includes(term) || name.includes(term) || brand.includes(term) || model.includes(term) || sn.includes(term) || custName.includes(term) || custNik.includes(term) || comp.includes(term) || loc.includes(term);
+            return code.includes(term) || alias.includes(term) || name.includes(term) || brand.includes(term) || model.includes(term) || sn.includes(term) || custName.includes(term) || custNik.includes(term) || comp.includes(term) || loc.includes(term);
         });
 
         if (currentComboMatches.length === 0) {
@@ -759,8 +760,10 @@ function handle_route_asset_mutations(PDO $pdo): void
             var left = document.createElement("div");
             left.style.cssText = "flex:1;min-width:0;";
 
+            var aliasBadge = item.alias_code ? (" <span style=\"background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;\">[Lama: " + escapeHtml(item.alias_code) + "]</span>") : "";
             var titleHtml = "<div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;\">"
                 + "<span style=\"font-weight:700;color:#0284c7;font-size:13px;\">" + escapeHtml(item.asset_code) + "</span>"
+                + aliasBadge
                 + "<span style=\"font-weight:600;color:#0f172a;font-size:13px;\">" + escapeHtml(item.asset_name || item.model || "-") + "</span>"
                 + "</div>";
 

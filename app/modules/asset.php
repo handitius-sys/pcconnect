@@ -6642,13 +6642,120 @@ function handle_route_asset_items(PDO $pdo): void
         echo '<input type="hidden" name="backdoor" value="1">';
     }
 
-    // Baris 1: Pencarian Bebas Multi-Identitas
-    echo '<div style="display:flex;gap:10px;align-items:flex-end;">';
-    echo '  <label style="margin:0;flex:1;font-size:12.5px;color:#334155;">Pencarian Bebas (Kode Baru / Kode Lama / Serial Number / PC / Nama Barang / Custodian)';
-    echo '    <input type="text" name="q" value="' . e($q) . '" placeholder="Ketik kode baru, kode lama (alias), SN, nama barang, PIC..." style="height:38px;margin-top:4px;box-sizing:border-box;">';
-    echo '  </label>';
-    echo '  <button type="submit" class="btn primary" style="height:38px;box-sizing:border-box;padding:0 18px;font-weight:700;">Cari</button>';
+    // Baris 1: Pencarian Bebas Multi-Identitas (Mode Combobox)
+    $comboboxAssetSuggestions = [];
+    try {
+        $comboboxAssetSuggestions = $pdo->query("SELECT asset_code, alias_code, asset_name, serial_number, custodian_name 
+                                                 FROM asset_items 
+                                                 WHERE status NOT IN ('inactive', 'deleted') 
+                                                 ORDER BY asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+    $cbAssetsJson = json_encode($comboboxAssetSuggestions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    echo '<div style="position:relative;display:flex;gap:10px;align-items:flex-end;">';
+    echo '  <div style="flex:1;position:relative;">';
+    echo '    <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:#334155;font-weight:600;">';
+    echo '      <span>Pencarian Bebas (Kode Baru / Kode Lama / Serial Number / PC / Nama Barang / Custodian)</span>';
+    echo '      <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>';
+    echo '    </label>';
+    echo '    <div style="position:relative;display:flex;align-items:stretch;">';
+    echo '      <input type="text" id="assetFreeComboboxInput" name="q" value="' . e($q) . '" placeholder="🔍 Ketik atau pilih kode baru, kode lama (alias), SN, nama barang, PIC..." autocomplete="off" list="assetFreeDatalist" style="height:38px;box-sizing:border-box;width:100%;padding:8px 58px 8px 12px;font-size:13px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;" onfocus="showAssetFreeDropdown(this.value)" oninput="showAssetFreeDropdown(this.value)">';
+    echo '      <button type="button" id="assetFreeClearBtn" onclick="clearAssetFreeSearch()" style="display:' . ($q !== '' ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:4px;line-height:1;" title="Hapus pencarian">✕</button>';
+    echo '      <button type="button" onclick="toggleAssetFreeDropdown(event)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:12px;cursor:pointer;padding:4px;line-height:1;" title="Buka daftar pilihan aset">▼</button>';
+    echo '    </div>';
+    
+    // Native HTML5 Datalist
+    echo '    <datalist id="assetFreeDatalist">';
+    foreach ($comboboxAssetSuggestions as $cOpt) {
+        $cVal = $cOpt['asset_code'];
+        $cLabel = $cOpt['asset_code'] . (!empty($cOpt['alias_code']) ? (' [Lama: ' . $cOpt['alias_code'] . ']') : '') . ' - ' . ($cOpt['asset_name'] ?: '-') . (!empty($cOpt['custodian_name']) ? (' (' . $cOpt['custodian_name'] . ')') : '');
+        echo '      <option value="' . e($cVal) . '">' . e($cLabel) . '</option>';
+        if (!empty($cOpt['alias_code'])) {
+            echo '      <option value="' . e($cOpt['alias_code']) . '">' . e($cOpt['alias_code'] . ' -> ' . $cOpt['asset_code'] . ' - ' . ($cOpt['asset_name'] ?: '-')) . '</option>';
+        }
+    }
+    echo '    </datalist>';
+
+    // Interactive Dropdown Results
+    echo '    <div id="assetFreeDropdownResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>';
+    echo '  </div>';
+    echo '  <button type="submit" class="btn primary" style="height:38px;box-sizing:border-box;padding:0 20px;font-weight:700;">Cari</button>';
     echo '</div>';
+    ?>
+    <script>
+    var cbAssetItems = <?= $cbAssetsJson ?>;
+    function toggleAssetFreeDropdown(e) {
+        if (e) e.stopPropagation();
+        var dd = document.getElementById("assetFreeDropdownResults");
+        if (!dd) return;
+        if (dd.style.display === "block") {
+            dd.style.display = "none";
+        } else {
+            var inp = document.getElementById("assetFreeComboboxInput");
+            showAssetFreeDropdown(inp ? inp.value : "");
+            if (inp) inp.focus();
+        }
+    }
+    function clearAssetFreeSearch() {
+        var inp = document.getElementById("assetFreeComboboxInput");
+        if (inp) inp.value = "";
+        var btn = document.getElementById("assetFreeClearBtn");
+        if (btn) btn.style.display = "none";
+        var dd = document.getElementById("assetFreeDropdownResults");
+        if (dd) dd.style.display = "none";
+        if (inp) inp.focus();
+    }
+    function showAssetFreeDropdown(q) {
+        var dd = document.getElementById("assetFreeDropdownResults");
+        var btn = document.getElementById("assetFreeClearBtn");
+        if (!dd) return;
+        var term = (q || "").trim().toLowerCase();
+        if (btn) btn.style.display = term.length > 0 ? "block" : "none";
+
+        var matches = cbAssetItems.filter(function(item) {
+            if (!term) return true;
+            var code = (item.asset_code || "").toLowerCase();
+            var alias = (item.alias_code || "").toLowerCase();
+            var name = (item.asset_name || "").toLowerCase();
+            var sn = (item.serial_number || "").toLowerCase();
+            var cust = (item.custodian_name || "").toLowerCase();
+            return code.includes(term) || alias.includes(term) || name.includes(term) || sn.includes(term) || cust.includes(term);
+        });
+
+        if (matches.length === 0) {
+            dd.innerHTML = "<div style=\"padding:12px;font-size:12px;color:#64748b;text-align:center;\">Tidak ada unit aset cocok</div>";
+            dd.style.display = "block";
+            return;
+        }
+
+        dd.innerHTML = "";
+        matches.slice(0, 30).forEach(function(item) {
+            var div = document.createElement("div");
+            div.style.cssText = "padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;transition:background 0.15s ease;";
+            var aliasBadge = item.alias_code ? (" <span style=\"background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;\">[Lama: " + item.alias_code + "]</span>") : "";
+            div.innerHTML = "<div style=\"font-size:13px;font-weight:700;color:#0f172a;\"><strong style=\"color:#0284c7;\">" + item.asset_code + "</strong>" + aliasBadge + " - " + (item.asset_name || "-") + "</div>"
+                + "<div style=\"font-size:11px;color:#64748b;margin-top:2px;\">" + (item.serial_number ? "SN: " + item.serial_number + " &bull; " : "") + (item.custodian_name ? "PIC: " + item.custodian_name : "") + "</div>";
+            div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
+            div.onmouseleave = function() { div.style.background = "#fff"; };
+            div.onmousedown = function() {
+                var inp = document.getElementById("assetFreeComboboxInput");
+                if (inp) inp.value = item.asset_code;
+                dd.style.display = "none";
+                inp.form.submit();
+            };
+            dd.appendChild(div);
+        });
+        dd.style.display = "block";
+    }
+    document.addEventListener("click", function(e) {
+        var dd = document.getElementById("assetFreeDropdownResults");
+        var inp = document.getElementById("assetFreeComboboxInput");
+        if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
+            dd.style.display = "none";
+        }
+    });
+    </script>
+    <?php
 
     // Baris 2: Komoditas | Kategori
     echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;">';

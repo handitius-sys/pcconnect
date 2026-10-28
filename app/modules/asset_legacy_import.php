@@ -102,6 +102,16 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     continue;
                 }
                 $row = $previewData[$idx];
+                if (isset($_POST['items'][$idx]) && is_array($_POST['items'][$idx])) {
+                    $pItem = $_POST['items'][$idx];
+                    if (!empty($pItem['legacy_code'])) $row['legacy_code'] = trim((string)$pItem['legacy_code']);
+                    if (isset($pItem['asset_name']) && trim((string)$pItem['asset_name']) !== '') $row['asset_name'] = trim((string)$pItem['asset_name']);
+                    if (isset($pItem['brand'])) $row['brand'] = trim((string)$pItem['brand']);
+                    if (isset($pItem['model'])) $row['model'] = trim((string)$pItem['model']);
+                    if (isset($pItem['installed_at'])) $row['installed_at'] = trim((string)$pItem['installed_at']) ?: null;
+                    if (isset($pItem['serial_number'])) $row['serial_number'] = trim((string)$pItem['serial_number']);
+                    if (isset($pItem['loc_label'])) $row['loc_label'] = trim((string)$pItem['loc_label']);
+                }
                 $legacyCode = trim((string)($row['legacy_code'] ?? ''));
 
                 if ($legacyCode === '') {
@@ -945,7 +955,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '  <div style="display:flex;gap:8px;align-items:center;">'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(true)" style="padding:6px 12px;font-size:12px;background:#fff;">✓ Pilih Semua</button>'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(false)" style="padding:6px 12px;font-size:12px;background:#fff;">✕ Batal Pilih Semua</button>'
-        . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">' . $readyCount . ' Item Terpilih</span>'
+        . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">0 Item Terpilih</span>'
         . '  </div>'
         . '  <div style="flex:1;max-width:320px;">'
         . '    <input type="text" id="filterInput" placeholder="🔍 Cari nama barang / lokasi / kode..." oninput="filterTableRows(this.value)" style="padding:7px 12px;width:100%;box-sizing:border-box;font-size:13px;">'
@@ -955,11 +965,11 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     echo '<div style="overflow-x:auto;max-height:550px;border:1px solid #cbd5e1;border-radius:8px;">'
         . '<table id="previewTable" style="margin:0;font-size:12.5px;min-width:1150px;">'
         . '<thead><tr style="position:sticky;top:0;background:#f8fafc;z-index:10;box-shadow:0 1px 2px rgba(0,0,0,0.06);">'
-        . '<th style="width:40px;text-align:center;"><input type="checkbox" id="masterCheckbox" checked onclick="toggleSelectAll(this.checked)"></th>'
+        . '<th style="width:40px;text-align:center;"><input type="checkbox" id="masterCheckbox" onclick="toggleSelectAll(this.checked)"></th>'
         . '<th style="width:40px;text-align:center;">No</th>'
         . '<th style="width:130px;">Kode Legacy (NO)</th>'
-        . '<th style="width:100px;">Tgl Perolehan</th>'
-        . '<th style="width:200px;">Nama Barang & Merek (AI)</th>'
+        . '<th style="width:125px;">Tgl Perolehan</th>'
+        . '<th style="width:230px;">Nama Barang & Merek</th>'
         . '<th>Spesifikasi & Identifiers</th>'
         . '<th style="width:220px;">Alokasi Master Lokasi & Ruangan</th>'
         . '<th style="width:110px;text-align:center;">Status</th>'
@@ -970,7 +980,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $no++;
         $isDup = !empty($item['is_duplicate']);
         $rowBg = $isDup ? 'background:#fff1f2;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
-        $isChecked = !$isDup ? 'checked' : '';
+        $isChecked = ''; // Default tidak terselect semua
 
         $statusBadge = $isDup
             ? '<span class="badge danger" title="Sudah terdaftar sebagai unit ' . e($item['dup_asset_code']) . '">Duplikat</span>'
@@ -983,25 +993,31 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             : '';
         $locDetailText = !empty($item['loc_label']) ? '<div style="font-size:11.5px;color:#475569;margin-top:2px;">📍 ' . e($item['loc_label']) . '</div>' : '';
 
-        // Tampilan Tanggal Perolehan hasil ekstrak dari NO
-        $dateText = !empty($item['installed_at'])
-            ? '<span style="font-weight:700;color:#15803d;">' . date('d/m/Y', strtotime($item['installed_at'])) . '</span>'
-            : '<span class="muted" style="font-size:11px;">Tidak ada tgl</span>';
+        // Input Edit Tgl Perolehan
+        $installedVal = !empty($item['installed_at']) ? date('Y-m-d', strtotime($item['installed_at'])) : '';
+        $dateInput = '<input type="date" name="items[' . $idx . '][installed_at]" value="' . e($installedVal) . '" style="padding:4px 6px;font-size:12px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;">';
 
-        // Tampilan Spesifikasi & Identifiers
-        $specText = !empty($item['specs_summary']) ? $item['specs_summary'] : '<span class="muted">-</span>';
-        if (!empty($item['serial_number'])) {
-            $specText .= '<div style="margin-top:3px;font-size:11.5px;">SN: <code>' . e($item['serial_number']) . '</code></div>';
-        }
+        // Input Edit Nama Barang & Merek
+        $nameInput = '<input type="text" name="items[' . $idx . '][asset_name]" value="' . e($item['asset_name'] ?: '') . '" placeholder="Nama Barang" style="padding:4px 6px;font-size:12px;font-weight:700;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;">'
+            . '<input type="text" name="items[' . $idx . '][brand]" value="' . e($item['brand'] ?: '') . '" placeholder="Merek (e.g. Sharp, Dell)" style="margin-top:3px;padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
+
+        // Tampilan Spesifikasi + Input Edit SN
+        $specText = !empty($item['specs_summary']) ? ('<div style="font-size:11.5px;color:#334155;margin-bottom:3px;">' . $item['specs_summary'] . '</div>') : '';
+        $specText .= '<input type="text" name="items[' . $idx . '][serial_number]" value="' . e($item['serial_number'] ?? '') . '" placeholder="Serial Number (SN)" style="padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
+        $specText .= '<div class="muted" style="font-size:10.5px;margin-top:3px;">Teks Asli: ' . e(mb_strimwidth((string)$item['raw_description'], 0, 45, '...')) . '</div>';
+
+        // Input Edit Detail Ruangan / Lokasi
+        $locInput = '<div style="font-size:12px;">🏢 <strong>' . $locMasterText . '</strong>' . $locBadge . '</div>'
+            . '<input type="text" name="items[' . $idx . '][loc_label]" value="' . e($item['loc_label'] ?? '') . '" placeholder="Detail Ruangan / Lantai" style="margin-top:3px;padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
 
         echo '<tr class="preview-row" style="' . $rowBg . '" data-search="' . e(strtolower($item['legacy_code'] . ' ' . $item['asset_name'] . ' ' . $item['brand'] . ' ' . $item['loc_master_name'] . ' ' . $item['loc_label'] . ' ' . $item['raw_description'])) . '">'
             . '<td style="text-align:center;"><input type="checkbox" name="selected_rows[]" value="' . $idx . '" ' . $isChecked . ' onchange="updateSelectedCount()"></td>'
             . '<td style="text-align:center;">' . $no . '</td>'
-            . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong></td>'
-            . '<td>' . $dateText . '</td>'
-            . '<td><strong>' . e($item['asset_name'] ?: '-') . '</strong>' . (!empty($item['brand']) ? ('<br><span class="muted" style="font-size:11.5px;">Merek: ' . e($item['brand']) . '</span>') : '') . '</td>'
-            . '<td>' . $specText . '<div class="muted" style="font-size:11px;margin-top:3px;">Asli: ' . e(mb_strimwidth((string)$item['raw_description'], 0, 45, '...')) . '</div></td>'
-            . '<td><strong>🏢 ' . $locMasterText . '</strong>' . $locBadge . $locDetailText . '</td>'
+            . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong><input type="hidden" name="items[' . $idx . '][legacy_code]" value="' . e($item['legacy_code']) . '"></td>'
+            . '<td>' . $dateInput . '</td>'
+            . '<td>' . $nameInput . '</td>'
+            . '<td>' . $specText . '</td>'
+            . '<td>' . $locInput . '</td>'
             . '<td style="text-align:center;">' . $statusBadge . '</td>'
             . '</tr>';
     }

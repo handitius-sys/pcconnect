@@ -1371,11 +1371,20 @@ function handle_route_ticket_form(PDO $pdo): void
                         <option value="">-- Pilih Komoditas Dulu --</option>
                     </select>
                 </label>
-                <label>Unit Aset *
-                    <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()">
+                <div style="position:relative;">
+                    <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">
+                        <span>Unit Aset *</span>
+                        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>
+                    </label>
+                    <div style="position:relative;display:flex;align-items:stretch;">
+                        <input type="text" id="maintAssetCombobox" placeholder="🔍 Cari / Pilih unit aset (Kode Baru, Kode Lama, Nama, PIC)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 36px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMaintAssetDropdown(this.value)" oninput="showMaintAssetDropdown(this.value)">
+                        <button type="button" onclick="toggleMaintAssetDropdown(event)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:13px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup Pilihan Aset">▼</button>
+                    </div>
+                    <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()" style="display:none;">
                         <option value="">-- Pilih Kategori Dulu --</option>
                     </select>
-                </label>
+                    <div id="maintAssetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>
+                </div>
             </div>
             <div id="vehicleKmWrapper" style="display:none; margin-top:12px;">
                 <label>Kilometer Kendaraan (KM)
@@ -1648,10 +1657,19 @@ function handle_route_ticket_form(PDO $pdo): void
             // Load Assets
             let res = await fetch('index.php?route=api_corrective_data&action=get_assets&group_id=' + gid + '&type_id=' + tid);
             let assets = await res.json();
+            window.currentCategoryAssets = Array.isArray(assets) ? assets : [];
 
             aSel.innerHTML = '<option value="">-- Pilih Unit Aset --</option>';
-            if (Array.isArray(assets) && assets.length > 0) {
-                assets.forEach(function(m) {
+            var cbInput = document.getElementById('maintAssetCombobox');
+            if (cbInput) {
+                cbInput.value = '';
+                cbInput.placeholder = window.currentCategoryAssets.length > 0 
+                    ? ('🔍 Ketik / pilih dari ' + window.currentCategoryAssets.length + ' unit aset...') 
+                    : '-- Tidak ada aset pada kategori ini --';
+            }
+
+            if (window.currentCategoryAssets.length > 0) {
+                window.currentCategoryAssets.forEach(function(m) {
                     let badge = (m.asset_mode === 'group') ? '[📦 INDUK BUNDLE] ' : ((m.asset_mode === 'child') ? '[🔗 ANGGOTA] ' : '');
                     let aliasPart = m.alias_code ? (' [Lama: ' + m.alias_code + ']') : '';
                     let desc = badge + m.asset_code + aliasPart + ' - ' + m.asset_name + (m.custodian_name ? ' (' + m.custodian_name + ')' : '');
@@ -1694,6 +1712,86 @@ function handle_route_ticket_form(PDO $pdo): void
             console.error(e);
         }
     }
+
+    
+    function toggleMaintAssetDropdown(e) {
+        if (e) e.stopPropagation();
+        var dd = document.getElementById('maintAssetDropdownList');
+        if (!dd) return;
+        if (dd.style.display === 'block') {
+            dd.style.display = 'none';
+        } else {
+            var inp = document.getElementById('maintAssetCombobox');
+            showMaintAssetDropdown(inp ? inp.value : '');
+            if (inp) inp.focus();
+        }
+    }
+
+    function showMaintAssetDropdown(q) {
+        var dd = document.getElementById('maintAssetDropdownList');
+        if (!dd) return;
+        var term = (q || '').trim().toLowerCase();
+        var assets = window.currentCategoryAssets || [];
+
+        if (assets.length === 0) {
+            dd.innerHTML = '<div style="padding:12px;font-size:12px;color:#64748b;text-align:center;">Pilih Komoditas & Kategori terlebih dahulu.</div>';
+            dd.style.display = 'block';
+            return;
+        }
+
+        var matches = assets.filter(function(m) {
+            if (!term) return true;
+            var code = (m.asset_code || '').toLowerCase();
+            var alias = (m.alias_code || '').toLowerCase();
+            var name = (m.asset_name || '').toLowerCase();
+            var cust = (m.custodian_name || '').toLowerCase();
+            var loc = (m.location_label || '').toLowerCase();
+            return code.includes(term) || alias.includes(term) || name.includes(term) || cust.includes(term) || loc.includes(term);
+        });
+
+        if (matches.length === 0) {
+            dd.innerHTML = '<div style="padding:12px;font-size:12px;color:#64748b;text-align:center;">Tidak ada unit aset cocok dengan kata kunci &ldquo;' + (q || '') + '&rdquo;</div>';
+            dd.style.display = 'block';
+            return;
+        }
+
+        dd.innerHTML = '';
+        matches.slice(0, 30).forEach(function(m) {
+            var div = document.createElement('div');
+            div.style.cssText = 'padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;transition:background 0.15s ease;';
+            
+            var badge = (m.asset_mode === 'group') ? '[📦 INDUK BUNDLE] ' : ((m.asset_mode === 'child') ? '[🔗 ANGGOTA] ' : '');
+            var aliasBadge = m.alias_code ? (' <span style="background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;">[Lama: ' + m.alias_code + ']</span>') : '';
+            var desc = badge + m.asset_code + aliasBadge + ' - ' + m.asset_name;
+            var subParts = [];
+            if (m.location_label) subParts.push('📍 ' + m.location_label);
+            if (m.custodian_name) subParts.push('👤 ' + m.custodian_name);
+
+            div.innerHTML = '<div style="font-size:13px;font-weight:700;color:#0f172a;"><strong style="color:#0284c7;">' + badge + m.asset_code + '</strong>' + aliasBadge + ' - ' + m.asset_name + '</div>'
+                + (subParts.length > 0 ? ('<div style="font-size:11px;color:#64748b;margin-top:2px;">' + subParts.join(' &bull; ') + '</div>') : '');
+
+            div.onmouseenter = function() { div.style.background = '#f0f9ff'; };
+            div.onmouseleave = function() { div.style.background = '#fff'; };
+            div.onmousedown = function() {
+                var aSel = document.getElementById('maintAssetSelect');
+                if (aSel) aSel.value = m.id;
+                var cbInput = document.getElementById('maintAssetCombobox');
+                if (cbInput) cbInput.value = m.asset_code + (m.alias_code ? ' [Lama: ' + m.alias_code + ']' : '') + ' - ' + m.asset_name;
+                dd.style.display = 'none';
+                onMaintAssetChange();
+            };
+            dd.appendChild(div);
+        });
+        dd.style.display = 'block';
+    }
+
+    document.addEventListener('click', function(e) {
+        var dd = document.getElementById('maintAssetDropdownList');
+        var inp = document.getElementById('maintAssetCombobox');
+        if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
+            dd.style.display = 'none';
+        }
+    });
 
     function onMaintAssetChange() {
         var sel = document.getElementById('maintAssetSelect');

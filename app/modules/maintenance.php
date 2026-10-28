@@ -1807,11 +1807,16 @@ function syncEditExpiredDate(val) {
     }
 
     echo '<div style="position:relative;margin-bottom:14px;">'
-        . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:4px;display:block;">Unit Aset (Terdaftar) *'
-        . '  <input type="text" id="schedAssetSearchInput" placeholder="🔍 Ketik kode, nama, atau lokasi unit aset untuk mencari..." autocomplete="off" required style="width:100%;box-sizing:border-box;padding:10px 14px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:14px;" value="' . e($targetAssetLabel) . '">'
-        . '  <input type="hidden" id="schedAssetIdHidden" name="asset_item_id" required value="' . e($targetAssetId ?: '') . '">'
+        . '<label style="font-weight:600;font-size:13px;color:#334155;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">'
+        . '  <span>Unit Aset Terdaftar * (Mode Combobox)</span>'
+        . '  <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>'
         . '</label>'
-        . '<div id="schedAssetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
+        . '<div style="position:relative;display:flex;align-items:stretch;">'
+        . '  <input type="text" id="schedAssetSearchInput" placeholder="🔍 Cari kode baru, kode lama (alias), nama, atau lokasi..." autocomplete="off" required style="width:100%;box-sizing:border-box;padding:9px 36px 9px 12px;background:#fff;border:2px solid #0284c7;border-radius:6px;font-size:13.5px;" value="' . e($targetAssetLabel) . '">'
+        . '  <button type="button" onclick="toggleSchedAssetDropdown(event)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:13px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup Pilihan Aset">▼</button>'
+        . '</div>'
+        . '<input type="hidden" id="schedAssetIdHidden" name="asset_item_id" required value="' . e($targetAssetId ?: '') . '">'
+        . '<div id="schedAssetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
         . '</div>'
         . '</div>'
         . '<div id="assetSelectedNotice" style="display:none; margin-top: 10px; font-size: 13px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px;"></div>'
@@ -1951,6 +1956,17 @@ window.syncCreateExpiredDate = function(val) {
     var taskGroups = document.querySelectorAll(".job-desk-task-group");
     var promptEmpty = document.getElementById("noJobDeskPrompt");
     var maintenanceAssetsData = ' . json_encode($maintenanceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . ';
+
+    window.toggleSchedAssetDropdown = function(e) {
+        if (e) e.stopPropagation();
+        if (!assetDropdownList) return;
+        if (assetDropdownList.style.display === "block") {
+            assetDropdownList.style.display = "none";
+        } else {
+            renderAssetDropdown(assetSearchInput ? assetSearchInput.value : "");
+            if (assetSearchInput) assetSearchInput.focus();
+        }
+    };
 
     function hideAssetDropdown() {
         setTimeout(function() { if (assetDropdownList) assetDropdownList.style.display = "none"; }, 220);

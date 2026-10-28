@@ -754,13 +754,20 @@ function handle_route_asset_loan_form(PDO $pdo): void
 
         // Input Single-Box Combobox Unit Aset (Terdaftar) & Barcode Input
         . '    <div style="position:relative;margin-top:12px;">'
-        . '      <div style="display:flex;gap:8px;">'
-        . '        <input type="text" id="barcodeAssetInput" placeholder="🔍 Cari kode unit, nama aset, SN, komoditas, lokasi, atau nama / NIK pengguna..." autocomplete="off" style="flex:1;font-size:14px;padding:10px 14px;font-family:monospace;font-weight:600;background:#fff;border:2px solid #0284c7;border-radius:6px;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(this.value);}">'
+        . '      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+        . '        <span style="font-size:12.5px;font-weight:600;color:#0369a1;">Pilih atau Ketik Unit Aset (Mode Combobox):</span>'
+        . '        <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:10.5px;padding:1px 6px;font-weight:600;">Combo Box</span>'
+        . '      </div>'
+        . '      <div style="display:flex;gap:8px;position:relative;">'
+        . '        <div style="flex:1;position:relative;display:flex;align-items:stretch;">'
+        . '          <input type="text" id="barcodeAssetInput" placeholder="🔍 Ketik kode baru, kode lama (alias), nama aset, SN, pengguna..." autocomplete="off" style="width:100%;box-sizing:border-box;font-size:13.5px;padding:9px 36px 9px 12px;font-family:monospace;font-weight:600;background:#fff;border:2px solid #0284c7;border-radius:6px;" onfocus="renderAssetDropdown(this.value)" oninput="renderAssetDropdown(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(this.value);}">'
+        . '          <button type="button" onclick="toggleLoanAssetDropdown(event)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:13px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup Pilihan Aset">▼</button>'
+        . '        </div>'
         . '        <button type="button" class="btn primary" onclick="var dd=document.getElementById(\'assetDropdownList\');if(dd)dd.style.display=\'none\';lookupAndAddAsset(document.getElementById(\'barcodeAssetInput\').value)" style="padding:10px 20px;font-weight:700;white-space:nowrap;">'
         . '          + Tambah Unit'
         . '        </button>'
         . '      </div>'
-        . '      <div id="assetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
+        . '      <div id="assetDropdownList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:6px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>'
         . '    </div>'
         . '    <div id="scanFeedbackAlert" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-size:13px;font-weight:600;"></div>'
         . '  </div>'
@@ -823,6 +830,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
             var matches = availableLoanAssets.filter(function(item) {
                 if (!q) return true;
                 var code = (item.asset_code || "").toLowerCase();
+                var alias = (item.alias_code || "").toLowerCase();
                 var name = (item.asset_name || "").toLowerCase();
                 var brand = (item.brand || "").toLowerCase();
                 var model = (item.model || "").toLowerCase();
@@ -832,7 +840,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 var sn = (item.serial_number || "").toLowerCase();
                 var custName = (item.custodian_name || "").toLowerCase();
                 var custNik = (item.custodian_nik || "").toLowerCase();
-                return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
+                return code.includes(q) || alias.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
             });
 
             if (matches.length === 0) {
@@ -868,6 +876,19 @@ function handle_route_asset_loan_form(PDO $pdo): void
                 dd.appendChild(div);
             });
             dd.style.display = "block";
+        }
+
+        function toggleLoanAssetDropdown(e) {
+            if (e) e.stopPropagation();
+            var dd = document.getElementById("assetDropdownList");
+            if (!dd) return;
+            if (dd.style.display === "block") {
+                dd.style.display = "none";
+            } else {
+                var inp = document.getElementById("barcodeAssetInput");
+                renderAssetDropdown(inp ? inp.value : "");
+                if (inp) inp.focus();
+            }
         }
 
         document.addEventListener("click", function(e) {

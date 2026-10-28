@@ -383,7 +383,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
 
     $availableLoanAssets = [];
     try {
-        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
+        $availableLoanAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, ai.asset_name, ai.brand, ai.model, ai.serial_number,
                                                    ai.custodian_name, ai.custodian_nik,
                                                    g.group_name, COALESCE(t.type_name, ai.asset_type, '-') AS type_name, loc.location_name
                                             FROM asset_items ai
@@ -528,6 +528,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
         var matches = availableLoanAssets.filter(function(item) {
             if (!q) return true;
             var code = (item.asset_code || "").toLowerCase();
+            var alias = (item.alias_code || "").toLowerCase();
             var name = (item.asset_name || "").toLowerCase();
             var brand = (item.brand || "").toLowerCase();
             var model = (item.model || "").toLowerCase();
@@ -537,7 +538,7 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             var sn = (item.serial_number || "").toLowerCase();
             var custName = (item.custodian_name || "").toLowerCase();
             var custNik = (item.custodian_nik || "").toLowerCase();
-            return code.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
+            return code.includes(q) || alias.includes(q) || name.includes(q) || brand.includes(q) || model.includes(q) || group.includes(q) || type.includes(q) || loc.includes(q) || sn.includes(q) || custName.includes(q) || custNik.includes(q);
         });
 
         if (matches.length === 0) {
@@ -560,7 +561,8 @@ function handle_route_mobile_asset_loan_create(PDO $pdo): void
             div.style.borderBottom = "1px solid #f1f5f9";
             div.style.cursor = "pointer";
             div.style.background = "#fff";
-            div.innerHTML = "<div style='font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;'>" + escapeHtml(item.asset_code) + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
+            var aliasPart = item.alias_code ? (" <span style='background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;'>[Lama: " + escapeHtml(item.alias_code) + "]</span>") : "";
+            div.innerHTML = "<div style='font-weight:700;color:#0284c7;font-family:monospace;font-size:13px;'>" + escapeHtml(item.asset_code) + aliasPart + " &bull; " + escapeHtml(item.asset_name || "-") + "</div>"
                 + "<div style='font-size:11px;color:#64748b;margin-top:2px;'>" + escapeHtml(subParts.join(" &bull; ")) + "</div>";
             div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
             div.onmouseleave = function() { div.style.background = "#fff"; };
