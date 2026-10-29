@@ -2035,7 +2035,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             }
 
             // Sync ke dropdown baris unit aset yang mengikuti plan master ini
-            var rowSels = document.querySelectorAll("select.js-row-master-select[data-master-key=\"' + mKey + '\"]");
+            var rowSels = document.querySelectorAll("select.js-row-master-select[data-master-key=\"" + mKey + "\"]");
             rowSels.forEach(function(rSel) {
                 var firstOpt = rSel.options[0];
                 if (firstOpt) {
@@ -2059,7 +2059,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
                 tagEl.className = "badge ok";
                 tagEl.textContent = "✓ Master Lokasi: " + found.location_code;
             }
-            var rowSels = document.querySelectorAll("select.js-row-location-select[data-loc-key=\"' + lKey + '\"]");
+            var rowSels = document.querySelectorAll("select.js-row-location-select[data-loc-key=\"" + lKey + "\"]");
             rowSels.forEach(function(rSel) {
                 var firstOpt = rSel.options[0];
                 if (firstOpt) {
