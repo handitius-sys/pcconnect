@@ -247,10 +247,10 @@ function handle_route_asset_mutations(PDO $pdo): void
     } catch (Throwable $ignored) {}
 
     // =========================================================================
-    // FITUR: PREPARASI DATA COMBO BOX UNIT ASET MUTASI
+    // FITUR: PREPARASI DATA PENCARIAN INTERAKTIF UNIT ASET MUTASI
     // =========================================================================
     // Mengambil dataset unit aset aktif (tidak deleted/inactive) untuk disuplai
-    // ke komponen Combo Box interaktif. Mendukung filtering otomatis jika user
+    // ke komponen PENCARIAN INTERAKTIF interaktif. Mendukung filtering otomatis jika user
     // telah memilih Komoditas dan Kategori tertentu.
     $comboAssets = [];
     try {
@@ -296,7 +296,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '  </div>';
     echo '</div>';
 
-    // Form Filter: Wajib Pilih Komoditas & Kategori (asset_type) atau Combo Box Pencarian
+    // Form Filter: Wajib Pilih Komoditas & Kategori (asset_type) atau PENCARIAN INTERAKTIF Pencarian
     echo '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">';
     echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;flex-wrap:wrap;margin:0;">';
     echo '    <input type="hidden" name="route" value="asset_mutations">';
@@ -333,7 +333,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     echo '</div>';
 
     // =========================================================================
-    // 4. VALIDASI PEMILIHAN: HARUS MEMASUKKAN KOMODITAS & KATEGORI ATAU PENCARIAN COMBO BOX
+    // 4. VALIDASI PEMILIHAN: HARUS MEMASUKKAN KOMODITAS & KATEGORI ATAU PENCARIAN PENCARIAN INTERAKTIF
     // =========================================================================
     if (($filterGroup <= 0 || $filterType <= 0) && $q === '') {
         echo '<div style="text-align:center;padding:48px 24px;color:#475569;background:#f8fafc;border-radius:8px;border:2px dashed #cbd5e1;margin-bottom:24px;">';
@@ -376,7 +376,7 @@ function handle_route_asset_mutations(PDO $pdo): void
             $params = array_merge($params, [$w, $w, $w, $w, $w, $w, $w]);
         }
 
-        // Query unit aset terfilter berdasarkan Komoditas & Kategori atau kata kunci Combo Box
+        // Query unit aset terfilter berdasarkan Komoditas & Kategori atau kata kunci PENCARIAN INTERAKTIF
         $sql = "SELECT a.*, 
                        COALESCE(NULLIF(a.asset_name, ''), a.model, '-') AS display_name,
                        COALESCE(g.group_name, 'IT') AS group_name,
@@ -715,7 +715,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     }
 
     // =========================================================================
-    // JAVASCRIPT: LOGIKA COMBO BOX PENCARIAN & PEMILIHAN UNIT MUTASI ASET
+    // JAVASCRIPT: LOGIKA PENCARIAN INTERAKTIF PENCARIAN & PEMILIHAN UNIT MUTASI ASET
     // =========================================================================
     /**
      * Menampilkan daftar dropdown pencarian unit aset secara real-time.
@@ -876,7 +876,7 @@ function handle_route_asset_mutations(PDO $pdo): void
     }
 
     /**
-     * Penanganan navigasi keyboard pada Combo Box:
+     * Penanganan navigasi keyboard pada PENCARIAN INTERAKTIF:
      * - ArrowDown / ArrowUp: Memindahkan seleksi item atas/bawah
      * - Enter: Memilih item yang sedang aktif/disorot
      * - Escape: Menutup daftar dropdown pencarian

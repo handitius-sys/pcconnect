@@ -312,13 +312,13 @@ function get_regulated_menus(): array
  *
  * [FITUR & CAKUPAN]:
  * - Menjelaskan secara spesifik kemampuan View, Create, Edit, dan Delete untuk masing-masing modul.
- * - Mencakup fitur terbaru seperti Pencarian Kode Baru & Kode Lama (Legacy Code / Alias), Mode Combobox interaktif,
+ * - Mencakup fitur terbaru seperti Pencarian Kode Baru & Kode Lama (Legacy Code / Alias), Pencarian Interaktif,
  *   Mode View Read-Only, Import Data Lama dengan AI / Heuristik Cerdas, dan antarmuka Mobile Field Service.
  */
 function get_regulated_menu_descriptions(): array
 {
     return [
-        'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), pencarian bebas (Kode Baru / Kode Lama / SN / PC / Custodian), combobox interaktif, tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
+        'asset_items' => 'Lihat daftar & detail unit aset (Mode View Read-Only), pencarian bebas (Kode Baru / Kode Lama / SN / PC / Custodian), pencarian interaktif, tambah/import PC, edit spesifikasi & bundle, hapus/restore unit',
         'asset_loans' => 'Lihat daftar peminjaman aset, buat pengajuan pinjam dengan pencarian kode baru/lama, proses serah terima & pengembalian, cetak bukti pinjam, batalkan pengajuan',
         'asset_mutations' => 'Lihat riwayat mutasi unit aset, cari unit via kode baru/lama, buat transaksi mutasi lokasi/pengguna/company, edit & batalkan mutasi',
         'maintenance' => 'Lihat jadwal & block status Preventive Maintenance, filter komoditas, cari kode baru/lama, tambah schedule maintenance, eksekusi/edit PM, batalkan/hapus jadwal',

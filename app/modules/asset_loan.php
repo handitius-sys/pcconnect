@@ -753,7 +753,7 @@ function handle_route_asset_loan_form(PDO $pdo): void
         . '      <button type="button" class="btn" onclick="toggleCameraScanner()" style="margin-top:8px;background:#334155;color:#fff;padding:6px 14px;font-size:12px;">✕ Tutup Kamera</button>'
         . '    </div>'
 
-        // Input Single-Box Combobox Unit Aset (Terdaftar) & Barcode Input
+        // Input Single-Box Pencarian Unit Aset (Terdaftar) & Barcode Input
         . '    <div style="position:relative;margin-top:12px;">'
         . '      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
         . '        <span style="font-size:12.5px;font-weight:600;color:#0369a1;">Pilih atau Ketik Unit Aset:</span>'

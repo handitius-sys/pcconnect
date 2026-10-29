@@ -245,7 +245,7 @@ function handle_route_mobile_service(PDO $pdo): void
  *
  * [PROSES & FITUR]:
  * 1. Antarmuka kamera live scan berbasis html5-qrcode untuk pemindaian instan di lapangan.
- * 2. Pencarian interaktif combobox unit aset yang mendukung pencarian fleksibel:
+ * 2. Pencarian interaktif PENCARIAN INTERAKTIF unit aset yang mendukung pencarian fleksibel:
  *    - Kode Baru (asset_code)
  *    - Kode Lama / Alias (alias_code / Legacy Code)
  *    - Nama Barang / Model
@@ -307,9 +307,9 @@ function handle_route_mobile_service_scan(PDO $pdo): void
         }
     }
 
-    $comboboxServiceAssets = [];
+    $PENCARIAN INTERAKTIFServiceAssets = [];
     try {
-        $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
+        $PENCARIAN INTERAKTIFServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
                                                      COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
                                                      ai.serial_number, ai.custodian_name, 
                                                      COALESCE(loc.location_name, ai.location_label, '-') AS location_name,
@@ -320,7 +320,7 @@ function handle_route_mobile_service_scan(PDO $pdo): void
                                               WHERE ai.status NOT IN ('inactive', 'deleted')
                                               ORDER BY ai.asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $ignored) {}
-    $cbServiceAssetsJson = json_encode($comboboxServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $cbServiceAssetsJson = json_encode($PENCARIAN INTERAKTIFServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     render_mobile_header('Scan QR Unit Lapangan', $user);
     ?>
@@ -444,7 +444,7 @@ function handle_route_mobile_service_scan(PDO $pdo): void
  *
  * [PROSES & FITUR]:
  * 1. Memungkinkan teknisi langsung mencatat perbaikan saat berada di hadapan unit fisik tanpa birokrasi dropdown bertingkat.
- * 2. Input unit aset via combobox interaktif yang mendukung Kode Baru dan Kode Lama (Legacy Code).
+ * 2. Input unit aset via pencarian interaktif yang mendukung Kode Baru dan Kode Lama (Legacy Code).
  * 3. Menyertakan dokumentasi visual lengkap:
  *    - Foto Kondisi Sebelum Perbaikan
  *    - Foto Hasil Sesudah Perbaikan
@@ -529,9 +529,9 @@ function handle_route_mobile_service_direct(PDO $pdo): void
 
     // JIKA UNIT BELUM DITENTUKAN: Tampilkan antarmuka Scan QR atau Masukkan ID / Kode Unit
     if (!$unit) {
-        $comboboxServiceAssets = [];
+        $PENCARIAN INTERAKTIFServiceAssets = [];
     try {
-        $comboboxServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
+        $PENCARIAN INTERAKTIFServiceAssets = $pdo->query("SELECT ai.id, ai.asset_code, ai.alias_code, 
                                                      COALESCE(NULLIF(ai.asset_name, ''), ai.model, ai.asset_code) AS asset_name,
                                                      ai.serial_number, ai.custodian_name, 
                                                      COALESCE(loc.location_name, ai.location_label, '-') AS location_name,
@@ -542,7 +542,7 @@ function handle_route_mobile_service_direct(PDO $pdo): void
                                               WHERE ai.status NOT IN ('inactive', 'deleted')
                                               ORDER BY ai.asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $ignored) {}
-    $cbServiceAssetsJson = json_encode($comboboxServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $cbServiceAssetsJson = json_encode($PENCARIAN INTERAKTIFServiceAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         render_mobile_header('Pilih Unit Aset', $user);
         ?>

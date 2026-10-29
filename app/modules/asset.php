@@ -6653,15 +6653,15 @@ function handle_route_asset_items(PDO $pdo): void
         echo '<input type="hidden" name="backdoor" value="1">';
     }
 
-    // Baris 1: Pencarian Bebas Multi-Identitas (Mode Combobox)
-    $comboboxAssetSuggestions = [];
+    // Baris 1: Pencarian Bebas Multi-Identitas (Pencarian Interaktif)
+    $PENCARIAN INTERAKTIFAssetSuggestions = [];
     try {
-        $comboboxAssetSuggestions = $pdo->query("SELECT asset_code, alias_code, asset_name, serial_number, custodian_name 
+        $PENCARIAN INTERAKTIFAssetSuggestions = $pdo->query("SELECT asset_code, alias_code, asset_name, serial_number, custodian_name 
                                                  FROM asset_items 
                                                  WHERE status NOT IN ('inactive', 'deleted') 
                                                  ORDER BY asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $ignored) {}
-    $cbAssetsJson = json_encode($comboboxAssetSuggestions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $cbAssetsJson = json_encode($PENCARIAN INTERAKTIFAssetSuggestions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     echo '<div style="position:relative;display:flex;gap:10px;align-items:flex-end;">';
     echo '  <div style="flex:1;position:relative;">';
@@ -6670,14 +6670,14 @@ function handle_route_asset_items(PDO $pdo): void
     
     echo '    </label>';
     echo '    <div style="position:relative;display:flex;align-items:stretch;">';
-    echo '      <input type="text" id="assetFreeComboboxInput" name="q" value="' . e($q) . '" placeholder="🔍 Ketik atau pilih kode baru, kode lama (alias), SN, nama barang, PIC..." autocomplete="off" list="assetFreeDatalist" style="height:38px;box-sizing:border-box;width:100%;padding:8px 58px 8px 12px;font-size:13px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;" onfocus="showAssetFreeDropdown(this.value)" oninput="showAssetFreeDropdown(this.value)">';
+    echo '      <input type="text" id="assetFreePENCARIAN INTERAKTIFInput" name="q" value="' . e($q) . '" placeholder="🔍 Ketik atau pilih kode baru, kode lama (alias), SN, nama barang, PIC..." autocomplete="off" list="assetFreeDatalist" style="height:38px;box-sizing:border-box;width:100%;padding:8px 58px 8px 12px;font-size:13px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;" onfocus="showAssetFreeDropdown(this.value)" oninput="showAssetFreeDropdown(this.value)">';
     echo '      <button type="button" id="assetFreeClearBtn" onclick="clearAssetFreeSearch()" style="display:' . ($q !== '' ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:4px;line-height:1;" title="Hapus pencarian">✕</button>';
     echo '      <button type="button" onclick="toggleAssetFreeDropdown(event)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:12px;cursor:pointer;padding:4px;line-height:1;" title="Buka daftar pilihan aset">▼</button>';
     echo '    </div>';
     
     // Native HTML5 Datalist
     echo '    <datalist id="assetFreeDatalist">';
-    foreach ($comboboxAssetSuggestions as $cOpt) {
+    foreach ($PENCARIAN INTERAKTIFAssetSuggestions as $cOpt) {
         $cVal = $cOpt['asset_code'];
         $cLabel = $cOpt['asset_code'] . (!empty($cOpt['alias_code']) ? (' [Lama: ' . $cOpt['alias_code'] . ']') : '') . ' - ' . ($cOpt['asset_name'] ?: '-') . (!empty($cOpt['custodian_name']) ? (' (' . $cOpt['custodian_name'] . ')') : '');
         echo '      <option value="' . e($cVal) . '">' . e($cLabel) . '</option>';
@@ -6702,13 +6702,13 @@ function handle_route_asset_items(PDO $pdo): void
         if (dd.style.display === "block") {
             dd.style.display = "none";
         } else {
-            var inp = document.getElementById("assetFreeComboboxInput");
+            var inp = document.getElementById("assetFreePENCARIAN INTERAKTIFInput");
             showAssetFreeDropdown(inp ? inp.value : "");
             if (inp) inp.focus();
         }
     }
     function clearAssetFreeSearch() {
-        var inp = document.getElementById("assetFreeComboboxInput");
+        var inp = document.getElementById("assetFreePENCARIAN INTERAKTIFInput");
         if (inp) inp.value = "";
         var btn = document.getElementById("assetFreeClearBtn");
         if (btn) btn.style.display = "none";
@@ -6749,7 +6749,7 @@ function handle_route_asset_items(PDO $pdo): void
             div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
             div.onmouseleave = function() { div.style.background = "#fff"; };
             div.onmousedown = function() {
-                var inp = document.getElementById("assetFreeComboboxInput");
+                var inp = document.getElementById("assetFreePENCARIAN INTERAKTIFInput");
                 if (inp) inp.value = item.asset_code;
                 dd.style.display = "none";
                 inp.form.submit();
@@ -6760,7 +6760,7 @@ function handle_route_asset_items(PDO $pdo): void
     }
     document.addEventListener("click", function(e) {
         var dd = document.getElementById("assetFreeDropdownResults");
-        var inp = document.getElementById("assetFreeComboboxInput");
+        var inp = document.getElementById("assetFreePENCARIAN INTERAKTIFInput");
         if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
             dd.style.display = "none";
         }

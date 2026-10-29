@@ -795,9 +795,13 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     'specs_text' => (string)($parsed['specs_plain'] ?? ''),
                     'sample_desc' => $rawDesc,
                     'row_count' => 0,
+                    'legacy_codes' => [],
                 ];
             }
             $planMasters[$masterKey]['row_count']++;
+            if ($legacyCode !== '' && !in_array($legacyCode, $planMasters[$masterKey]['legacy_codes'] ?? [], true)) {
+                $planMasters[$masterKey]['legacy_codes'][] = $legacyCode;
+            }
 
             // 3. Ajuan Rancangan Lokasi Baru dari Kolom "Ruko", "Lantai", dan "Ruangan"
             $locProposal = legacy_build_location_proposal($pdo, $rawRuko, $rawLantai, $rawRuangan, $usedProposedLocCodes);
@@ -805,8 +809,12 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             if (!isset($planLocations[$locKey])) {
                 $planLocations[$locKey] = $locProposal;
                 $planLocations[$locKey]['row_count'] = 0;
+                $planLocations[$locKey]['legacy_codes'] = [];
             }
             $planLocations[$locKey]['row_count']++;
+            if ($legacyCode !== '' && !in_array($legacyCode, $planLocations[$locKey]['legacy_codes'] ?? [], true)) {
+                $planLocations[$locKey]['legacy_codes'][] = $legacyCode;
+            }
 
             $previewList[] = [
                 'row_num'         => $i + 1,
@@ -881,6 +889,27 @@ function handle_route_asset_legacy_import(PDO $pdo): void
  * Mencari Merk pada tabel `asset_brands` untuk Komoditas & Kategori terkait,
  * atau otomatis memasukkannya ke database `asset_brands` jika belum ada, lalu mengembalikan ID-nya.
  */
+/**
+ * Format badge daftar Kode Lama (Legacy) untuk ditampilkan di kartu/panel konfirmasi.
+ */
+function legacy_render_code_badges(array $codes, int $maxDisplay = 8): string
+{
+    $codes = array_values(array_unique(array_filter($codes, fn($c) => trim((string)$c) !== '')));
+    if (empty($codes)) {
+        return '<span class="muted" style="font-size:11px;">-</span>';
+    }
+
+    $badges = [];
+    $displayCodes = array_slice($codes, 0, $maxDisplay);
+    foreach ($displayCodes as $c) {
+        $badges[] = '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;border:1px solid #fde68a;font-family:monospace;margin:1px 2px;">🏷️ ' . e($c) . '</span>';
+    }
+    if (count($codes) > $maxDisplay) {
+        $badges[] = '<span class="muted" style="font-size:11px;font-weight:600;margin-left:3px;">+' . (count($codes) - $maxDisplay) . ' lainnya</span>';
+    }
+    return implode(' ', $badges);
+}
+
 function legacy_find_or_create_brand(PDO $pdo, string $brandName, int $groupId, int $typeId, int &$createdCount = 0): ?int
 {
     $brandName = mb_substr(trim($brandName), 0, 120);
@@ -1514,7 +1543,14 @@ function render_legacy_import_init_form_html(PDO $pdo): void
         . '</form>'
         . '</section>';
 
+    $jsonCatMasters = json_encode($categoryMasters, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+    $jsonAllLocs = json_encode($allLocations, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+    $jsonPlanMasters = json_encode($planMasters, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+
     echo '<script>
+    window._allCategoryMasters = ' . $jsonCatMasters . ';
+    window._allCategoryLocations = ' . $jsonAllLocs . ';
+    window._planMastersData = ' . $jsonPlanMasters . ';
     var allTypes = ' . $jsonTypes . ';
     function filterImportCategoryOptions() {
         var gSel = document.getElementById("importGroupSelect");
@@ -1628,12 +1664,13 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '</div>';
 
     echo '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">'
-        . '<table style="margin:0;font-size:12.5px;min-width:1050px;">'
+        . '<table style="margin:0;font-size:12.5px;min-width:1150px;">'
         . '<thead><tr style="background:#f1f5f9;">'
-        . '<th style="width:170px;">Komoditas & Kategori</th>'
-        . '<th style="width:210px;">Merk Terdeteksi AI (Database Merk)</th>'
+        . '<th style="width:160px;">Komoditas & Kategori</th>'
+        . '<th style="width:180px;">Kode Lama (Legacy)</th>'
+        . '<th style="width:200px;">Merk Terdeteksi AI (Database Merk)</th>'
         . '<th>Rancangan Kombinasi Master Barang (Nama Barang, Model & Spesifikasi)</th>'
-        . '<th style="width:300px;">Tindakan Master Barang (Buat Baru / Pilih Eksisting)</th>'
+        . '<th style="width:310px;">Tindakan Master Barang (Buat Baru / Pilih Eksisting)</th>'
         . '</tr></thead><tbody>';
 
     foreach ($planMasters as $mKey => $mCfg) {
@@ -1658,11 +1695,16 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             ? '<span id="' . $statusTagId . '" class="badge ok" style="font-size:11px;">✓ Terhubung ke Master Barang (' . e($mCfg['existing_code'] ?: 'Eksisting') . ')</span>'
             : '<span id="' . $statusTagId . '" class="badge" style="background:#dbeafe;color:#1e40af;font-size:11px;">✨ Rancangan Baru (SKU: ' . e($mCfg['proposed_code'] ?? '-') . ')</span>';
 
+        $masterLegacyBadges = legacy_render_code_badges((array)($mCfg['legacy_codes'] ?? []));
         echo '<tr id="masterPlanRow_' . e($mKey) . '">'
             . '<td style="vertical-align:top;">'
             . '  <div style="font-weight:700;color:#1e3a8a;">' . e($mCfg['group_name']) . '</div>'
             . '  <div style="font-size:12px;color:#0284c7;font-weight:600;">' . e($mCfg['type_name']) . '</div>'
-            . '  <div class="muted" style="font-size:11px;margin-top:4px;">Dipakai oleh <strong>' . (int)$mCfg['row_count'] . ' baris</strong> import</div>'
+            . '  <div class="muted" style="font-size:11px;margin-top:4px;">Dipakai oleh <strong>' . (int)$mCfg['row_count'] . ' baris</strong> unit</div>'
+            . '</td>'
+            . '<td style="vertical-align:top;">'
+            . '  <div style="font-size:10.5px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:3px;">Kode Lama Unit:</div>'
+            . '  <div style="max-height:90px;overflow-y:auto;padding:2px 0;">' . $masterLegacyBadges . '</div>'
             . '</td>'
             . '<td style="vertical-align:top;">'
             . '  <select id="planMasterBrand_' . e($mKey) . '" name="plan_master[' . e($mKey) . '][brand_id]" class="js-brand-select" style="width:100%;padding:5px 7px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;font-weight:600;">'
@@ -1698,7 +1740,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             . '    <option value="skip">⏭️ Jangan Hubungkan Master Barang</option>'
             . '  </select>'
             . '  <div id="planMasterExistingWrap_' . e($mKey) . '" style="' . ($isExistingM ? '' : 'display:none;') . 'margin-bottom:6px;">'
-            . '    <select id="planMasterSelect_' . e($mKey) . '" name="plan_master[' . e($mKey) . '][master_item_id]" class="js-master-select" style="width:100%;padding:5px 7px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;">'
+            . '    <select id="planMasterSelect_' . e($mKey) . '" name="plan_master[' . e($mKey) . '][master_item_id]" class="js-master-select" onchange="onPlanMasterSelectedChange(\'' . e($mKey) . '\', this.value)" style="width:100%;padding:5px 7px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;">'
             .        $masterOptionsHtml
             . '    </select>'
             . '  </div>'
@@ -1725,12 +1767,13 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '</div>';
 
     echo '<div style="overflow-x:auto;border:1px solid #fde68a;border-radius:8px;background:#fff;">'
-        . '<table style="margin:0;font-size:12.5px;min-width:1050px;">'
+        . '<table style="margin:0;font-size:12.5px;min-width:1150px;">'
         . '<thead><tr style="background:#fef3c7;color:#78350f;">'
-        . '<th style="width:240px;">Data Import (Ruko / Lantai / Ruangan)</th>'
-        . '<th style="width:220px;">Keputusan Lokasi</th>'
+        . '<th style="width:220px;">Data Import (Ruko / Lantai / Ruangan)</th>'
+        . '<th style="width:180px;">Kode Lama (Legacy)</th>'
+        . '<th style="width:210px;">Keputusan Lokasi</th>'
         . '<th>Ajuan Rancangan Lokasi Baru / Pilihan Master Lokasi</th>'
-        . '<th style="width:210px;text-align:center;">Aksi Cepat ke Master Lokasi</th>'
+        . '<th style="width:200px;text-align:center;">Aksi Cepat ke Master Lokasi</th>'
         . '</tr></thead><tbody>';
 
     foreach ($planLocations as $lKey => $lCfg) {
@@ -1746,12 +1789,17 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             ? '<span id="' . $locStatusId . '" class="badge ok" style="font-size:11px;">✓ Sudah Ada di Master Lokasi</span>'
             : '<span id="' . $locStatusId . '" class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;font-size:11px;">+ Ajuan Lokasi Baru</span>';
 
+        $locLegacyBadges = legacy_render_code_badges((array)($lCfg['legacy_codes'] ?? []));
         echo '<tr id="locPlanRow_' . e($lKey) . '">'
             . '<td style="vertical-align:top;">'
             . '  <div style="font-size:12px;">🏢 <strong>Ruko:</strong> ' . e($lCfg['raw_ruko'] ?: '-') . '</div>'
             . '  <div style="font-size:12px;">🪜 <strong>Lantai:</strong> ' . e($lCfg['raw_lantai'] ?: '-') . '</div>'
             . '  <div style="font-size:12px;">🚪 <strong>Ruangan:</strong> ' . e($lCfg['raw_ruangan'] ?: '-') . '</div>'
             . '  <div class="muted" style="font-size:11px;margin-top:4px;">Digunakan pada <strong>' . (int)$lCfg['row_count'] . ' baris</strong> (' . $locStatusBadge . ')</div>'
+            . '</td>'
+            . '<td style="vertical-align:top;">'
+            . '  <div style="font-size:10.5px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:3px;">Kode Lama Unit:</div>'
+            . '  <div style="max-height:90px;overflow-y:auto;padding:2px 0;">' . $locLegacyBadges . '</div>'
             . '</td>'
             . '<td style="vertical-align:top;">'
             . '  <select id="planLocMode_' . e($lKey) . '" name="plan_loc[' . e($lKey) . '][mode]" onchange="toggleLocationPlanMode(\'' . e($lKey) . '\')" style="width:100%;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #d97706;border-radius:5px;background:#fffbeb;color:#78350f;">'
@@ -1778,7 +1826,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             . '  </div>'
             . '  <div id="planLocExistingWrap_' . e($lKey) . '" style="' . ($isExistingL ? '' : 'display:none;') . '">'
             . '    <span style="font-size:10.5px;font-weight:700;color:#1e3a8a;display:block;margin-bottom:2px;">Pilih Lokasi dari Master Lokasi (`asset_locations`):</span>'
-            . '    <select id="planLocSelect_' . e($lKey) . '" name="plan_loc[' . e($lKey) . '][location_id]" class="js-location-select" style="width:100%;padding:6px 8px;font-size:12.5px;font-weight:600;border:1px solid #3b82f6;border-radius:5px;background:#fff;">'
+            . '    <select id="planLocSelect_' . e($lKey) . '" name="plan_loc[' . e($lKey) . '][location_id]" class="js-location-select" onchange="onPlanLocationSelectedChange(\'' . e($lKey) . '\', this.value)" style="width:100%;padding:6px 8px;font-size:12.5px;font-weight:600;border:1px solid #3b82f6;border-radius:5px;background:#fff;">'
             .        $locOptionsHtml
             . '    </select>'
             . '  </div>'
@@ -1947,14 +1995,109 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         }
     }
 
+    
+
+
+    function onPlanMasterSelectedChange(mKey, masterId) {
+        masterId = parseInt(masterId, 10) || 0;
+        var tagEl = document.getElementById("masterStatusTag_" + mKey);
+        var nameIn = document.getElementById("planMasterName_" + mKey);
+        var modelIn = document.getElementById("planMasterModel_" + mKey);
+        var brandSel = document.getElementById("planMasterBrand_" + mKey);
+
+        if (masterId <= 0) {
+            if (tagEl) {
+                tagEl.className = "badge";
+                tagEl.style.background = "#dbeafe";
+                tagEl.style.color = "#1e40af";
+                tagEl.textContent = "📦 Belum Memilih Master Barang";
+            }
+            return;
+        }
+
+        var found = (window._allCategoryMasters || []).find(function(m) {
+            return parseInt(m.id, 10) === masterId;
+        });
+
+        if (found) {
+            if (tagEl) {
+                tagEl.className = "badge ok";
+                tagEl.textContent = "✓ Terhubung ke Master: " + found.item_code;
+            }
+            if (nameIn && found.item_name) {
+                nameIn.value = found.item_name;
+            }
+            if (modelIn && found.model_name) {
+                modelIn.value = found.model_name;
+            }
+            if (brandSel && found.brand_id) {
+                brandSel.value = String(found.brand_id);
+            }
+
+            // Sync ke dropdown baris unit aset yang mengikuti plan master ini
+            var rowSels = document.querySelectorAll("select.js-row-master-select[data-master-key=\"' + mKey + '\"]");
+            rowSels.forEach(function(rSel) {
+                var firstOpt = rSel.options[0];
+                if (firstOpt) {
+                    firstOpt.textContent = "🤖 Ikuti Master Terpilih: " + found.item_code + " - " + found.item_name;
+                }
+            });
+        }
+    }
+
+    function onPlanLocationSelectedChange(lKey, locationId) {
+        locationId = parseInt(locationId, 10) || 0;
+        var tagEl = document.getElementById("locStatusTag_" + lKey);
+        if (locationId <= 0) return;
+
+        var found = (window._allCategoryLocations || []).find(function(l) {
+            return parseInt(l.id, 10) === locationId;
+        });
+
+        if (found) {
+            if (tagEl) {
+                tagEl.className = "badge ok";
+                tagEl.textContent = "✓ Master Lokasi: " + found.location_code;
+            }
+            var rowSels = document.querySelectorAll("select.js-row-location-select[data-loc-key=\"' + lKey + '\"]");
+            rowSels.forEach(function(rSel) {
+                var firstOpt = rSel.options[0];
+                if (firstOpt) {
+                    firstOpt.textContent = "📍 Ikuti Master: " + found.location_name + " (" + found.location_code + ")";
+                }
+            });
+        }
+    }
+
     function toggleMasterPlanMode(mKey) {
         var modeEl = document.getElementById("planMasterMode_" + mKey);
         var exWrap = document.getElementById("planMasterExistingWrap_" + mKey);
         var btnSave = document.getElementById("btnSaveMasterNow_" + mKey);
+        var selEl = document.getElementById("planMasterSelect_" + mKey);
+        var tagEl = document.getElementById("masterStatusTag_" + mKey);
         if (!modeEl) return;
         var mode = modeEl.value;
         if (exWrap) exWrap.style.display = (mode === "existing") ? "" : "none";
         if (btnSave) btnSave.style.display = (mode === "new") ? "" : "none";
+
+        if (mode === "existing") {
+            if (selEl && parseInt(selEl.value, 10) > 0) {
+                onPlanMasterSelectedChange(mKey, selEl.value);
+            } else if (tagEl) {
+                tagEl.className = "badge";
+                tagEl.style.background = "#dbeafe";
+                tagEl.style.color = "#1e40af";
+                tagEl.textContent = "📦 Silakan Pilih Master Barang Eksisting";
+            }
+        } else if (mode === "new") {
+            var orig = (window._planMastersData && window._planMastersData[mKey]) ? window._planMastersData[mKey] : null;
+            if (tagEl) {
+                tagEl.className = "badge";
+                tagEl.style.background = "#dbeafe";
+                tagEl.style.color = "#1e40af";
+                tagEl.textContent = "✨ Rancangan Baru (SKU: " + (orig ? orig.proposed_code : "-") + ")";
+            }
+        }
     }
 
     function toggleLocationPlanMode(lKey) {
@@ -2095,6 +2238,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     }
 
     function populateAllLocationDropdowns(locations) {
+        window._allCategoryLocations = locations || [];
         var planSels = document.querySelectorAll("select.js-location-select");
         planSels.forEach(function(sel) {
             var cur = sel.value;
@@ -2121,6 +2265,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     }
 
     function populateAllMasterDropdowns(masters) {
+        window._allCategoryMasters = masters || [];
         var planSels = document.querySelectorAll("select.js-master-select");
         planSels.forEach(function(sel) {
             var cur = sel.value;
