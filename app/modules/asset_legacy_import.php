@@ -1104,7 +1104,7 @@ function ensure_category_default_specs(PDO $pdo, int $typeId, string $tCode): vo
     }
 
     if (!empty($defaults)) {
-        $stmt = $pdo->prepare("INSERT IGNORE INTO asset_type_specifications (asset_type_id, specification_code, specification_label, data_type, is_required, sort_order) VALUES (?, ?, ?, ?, 0, ?)");
+        $stmt = $pdo->prepare("INSERT IGNORE INTO asset_type_specifications (asset_type_id, specification_code, specification_name, data_type, is_required, display_order) VALUES (?, ?, ?, ?, 0, ?)");
         foreach ($defaults as $d) {
             $stmt->execute([$typeId, $d[0], $d[1], $d[2], $d[3]]);
         }
