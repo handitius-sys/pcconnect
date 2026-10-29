@@ -260,6 +260,25 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             redirect_to('asset_legacy_import');
         }
 
+        // Decode JSON payload jika dikirim lewat hidden input import_payload (mengatasi batasan PHP max_input_vars = 1000 saat mengimpor ratusan unit aset)
+        if (!empty($_POST['import_payload'])) {
+            $payload = json_decode((string)$_POST['import_payload'], true);
+            if (is_array($payload)) {
+                if (!empty($payload['selected_rows'])) {
+                    $_POST['selected_rows'] = (array)$payload['selected_rows'];
+                }
+                if (!empty($payload['plan_master'])) {
+                    $_POST['plan_master'] = (array)$payload['plan_master'];
+                }
+                if (!empty($payload['plan_loc'])) {
+                    $_POST['plan_loc'] = (array)$payload['plan_loc'];
+                }
+                if (!empty($payload['items'])) {
+                    $_POST['items'] = (array)$payload['items'];
+                }
+            }
+        }
+
         $selectedIndexes = (array)($_POST['selected_rows'] ?? []);
         if (empty($selectedIndexes)) {
             flash('Tidak ada item yang dipilih untuk diimpor. Berikan tanda centang pada baris unit yang ingin diimpor.', 'err');
@@ -1643,6 +1662,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
 
     echo '<form id="importExecForm" method="post" action="' . route_url('asset_legacy_import', ['action' => 'execute_import']) . '">'
         . '<input type="hidden" id="importCsrfToken" name="csrf" value="' . csrf_token() . '">'
+        . '<input type="hidden" id="importPayloadJson" name="import_payload" value="">'
         . '<input type="hidden" name="company_id" value="' . (int)($opts['company_id'] ?? 0) . '">'
         . '<input type="hidden" id="importGroupIdHidden" name="asset_group_id" value="' . $groupId . '">'
         . '<input type="hidden" id="importTypeIdHidden" name="asset_type_id" value="' . $typeId . '">';
@@ -1873,7 +1893,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $no++;
         $isDup = !empty($item['is_duplicate']);
         $rowBg = $isDup ? 'background:#fff1f2;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
-        $isChecked = ''; // Secara default tidak terselect semua agar dikonfirmasi terlebih dahulu
+        $isChecked = !$isDup ? 'checked' : ''; // Secara default centang semua unit yang valid / bukan duplikat
 
         $statusBadge = $isDup
             ? '<span class="badge danger" title="Kode Lama sudah terdaftar pada unit ' . e($item['dup_asset_code']) . '">Duplikat</span>'
@@ -1954,17 +1974,23 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
 
     echo '<script>
     function updateSelectedCount() {
-        var cbs = document.querySelectorAll("#previewTable tbody input[type=\'checkbox\']");
+        var cbs = document.querySelectorAll("#previewTable tbody input[type=\"checkbox\"]");
         var cnt = 0;
+        var total = cbs.length;
         cbs.forEach(function(cb) {
             if (cb.checked) cnt++;
         });
         var disp = document.getElementById("selectedCountDisplay");
         if (disp) disp.textContent = cnt + " Item Terpilih";
+        var mCb = document.getElementById("masterCheckbox");
+        if (mCb) {
+            mCb.checked = (cnt > 0 && cnt === total);
+            mCb.indeterminate = (cnt > 0 && cnt < total);
+        }
     }
 
     function toggleSelectAll(status) {
-        var cbs = document.querySelectorAll("#previewTable tbody tr:not([style*=\'display: none\']) input[type=\'checkbox\']");
+        var cbs = document.querySelectorAll("#previewTable tbody tr:not([style*=\"display: none\"]) input[type=\"checkbox\"]");
         cbs.forEach(function(cb) {
             cb.checked = status;
         });
@@ -2316,5 +2342,137 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             .replace(/"/g, "&quot;")
             .replace(/\x27/g, "&#39;");
     }
+
+    function initImportForm() {
+        updateSelectedCount();
+
+        var formEl = document.getElementById("importExecForm");
+        if (formEl) {
+            formEl.addEventListener("submit", function(e) {
+                var selectedCbs = document.querySelectorAll("#previewTable tbody input[name=\"selected_rows[]\"]:checked");
+                if (selectedCbs.length === 0) {
+                    e.preventDefault();
+                    alert("Tidak ada item yang dipilih untuk diimpor. Berikan tanda centang pada baris unit yang ingin diimpor.");
+                    return false;
+                }
+
+                var payload = {
+                    selected_rows: [],
+                    plan_master: {},
+                    plan_loc: {},
+                    items: {}
+                };
+
+                selectedCbs.forEach(function(cb) {
+                    payload.selected_rows.push(cb.value);
+                });
+
+                // Kumpulkan data Plan Master
+                document.querySelectorAll("tr[id^=\"masterPlanRow_\"]").forEach(function(row) {
+                    var mKey = row.id.replace("masterPlanRow_", "");
+                    var modeEl = document.getElementById("planMasterMode_" + mKey);
+                    var selEl = document.getElementById("planMasterSelect_" + mKey);
+                    var brSel = document.getElementById("planMasterBrand_" + mKey);
+                    var brCust = document.getElementById("planMasterBrandCustom_" + mKey);
+                    var nameEl = document.getElementById("planMasterName_" + mKey);
+                    var modEl = document.getElementById("planMasterModel_" + mKey);
+                    var specEl = document.getElementById("planMasterSpecs_" + mKey);
+
+                    payload.plan_master[mKey] = {
+                        mode: modeEl ? modeEl.value : "new",
+                        master_item_id: selEl ? selEl.value : "0",
+                        brand_id: brSel ? brSel.value : "0",
+                        brand_custom: brCust ? brCust.value : "",
+                        item_name: nameEl ? nameEl.value : "",
+                        model: modEl ? modEl.value : "",
+                        specs_text: specEl ? specEl.value : ""
+                    };
+                });
+
+                // Kumpulkan data Plan Lokasi
+                document.querySelectorAll("tr[id^=\"locationPlanRow_\"]").forEach(function(row) {
+                    var lKey = row.id.replace("locationPlanRow_", "");
+                    var modeEl = document.getElementById("planLocMode_" + lKey);
+                    var selEl = document.getElementById("planLocSelect_" + lKey);
+                    var codeEl = document.getElementById("planLocCode_" + lKey);
+                    var nameEl = document.getElementById("planLocName_" + lKey);
+
+                    payload.plan_loc[lKey] = {
+                        mode: modeEl ? modeEl.value : "new",
+                        location_id: selEl ? selEl.value : "0",
+                        location_code: codeEl ? codeEl.value : "",
+                        location_name: nameEl ? nameEl.value : ""
+                    };
+                });
+
+                // Kumpulkan data unit items HANYA untuk baris yang dicentang
+                payload.selected_rows.forEach(function(idx) {
+                    var cb = document.querySelector("#previewTable tbody input[name=\"selected_rows[]\"][value=\"" + idx + "\"]");
+                    if (!cb) return;
+                    var tr = cb.closest("tr");
+                    if (!tr) return;
+
+                    var legacyIn = tr.querySelector("input[name=\"items[" + idx + "][legacy_code]\"]");
+                    var dateIn = tr.querySelector("input[name=\"items[" + idx + "][installed_at]\"]");
+                    var nameIn = tr.querySelector("input[name=\"items[" + idx + "][asset_name]\"]");
+                    var brandSel = tr.querySelector("select[name=\"items[" + idx + "][brand_id]\"]");
+                    var brandIn = tr.querySelector("input[name=\"items[" + idx + "][brand]\"]");
+                    var modelIn = tr.querySelector("input[name=\"items[" + idx + "][model]\"]");
+                    var masterChoice = tr.querySelector("select[name=\"items[" + idx + "][row_master_choice]\"]");
+                    var snIn = tr.querySelector("input[name=\"items[" + idx + "][serial_number]\"]");
+                    var locChoice = tr.querySelector("select[name=\"items[" + idx + "][row_location_choice]\"]");
+                    var locLabel = tr.querySelector("input[name=\"items[" + idx + "][loc_label]\"]");
+
+                    payload.items[idx] = {
+                        legacy_code: legacyIn ? legacyIn.value : "",
+                        installed_at: dateIn ? dateIn.value : "",
+                        asset_name: nameIn ? nameIn.value : "",
+                        brand_id: brandSel ? brandSel.value : "0",
+                        brand: brandIn ? brandIn.value : "",
+                        model: modelIn ? modelIn.value : "",
+                        row_master_choice: masterChoice ? masterChoice.value : "plan",
+                        serial_number: snIn ? snIn.value : "",
+                        row_location_choice: locChoice ? locChoice.value : "plan",
+                        loc_label: locLabel ? locLabel.value : ""
+                    };
+                });
+
+                var pInput = document.getElementById("importPayloadJson");
+                if (pInput) {
+                    pInput.value = JSON.stringify(payload);
+                }
+
+                // Nonaktifkan field tabel agar browser tidak mengirim ribuan variabel yang melebihi max_input_vars (1000)
+                var tableFields = formEl.querySelectorAll("table input, table select, table textarea");
+                tableFields.forEach(function(f) {
+                    f.disabled = true;
+                });
+
+                var submitBtn = formEl.querySelector("button[type=\"submit\"]");
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "⏳ Memproses & Menyimpan " + payload.selected_rows.length + " Unit Aset...";
+                }
+            });
+        }
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initImportForm);
+    } else {
+        initImportForm();
+    }
+
+    window.addEventListener("pageshow", function() {
+        var tableFields = document.querySelectorAll("#importExecForm table input, #importExecForm table select, #importExecForm table textarea");
+        tableFields.forEach(function(f) {
+            f.disabled = false;
+        });
+        var submitBtn = document.querySelector("#importExecForm button[type=\"submit\"]");
+        if (submitBtn) {
+            submitBtn.disabled = false;
+        }
+        updateSelectedCount();
+    });
     </script>';
 }
