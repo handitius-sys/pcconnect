@@ -862,7 +862,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
     // -------------------------------------------------------------------------
     // 5. Render Tampilan Utama (Step 1: Upload / Step 2: Form Konfirmasi & Editing)
     // -------------------------------------------------------------------------
-    render_header('Import Data Aset Lama (Legacy)', 'asset_items');
+    render_header('Import Data Aset Lama (Legacy)', $user);
 
     $previewList = $_SESSION['asset_legacy_import_preview'] ?? [];
     $opts = $_SESSION['asset_legacy_import_opts'] ?? [];
