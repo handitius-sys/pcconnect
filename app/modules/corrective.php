@@ -1379,7 +1379,7 @@ function handle_route_ticket_form(PDO $pdo): void
                         
                     </label>
                     <div style="position:relative;display:flex;align-items:stretch;">
-                        <input type="text" id="maintAssetPENCARIAN INTERAKTIF" placeholder="🔍 Cari / Pilih unit aset (Kode Baru, Kode Lama, Nama, PIC)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 36px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMaintAssetDropdown(this.value)" oninput="showMaintAssetDropdown(this.value)">
+                        <input type="text" id="maintAssetSearchInput" placeholder="🔍 Cari / Pilih unit aset (Kode Baru, Kode Lama, Nama, PIC)..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 36px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showMaintAssetDropdown(this.value)" oninput="showMaintAssetDropdown(this.value)">
                         <button type="button" onclick="toggleMaintAssetDropdown(event)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:13px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup Pilihan Aset">▼</button>
                     </div>
                     <select name="asset_item_id" id="maintAssetSelect" required onchange="onMaintAssetChange()" style="display:none;">
@@ -1662,7 +1662,7 @@ function handle_route_ticket_form(PDO $pdo): void
             window.currentCategoryAssets = Array.isArray(assets) ? assets : [];
 
             aSel.innerHTML = '<option value="">-- Pilih Unit Aset --</option>';
-            var cbInput = document.getElementById('maintAssetPENCARIAN INTERAKTIF');
+            var cbInput = document.getElementById('maintAssetSearchInput');
             if (cbInput) {
                 cbInput.value = '';
                 cbInput.placeholder = window.currentCategoryAssets.length > 0 
@@ -1723,7 +1723,7 @@ function handle_route_ticket_form(PDO $pdo): void
         if (dd.style.display === 'block') {
             dd.style.display = 'none';
         } else {
-            var inp = document.getElementById('maintAssetPENCARIAN INTERAKTIF');
+            var inp = document.getElementById('maintAssetSearchInput');
             showMaintAssetDropdown(inp ? inp.value : '');
             if (inp) inp.focus();
         }
@@ -1777,7 +1777,7 @@ function handle_route_ticket_form(PDO $pdo): void
             div.onmousedown = function() {
                 var aSel = document.getElementById('maintAssetSelect');
                 if (aSel) aSel.value = m.id;
-                var cbInput = document.getElementById('maintAssetPENCARIAN INTERAKTIF');
+                var cbInput = document.getElementById('maintAssetSearchInput');
                 if (cbInput) cbInput.value = m.asset_code + (m.alias_code ? ' [Lama: ' + m.alias_code + ']' : '') + ' - ' + m.asset_name;
                 dd.style.display = 'none';
                 onMaintAssetChange();
@@ -1789,7 +1789,7 @@ function handle_route_ticket_form(PDO $pdo): void
 
     document.addEventListener('click', function(e) {
         var dd = document.getElementById('maintAssetDropdownList');
-        var inp = document.getElementById('maintAssetPENCARIAN INTERAKTIF');
+        var inp = document.getElementById('maintAssetSearchInput');
         if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
             dd.style.display = 'none';
         }
