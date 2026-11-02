@@ -58,6 +58,65 @@ function handle_route_asset_legacy_import(PDO $pdo): void
         exit;
     }
 
+    // Download Status Preview ke Excel
+    if ($action === 'export_preview_excel') {
+        $previewData = $_SESSION['asset_legacy_import_preview'] ?? [];
+        $opts = $_SESSION['asset_legacy_import_opts'] ?? [];
+        $tName = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)($opts['type_name'] ?? 'Asset'));
+        $filename = 'Status_Import_Aset_Lama_' . $tName . '_' . date('Ymd_His') . '.xls';
+
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        echo "\xEF\xBB\xBF"; // UTF-8 BOM
+
+        echo '<table border="1">';
+        echo '<thead><tr style="background:#0284c7;color:#fff;font-weight:bold;">';
+        echo '<th>No</th>';
+        echo '<th>Status Import</th>';
+        echo '<th>Kode Baru (Jika Sudah Ada)</th>';
+        echo '<th>Kode Lama (Legacy / NO)</th>';
+        echo '<th>Tgl Perolehan</th>';
+        echo '<th>Nama Unit Aset</th>';
+        echo '<th>Brand / Merek</th>';
+        echo '<th>Model / Varian</th>';
+        echo '<th>Serial Number</th>';
+        echo '<th>Alokasi Lokasi</th>';
+        echo '<th>Detail Ruangan</th>';
+        echo '<th>Ruko Asli</th>';
+        echo '<th>Lantai Asli</th>';
+        echo '<th>Ruangan Asli</th>';
+        echo '<th>Deskripsi Teks Asli</th>';
+        echo '</tr></thead><tbody>';
+
+        $noExp = 0;
+        foreach ($previewData as $item) {
+            $noExp++;
+            $isDup = !empty($item['is_duplicate']);
+            $rowBg = $isDup ? 'background:#fee2e2;' : ($noExp % 2 === 0 ? 'background:#f8fafc;' : 'background:#ffffff;');
+            $statusLabel = $isDup ? ('SUDAH DIIMPOR (' . ($item['dup_asset_code'] ?: '-') . ')') : 'BELUM DIIMPOR (SIAP IMPORT)';
+
+            echo '<tr style="' . $rowBg . '">';
+            echo '<td style="text-align:center;">' . $noExp . '</td>';
+            echo '<td style="font-weight:bold;' . ($isDup ? 'color:#b91c1c;' : 'color:#15803d;') . '">' . htmlspecialchars($statusLabel) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['dup_asset_code'] ?? '')) . '</td>';
+            echo '<td style="font-family:monospace;font-weight:bold;">' . htmlspecialchars((string)($item['legacy_code'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['installed_at'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['asset_name'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['brand'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['model'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['serial_number'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['loc_master_name'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['loc_label'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['ruko'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['lantai'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['ruangan'] ?? '')) . '</td>';
+            echo '<td>' . htmlspecialchars((string)($item['raw_description'] ?? '')) . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+        exit;
+    }
+
     // Reset Session Preview
     if ($action === 'reset') {
         unset($_SESSION['asset_legacy_import_preview'], $_SESSION['asset_legacy_import_opts']);
@@ -376,15 +435,18 @@ function handle_route_asset_legacy_import(PDO $pdo): void
             // 3. Resolusi Alokasi Lokasi (Ruko + Lantai + Ruangan)
             $locSim = resolve_or_create_asset_location($pdo, $rawRuko, $rawLantai, $rawRuangan, null, true); // simulation
 
-            // 4. Cek apakah kode lama sudah ada di database (Duplikat)
+            // 4. Cek apakah kode lama sudah ada di database (Pernah Diimpor / Duplikat)
             $isDuplicate = false;
             $dupAssetCode = '';
+            $dupAssetName = '';
             if ($legacyCode !== '') {
+                $checkAliasStmt = $pdo->prepare("SELECT id, asset_code, asset_name FROM asset_items WHERE alias_code = ? LIMIT 1");
                 $checkAliasStmt->execute([$legacyCode]);
                 $dup = $checkAliasStmt->fetch(PDO::FETCH_ASSOC);
                 if ($dup) {
                     $isDuplicate = true;
-                    $dupAssetCode = $dup['asset_code'];
+                    $dupAssetCode = (string)($dup['asset_code'] ?? '');
+                    $dupAssetName = (string)($dup['asset_name'] ?? '');
                 }
             }
 
@@ -409,6 +471,7 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                 'ai_method'        => $parsed['ai_method'] ?? 'Smart Engine',
                 'is_duplicate'     => $isDuplicate,
                 'dup_asset_code'   => $dupAssetCode,
+                'dup_asset_name'   => $dupAssetName,
             ];
         }
 
@@ -926,6 +989,11 @@ function render_legacy_import_init_form_html(PDO $pdo): void
             tSel.appendChild(opt);
         });
     }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", updateSelectedCount);
+    } else {
+        updateSelectedCount();
+    }
     </script>';
 }
 
@@ -953,13 +1021,27 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '  </div>'
         . '</div>';
 
+    // Hitung statistik item
+    $totalCount = count($previewList);
+    $dupCount = 0;
+    foreach ($previewList as $it) {
+        if (!empty($it['is_duplicate'])) $dupCount++;
+    }
+    $readyCount = $totalCount - $dupCount;
+
     // Banner Target Komoditas & Kategori
     echo '<div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;padding:14px 18px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">'
         . '<div>'
         . '  <span style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">Target Impor Saat Ini:</span><br>'
         . '  <strong style="font-size:16px;color:#1e3a8a;">📁 Komoditas: ' . e($targetGroupName) . ' &bull; 🏷️ Kategori: ' . e($targetTypeName) . '</strong>'
+        . '  <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;">'
+        . '    <span style="padding:2px 8px;border-radius:99px;background:#e0f2fe;color:#0369a1;font-weight:700;">📊 Total: ' . $totalCount . ' Baris</span>'
+        . '    <span style="padding:2px 8px;border-radius:99px;background:#dcfce7;color:#166534;font-weight:700;">✓ Siap Diimpor: ' . $readyCount . ' Unit</span>'
+        . ($dupCount > 0 ? '    <span style="padding:2px 8px;border-radius:99px;background:#fee2e2;color:#991b1b;font-weight:700;">⚠️ Sudah Pernah Diimpor: ' . $dupCount . ' Unit</span>' : '')
+        . '  </div>'
         . '</div>'
-        . '<div>'
+        . '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+        . '  <a class="btn" href="' . route_url('asset_legacy_import', ['action' => 'export_preview_excel']) . '" style="background:#10b981;color:#fff;border-color:#059669;font-size:12.5px;font-weight:600;" title="Download hasil pengecekan baris yang sudah vs belum diimpor ke Excel">📥 Download Status ke Excel</a>'
         . '  <a class="btn" href="' . route_url('asset_legacy_import', ['action' => 'reset']) . '" style="background:#fff;color:#dc2626;border-color:#fca5a5;font-size:12.5px;">🔄 Ganti Kategori / File</a>'
         . '</div>'
         . '</div>';
@@ -972,8 +1054,9 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
 
     // Kontrol Checklist & Filter Klien
     echo '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">'
-        . '  <div style="display:flex;gap:8px;align-items:center;">'
+        . '  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(true)" style="padding:6px 12px;font-size:12px;background:#fff;">✓ Pilih Semua</button>'
+        . '    <button type="button" class="btn" onclick="toggleSelectValidOnly()" style="padding:6px 12px;font-size:12px;background:#e0f2fe;color:#0369a1;border-color:#7dd3fc;font-weight:600;">✓ Pilih Hanya yang Belum Diimpor</button>'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(false)" style="padding:6px 12px;font-size:12px;background:#fff;">✕ Batal Pilih Semua</button>'
         . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">0 Item Terpilih</span>'
         . '  </div>'
@@ -999,12 +1082,12 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     foreach ($previewList as $idx => $item) {
         $no++;
         $isDup = !empty($item['is_duplicate']);
-        $rowBg = $isDup ? 'background:#fff1f2;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
-        $isChecked = ''; // Default tidak terselect semua
+        $rowBg = $isDup ? 'background:#fef2f2;border-left:4px solid #ef4444;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
+        $isChecked = !$isDup ? 'checked' : ''; // Default centang unit yang belum pernah diimpor, dan jangan centang yang sudah pernah diimpor
 
         $statusBadge = $isDup
-            ? '<span class="badge danger" title="Sudah terdaftar sebagai unit ' . e($item['dup_asset_code']) . '">Duplikat</span>'
-            : '<span class="badge ok">✓ Siap Impor</span>';
+            ? '<div style="line-height:1.3;"><span class="badge danger" style="background:#ef4444;color:#fff;font-weight:700;padding:3px 8px;border-radius:4px;display:inline-block;white-space:nowrap;" title="Kode Lama ini sudah pernah diimpor">⚠️ Sudah Pernah Diimpor</span><br><a href="' . route_url('asset_items', ['q' => $item['dup_asset_code']]) . '" target="_blank" style="font-size:11px;color:#b91c1c;font-weight:700;text-decoration:underline;display:inline-block;margin-top:3px;" title="Lihat unit aset yang sudah ada">Unit: ' . e($item['dup_asset_code']) . ' ↗</a>' . (!empty($item['dup_asset_name']) ? ('<br><span class="muted" style="font-size:10.5px;">' . e(mb_strimwidth((string)$item['dup_asset_name'], 0, 24, '...')) . '</span>') : '') . '</div>'
+            : '<span class="badge ok" style="background:#10b981;color:#fff;font-weight:700;padding:3px 8px;border-radius:4px;display:inline-block;white-space:nowrap;">✓ Siap Impor</span>';
 
         // Tampilan Lokasi
         $locMasterText = e($item['loc_master_name'] ?: '-');
@@ -1040,7 +1123,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $locInput = '<div style="font-size:12px;">🏢 <strong>' . $locMasterText . '</strong>' . $locBadge . '</div>'
             . '<input type="text" name="items[' . $idx . '][loc_label]" value="' . e($item['loc_label'] ?? '') . '" placeholder="Detail Ruangan / Lantai" style="margin-top:3px;padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
 
-        echo '<tr class="preview-row" style="' . $rowBg . '" data-search="' . e(strtolower($item['legacy_code'] . ' ' . $item['asset_name'] . ' ' . $item['brand'] . ' ' . $item['loc_master_name'] . ' ' . $item['loc_label'] . ' ' . $item['raw_description'])) . '">'
+        echo '<tr class="preview-row" style="' . $rowBg . '" data-is-duplicate="' . ($isDup ? '1' : '0') . '" data-search="' . e(strtolower($item['legacy_code'] . ' ' . $item['asset_name'] . ' ' . $item['brand'] . ' ' . $item['loc_master_name'] . ' ' . $item['loc_label'] . ' ' . $item['raw_description'])) . '">'
             . '<td style="text-align:center;"><input type="checkbox" name="selected_rows[]" value="' . $idx . '" ' . $isChecked . ' onchange="updateSelectedCount()"></td>'
             . '<td style="text-align:center;">' . $no . '</td>'
             . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong><input type="hidden" name="items[' . $idx . '][legacy_code]" value="' . e($item['legacy_code']) . '"></td>'
@@ -1093,6 +1176,11 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
                 r.style.display = "none";
             }
         });
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", updateSelectedCount);
+    } else {
+        updateSelectedCount();
     }
     </script>';
 }
