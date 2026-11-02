@@ -983,13 +983,13 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '</div>';
 
     echo '<div style="overflow-x:auto;max-height:550px;border:1px solid #cbd5e1;border-radius:8px;">'
-        . '<table id="previewTable" style="margin:0;font-size:12.5px;min-width:1150px;">'
+        . '<table id="previewTable" style="margin:0;font-size:12.5px;min-width:1280px;">'
         . '<thead><tr style="position:sticky;top:0;background:#f8fafc;z-index:10;box-shadow:0 1px 2px rgba(0,0,0,0.06);">'
         . '<th style="width:40px;text-align:center;"><input type="checkbox" id="masterCheckbox" onclick="toggleSelectAll(this.checked)"></th>'
         . '<th style="width:40px;text-align:center;">No</th>'
         . '<th style="width:130px;">Kode Legacy (NO)</th>'
         . '<th style="width:125px;">Tgl Perolehan</th>'
-        . '<th style="width:230px;">Nama Barang & Merek</th>'
+        . '<th style="width:320px;">Detail Barang:<br><span style="font-weight:600;font-size:11px;color:#0369a1;">Nama Unit Aset (Deskriptif)</span> &bull; <span style="font-weight:400;font-size:11px;color:#475569;">Merek &bull; Model / Varian</span></th>'
         . '<th>Spesifikasi & Identifiers</th>'
         . '<th style="width:220px;">Alokasi Master Lokasi & Ruangan</th>'
         . '<th style="width:110px;text-align:center;">Status</th>'
@@ -1017,9 +1017,19 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $installedVal = !empty($item['installed_at']) ? date('Y-m-d', strtotime($item['installed_at'])) : '';
         $dateInput = '<input type="date" name="items[' . $idx . '][installed_at]" value="' . e($installedVal) . '" style="padding:4px 6px;font-size:12px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;">';
 
-        // Input Edit Nama Barang & Merek
-        $nameInput = '<input type="text" name="items[' . $idx . '][asset_name]" value="' . e($item['asset_name'] ?: '') . '" placeholder="Nama Barang" style="padding:4px 6px;font-size:12px;font-weight:700;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;">'
-            . '<input type="text" name="items[' . $idx . '][brand]" value="' . e($item['brand'] ?: '') . '" placeholder="Merek (e.g. Sharp, Dell)" style="margin-top:3px;padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
+        // Input Edit Nama Unit Aset (Deskriptif), Merek & Model/Varian
+        $nameInput = '<label style="margin:0;font-size:11px;font-weight:700;color:#0369a1;display:block;">Nama Unit Aset (Deskriptif):</label>'
+            . '<input type="text" name="items[' . $idx . '][asset_name]" value="' . e($item['asset_name'] ?: '') . '" placeholder="Contoh: AC Ruang Makan / Laptop ThinkPad" style="padding:4px 6px;font-size:12px;font-weight:700;width:100%;box-sizing:border-box;border:1.5px solid #38bdf8;border-radius:4px;background:#f0f9ff;color:#0c4a6e;">'
+            . '<div style="display:flex;gap:6px;margin-top:4px;">'
+            . '  <div style="flex:1;">'
+            . '    <label style="margin:0;font-size:10.5px;color:#64748b;display:block;">Brand / Merek:</label>'
+            . '    <input type="text" name="items[' . $idx . '][brand]" value="' . e($item['brand'] ?: '') . '" placeholder="e.g. Sharp, Dell" style="padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
+            . '  </div>'
+            . '  <div style="flex:1;">'
+            . '    <label style="margin:0;font-size:10.5px;color:#64748b;display:block;">Model / Varian:</label>'
+            . '    <input type="text" name="items[' . $idx . '][model]" value="' . e($item['model'] ?? '') . '" placeholder="e.g. 1/2 PK R32, T480" style="padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
+            . '  </div>'
+            . '</div>';
 
         // Tampilan Spesifikasi + Input Edit SN
         $specText = !empty($item['specs_summary']) ? ('<div style="font-size:11.5px;color:#334155;margin-bottom:3px;">' . $item['specs_summary'] . '</div>') : '';
