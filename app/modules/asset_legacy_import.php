@@ -1311,6 +1311,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         var typeId = ' . (int)($opts['asset_type_id'] ?? 0) . ';
 
         var formData = new FormData();
+        formData.append("csrf", "' . csrf_token() . '");
         formData.append("brand_name", bName);
         formData.append("asset_group_id", groupId);
         formData.append("asset_type_id", typeId);
@@ -1319,7 +1320,15 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             method: "POST",
             body: formData
         })
-        .then(function(res) { return res.json(); })
+        .then(function(res) {
+            return res.text().then(function(text) {
+                try {
+                    return JSON.parse(text);
+                } catch(e) {
+                    throw new Error(text || "Gagal parsing respons server (HTTP " + res.status + ")");
+                }
+            });
+        })
         .then(function(res) {
             if (btn) {
                 btn.disabled = false;
@@ -1356,7 +1365,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
                 btn.disabled = false;
                 btn.textContent = "Simpan Brand";
             }
-            alert("Terjadi kesalahan jaringan saat menyimpan brand.");
+            alert("Gagal menyimpan brand: " + (err && err.message ? err.message : err));
         });
     }
     </script>
