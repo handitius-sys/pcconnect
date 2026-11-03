@@ -44,6 +44,59 @@ function handle_route_asset_legacy_import(PDO $pdo): void
 
     $action = (string)($_GET['action'] ?? ($_POST['action'] ?? ''));
 
+    // AJAX: Tambah Brand / Merek Baru secara Cepat via Double Click
+    if ($action === 'ajax_add_brand') {
+        header('Content-Type: application/json; charset=utf-8');
+        $bName = trim((string)($_POST['brand_name'] ?? ''));
+        if ($bName === '') {
+            echo json_encode(['ok' => false, 'message' => 'Nama brand tidak boleh kosong.']);
+            exit;
+        }
+
+        try {
+            $chk = $pdo->prepare("SELECT id, brand_name FROM asset_brands WHERE UPPER(TRIM(brand_name)) = UPPER(?) LIMIT 1");
+            $chk->execute([$bName]);
+            $existing = $chk->fetch(PDO::FETCH_ASSOC);
+            if ($existing) {
+                echo json_encode([
+                    'ok' => true,
+                    'is_new' => false,
+                    'id' => (int)$existing['id'],
+                    'brand_name' => $existing['brand_name']
+                ]);
+                exit;
+            }
+
+            // Generate brand code sederhana (3-6 huruf kapital)
+            $cleanCode = strtoupper((string)preg_replace('/[^a-zA-Z0-9]/', '', $bName));
+            $brandCode = substr($cleanCode, 0, 6) ?: 'BRD';
+
+            // Cek apakah brand_code sudah ada
+            $cChk = $pdo->prepare("SELECT id FROM asset_brands WHERE brand_code = ? LIMIT 1");
+            $cChk->execute([$brandCode]);
+            if ($cChk->fetch()) {
+                $brandCode = substr($cleanCode, 0, 4) . rand(10, 99);
+            }
+
+            $groupId = !empty($_POST['asset_group_id']) ? (int)$_POST['asset_group_id'] : null;
+            $typeId = !empty($_POST['asset_type_id']) ? (int)$_POST['asset_type_id'] : null;
+
+            $ins = $pdo->prepare("INSERT INTO asset_brands (asset_group_id, asset_type_id, brand_code, brand_name, is_active) VALUES (?, ?, ?, ?, 1)");
+            $ins->execute([$groupId, $typeId, $brandCode, $bName]);
+            $newId = (int)$pdo->lastInsertId();
+
+            echo json_encode([
+                'ok' => true,
+                'is_new' => true,
+                'id' => $newId,
+                'brand_name' => $bName
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'message' => 'Gagal menambah brand: ' . $e->getMessage()]);
+        }
+        exit;
+    }
+
     // 1. Download Template CSV Contoh
     if ($action === 'download_template') {
         header('Content-Type: text/csv; charset=utf-8');
@@ -989,11 +1042,6 @@ function render_legacy_import_init_form_html(PDO $pdo): void
             tSel.appendChild(opt);
         });
     }
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", updateSelectedCount);
-    } else {
-        updateSelectedCount();
-    }
     </script>';
 }
 
@@ -1008,6 +1056,21 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
 
     $targetGroupName = $opts['group_name'] ?? 'Facility';
     $targetTypeName = $opts['type_name'] ?? 'AC / Pendingin';
+
+    // Ambil daftar Brand aktif untuk combobox datalist
+    $existingBrands = [];
+    try {
+        $bRows = $pdo->query("SELECT DISTINCT brand_name FROM asset_brands WHERE is_active = 1 AND TRIM(brand_name) != '' ORDER BY brand_name ASC")->fetchAll(PDO::FETCH_COLUMN);
+        if ($bRows) {
+            $existingBrands = $bRows;
+        }
+    } catch (Throwable $e) {}
+
+    echo '<datalist id="legacyBrandDatalist">';
+    foreach ($existingBrands as $bName) {
+        echo '<option value="' . e($bName) . '">';
+    }
+    echo '</datalist>';
 
     echo '<section class="panel">'
         . '<div class="split" style="align-items:center;margin-bottom:14px;">'
@@ -1106,7 +1169,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             . '<div style="display:flex;gap:6px;margin-top:4px;">'
             . '  <div style="flex:1;">'
             . '    <label style="margin:0;font-size:10.5px;color:#64748b;display:block;">Brand / Merek:</label>'
-            . '    <input type="text" name="items[' . $idx . '][brand]" value="' . e($item['brand'] ?: '') . '" placeholder="e.g. Sharp, Dell" style="padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
+            . '    <input type="text" name="items[' . $idx . '][brand]" class="brand-combobox-input" list="legacyBrandDatalist" value="' . e($item['brand'] ?: '') . '" ondblclick="handleBrandDblClick(this)" autocomplete="off" style="padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
             . '  </div>'
             . '  <div style="flex:1;">'
             . '    <label style="margin:0;font-size:10.5px;color:#64748b;display:block;">Model / Varian:</label>'
@@ -1206,5 +1269,112 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     } else {
         updateSelectedCount();
     }
-    </script>';
+
+    var activeBrandInput = null;
+
+    function handleBrandDblClick(inputEl) {
+        activeBrandInput = inputEl;
+        var curVal = (inputEl.value || "").trim();
+        var modal = document.getElementById("quickAddBrandModal");
+        var nameInput = document.getElementById("quickBrandNameInput");
+        if (modal && nameInput) {
+            nameInput.value = curVal;
+            modal.style.display = "flex";
+            setTimeout(function() {
+                nameInput.focus();
+                nameInput.select();
+            }, 50);
+        }
+    }
+
+    function closeQuickBrandModal() {
+        var modal = document.getElementById("quickAddBrandModal");
+        if (modal) modal.style.display = "none";
+    }
+
+    function saveQuickBrand() {
+        var nameInput = document.getElementById("quickBrandNameInput");
+        var bName = (nameInput ? nameInput.value : "").trim();
+        if (!bName) {
+            alert("Nama Brand / Merk tidak boleh kosong.");
+            if (nameInput) nameInput.focus();
+            return;
+        }
+
+        var btn = document.getElementById("btnSaveQuickBrand");
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Menyimpan...";
+        }
+
+        var groupId = ' . (int)($opts['asset_group_id'] ?? 0) . ';
+        var typeId = ' . (int)($opts['asset_type_id'] ?? 0) . ';
+
+        var formData = new FormData();
+        formData.append("brand_name", bName);
+        formData.append("asset_group_id", groupId);
+        formData.append("asset_type_id", typeId);
+
+        fetch("' . route_url('asset_legacy_import', ['action' => 'ajax_add_brand']) . '", {
+            method: "POST",
+            body: formData
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(res) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "Simpan Brand";
+            }
+            if (res && res.ok) {
+                var finalName = res.brand_name || bName;
+                if (activeBrandInput) {
+                    activeBrandInput.value = finalName;
+                }
+                // Tambahkan ke datalist jika belum ada
+                var dl = document.getElementById("legacyBrandDatalist");
+                if (dl) {
+                    var exists = false;
+                    for (var i = 0; i < dl.options.length; i++) {
+                        if (dl.options[i].value.toLowerCase() === finalName.toLowerCase()) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        var opt = document.createElement("option");
+                        opt.value = finalName;
+                        dl.appendChild(opt);
+                    }
+                }
+                closeQuickBrandModal();
+            } else {
+                alert(res && res.message ? res.message : "Gagal menyimpan brand.");
+            }
+        })
+        .catch(function(err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "Simpan Brand";
+            }
+            alert("Terjadi kesalahan jaringan saat menyimpan brand.");
+        });
+    }
+    </script>
+
+    <!-- Modal Ringkas & Bersih Tambah Brand Baru via Double Click -->
+    <div id="quickAddBrandModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.45);z-index:99999;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:8px;padding:20px;width:340px;box-shadow:0 10px 25px rgba(0,0,0,0.2);box-sizing:border-box;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:15px;color:#0f172a;">Tambah Brand / Merk</h3>
+          <button type="button" onclick="closeQuickBrandModal()" style="border:none;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div style="margin-bottom:16px;">
+          <input type="text" id="quickBrandNameInput" placeholder="Nama Brand / Merk" onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveQuickBrand();}" style="padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;border:1.5px solid #cbd5e1;border-radius:5px;">
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" onclick="closeQuickBrandModal()" class="btn" style="padding:6px 14px;font-size:12px;">Batal</button>
+          <button type="button" id="btnSaveQuickBrand" onclick="saveQuickBrand()" class="btn primary" style="padding:6px 16px;font-size:12px;">Simpan</button>
+        </div>
+      </div>
+    </div>';
 }
