@@ -1061,7 +1061,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">0 Item Terpilih</span>'
         . '  </div>'
         . '  <div style="flex:1;max-width:320px;">'
-        . '    <input type="text" id="filterInput" placeholder="🔍 Cari nama barang / lokasi / kode..." oninput="filterTableRows(this.value)" style="padding:7px 12px;width:100%;box-sizing:border-box;font-size:13px;">'
+        . '    <input type="text" id="filterInput" placeholder="🔍 Cari teks asli / nama unit / merek / model / lokasi / kode..." oninput="filterTableRows(this.value)" style="padding:7px 12px;width:100%;box-sizing:border-box;font-size:13px;">'
         . '  </div>'
         . '</div>';
 
@@ -1123,7 +1123,21 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $locInput = '<div style="font-size:12px;">🏢 <strong>' . $locMasterText . '</strong>' . $locBadge . '</div>'
             . '<input type="text" name="items[' . $idx . '][loc_label]" value="' . e($item['loc_label'] ?? '') . '" placeholder="Detail Ruangan / Lantai" style="margin-top:3px;padding:3px 6px;font-size:11px;width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;">';
 
-        echo '<tr class="preview-row" style="' . $rowBg . '" data-is-duplicate="' . ($isDup ? '1' : '0') . '" data-search="' . e(strtolower($item['legacy_code'] . ' ' . $item['asset_name'] . ' ' . $item['brand'] . ' ' . $item['loc_master_name'] . ' ' . $item['loc_label'] . ' ' . $item['raw_description'])) . '">'
+        $fullSearchText = implode(' ', [
+            $item['legacy_code'] ?? '',
+            $item['raw_no'] ?? '',
+            $item['asset_name'] ?? '',
+            $item['brand'] ?? '',
+            $item['model'] ?? '',
+            $item['serial_number'] ?? '',
+            $item['loc_master_name'] ?? '',
+            $item['loc_label'] ?? '',
+            $item['ruko'] ?? '',
+            $item['lantai'] ?? '',
+            $item['ruangan'] ?? '',
+            $item['raw_description'] ?? ''
+        ]);
+        echo '<tr class="preview-row" style="' . $rowBg . '" data-is-duplicate="' . ($isDup ? '1' : '0') . '" data-search="' . e(mb_strtolower($fullSearchText, 'UTF-8')) . '">'
             . '<td style="text-align:center;"><input type="checkbox" name="selected_rows[]" value="' . $idx . '" ' . $isChecked . ' onchange="updateSelectedCount()"></td>'
             . '<td style="text-align:center;">' . $no . '</td>'
             . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong><input type="hidden" name="items[' . $idx . '][legacy_code]" value="' . e($item['legacy_code']) . '"></td>'
@@ -1167,14 +1181,24 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
 
     function filterTableRows(q) {
         q = (q || "").toLowerCase().trim();
+        var terms = q ? q.split(/\s+/).filter(Boolean) : [];
         var rows = document.querySelectorAll("#previewTable tbody tr.preview-row");
         rows.forEach(function(r) {
-            var searchTxt = r.getAttribute("data-search") || "";
-            if (!q || searchTxt.includes(q)) {
+            if (terms.length === 0) {
                 r.style.display = "";
-            } else {
-                r.style.display = "none";
+                return;
             }
+            var searchTxt = (r.getAttribute("data-search") || "").toLowerCase();
+            var inputs = r.querySelectorAll("input[type=\"text\"]");
+            var inputVals = [];
+            inputs.forEach(function(inp) {
+                if (inp.value) inputVals.push(inp.value.toLowerCase());
+            });
+            var combined = searchTxt + " " + inputVals.join(" ");
+            var match = terms.every(function(t) {
+                return combined.indexOf(t) !== -1;
+            });
+            r.style.display = match ? "" : "none";
         });
     }
     if (document.readyState === "loading") {
