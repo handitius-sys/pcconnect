@@ -475,7 +475,7 @@ function pc_table(array $rows, bool $actions = false): string
         $rawCat = trim((string)($row['category'] ?? '')) ?: (trim((string)($row['asset_category'] ?? '')) ?: '');
         $normCat = normalize_pc_category($rawCat, $row['general_specs'] ?? '', $row['computer_name'] ?? '');
         $catLabel = pc_master_category_label($pdo, $normCat);
-        $catBadge = '<span class="badge" title="' . e($catLabel) . '">' . e($normCat) . '</span>';
+        $catBadge = '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:600;" title="' . e($catLabel) . '">' . e($normCat) . '</span>';
 
         $rowActions = '<a class="btn-icon view" href="' . route_url('pc_detail', ['pc_id' => $row['pc_id']]) . '" title="Detail PC">'
             . '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
@@ -514,7 +514,7 @@ function pc_table(array $rows, bool $actions = false): string
             if ($macText !== '') $parts[] = 'MAC: ' . $macText;
             $hardwareMeta = '<br><small style="color:#64748b;font-size:11px;">' . e(implode(' | ', $parts)) . '</small>';
         }
-        $html .= '<tr><td><strong>' . e($row['pc_id']) . '</strong></td><td>' . e($row['employee_nik'] ?? '-') . '</td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?? '-') . $hardwareMeta . '</td><td>' . $catBadge . '</td><td>' . nl2br(e(pc_asset_link_summary($pdo, $row))) . '</td><td>' . e($row['last_analyzed_at'] ?? '-') . '</td><td style="white-space:nowrap;">' . $rowActions . '</td></tr>';
+        $html .= '<tr><td><strong style="color:#0284c7;font-family:monospace;font-size:13px;">' . e($row['pc_id']) . '</strong></td><td>' . e($row['employee_nik'] ?? '-') . '</td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?? '-') . $hardwareMeta . '</td><td>' . $catBadge . '</td><td>' . nl2br(e(pc_asset_link_summary($pdo, $row))) . '</td><td>' . e($row['last_analyzed_at'] ?? '-') . '</td><td style="white-space:nowrap;">' . $rowActions . '</td></tr>';
     }
     return $html . '</table>';
 }
@@ -1526,7 +1526,7 @@ function handle_route_pc_locations(PDO $pdo): void
     echo '<section class="panel"><table><tr><th>PcID</th><th>Pengguna</th><th>Computer Name</th><th>Nama Lokasi</th><th>GPS</th><th>Radius</th><th>Aksi</th></tr>';
     foreach ($rows as $row) {
         $gps = (!empty($row['latitude']) && !empty($row['longitude'])) ? e($row['latitude'] . ', ' . $row['longitude']) : '<span class="muted">Belum diset</span>';
-        echo '<tr><td><strong>' . e($row['pc_id']) . '</strong></td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?: '-') . '</td><td>' . e($row['location_label'] ?: '-') . '</td><td>' . $gps . '</td><td>' . e($row['location_radius_m'] ?: 5) . ' m</td><td><a class="btn" href="' . route_url('pc_location', ['pc_id' => $row['pc_id']]) . '">Set GPS</a></td></tr>';
+        echo '<tr><td><strong style="color:#0284c7;font-family:monospace;font-size:13px;">' . e($row['pc_id']) . '</strong></td><td>' . e($row['owner_name']) . '</td><td>' . e($row['computer_name'] ?: '-') . '</td><td>' . e($row['location_label'] ?: '-') . '</td><td>' . $gps . '</td><td>' . e($row['location_radius_m'] ?: 5) . ' m</td><td><a class="btn" href="' . route_url('pc_location', ['pc_id' => $row['pc_id']]) . '">Set GPS</a></td></tr>';
     }
     echo '</table></section>';
     render_footer();

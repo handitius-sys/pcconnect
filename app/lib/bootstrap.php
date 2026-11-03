@@ -808,13 +808,12 @@ function render_header(string $title, ?array $user = null): void
     echo 'table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #cbd5e1}';
     echo 'th,td{border-bottom:1px solid #cbd5e1;border-right:1px solid #e2e8f0;text-align:left;padding:11px 14px;vertical-align:middle;font-size:13px}';
     echo 'th:last-child,td:last-child{border-right:none}';
-    echo 'th{background:#e2e8f0;font-weight:700;color:#1e293b;text-transform:uppercase;font-size:11.5px;letter-spacing:.04em;border-bottom:2px solid #94a3b8}';
+    echo 'th{background:#f8fafc;font-weight:700;color:#334155;text-transform:uppercase;font-size:11.5px;letter-spacing:.04em;border-bottom:2px solid #cbd5e1}';
     echo 'th.sortable-th{cursor:pointer;user-select:none;transition:background .15s,color .15s;white-space:nowrap}';
-    echo 'th.sortable-th:hover{background:#cbd5e1 !important;color:#0f172a !important}';
+    echo 'th.sortable-th:hover{background:#f1f5f9 !important;color:#0369a1 !important}';
     echo '.th-sort-ind{display:inline-block;margin-left:5px;font-size:11px;opacity:.45}';
-    echo '.th-sort-ind.active{opacity:1;color:#1d4ed8;font-weight:800}';
-    echo 'tbody tr:nth-child(even) td{background:#f8fafc}';
-    echo 'tbody tr:hover td{background:#e0f2fe !important}';
+    echo '.th-sort-ind.active{opacity:1;color:#0284c7;font-weight:800}';
+    echo 'tbody tr:hover td{background:#f0f9ff !important}';
     echo '.badge{display:inline-flex;align-items:center;border-radius:999px;background:#e2e8f0;color:#475569;padding:3px 10px;font-size:11.5px;font-weight:600}';
     echo '.badge.ok{background:#dcfce7;color:#15803d}';
     echo '.badge.danger{background:#fee2e2;color:#b91c1c}';
