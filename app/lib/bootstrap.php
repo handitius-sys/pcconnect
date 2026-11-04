@@ -645,7 +645,6 @@ function get_role_idle_timeout_minutes(?string $role, ?PDO $pdo = null): int
     }
     try {
         $pdo = $pdo ?: Database::pdo();
-        ensure_role_regulations_schema($pdo);
         $stmt = $pdo->prepare('SELECT idle_timeout_minutes FROM role_settings WHERE role = ?');
         $stmt->execute([$role]);
         $val = $stmt->fetchColumn();
@@ -871,7 +870,6 @@ function render_header(string $title, ?array $user = null): void
         echo '    <div class="brand-logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg></div>';
         echo '    <div class="brand-text" style="display:flex;flex-direction:column;line-height:1.2;">';
         echo '      <span style="font-size:16px;font-weight:800;color:#fff;">' . e($appName) . '</span>';
-        echo '      <span style="font-size:11px;color:#94a3b8;font-weight:500;">Dashboard</span>';
         echo '    </div>';
         echo '  </a>';
         echo '  <button class="collapse-btn" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse / Expand Sidebar">«</button>';

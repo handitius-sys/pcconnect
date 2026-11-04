@@ -1153,14 +1153,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     $targetTypeId = (int)($opts['asset_type_id'] ?? 0);
     $existingMasterItems = [];
     try {
-        $miSql = "SELECT id, item_code, item_name, model_name FROM asset_master_items WHERE is_active = 1";
-        if ($targetGroupId > 0) {
-            $miSql .= " AND (asset_group_id = " . $targetGroupId . " OR asset_group_id IS NULL OR asset_group_id = 0)";
-        }
-        if ($targetTypeId > 0) {
-            $miSql .= " AND (asset_type_id = " . $targetTypeId . " OR asset_type_id IS NULL OR asset_type_id = 0)";
-        }
-        $miSql .= " ORDER BY item_name ASC, item_code ASC";
+        $miSql = "SELECT id, item_code, item_name, model_name FROM asset_master_items WHERE is_active = 1 ORDER BY item_name ASC, item_code ASC";
         $existingMasterItems = $pdo->query($miSql)->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) {}
 
@@ -1224,7 +1217,6 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
     echo '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">'
         . '  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(true)" style="padding:6px 12px;font-size:12px;background:#fff;">✓ Pilih Semua</button>'
-        . '    <button type="button" class="btn" onclick="toggleSelectValidOnly()" style="padding:6px 12px;font-size:12px;background:#e0f2fe;color:#0369a1;border-color:#7dd3fc;font-weight:600;">✓ Pilih Hanya yang Belum Diimpor</button>'
         . '    <button type="button" class="btn" onclick="toggleSelectAll(false)" style="padding:6px 12px;font-size:12px;background:#fff;">✕ Batal Pilih Semua</button>'
         . '    <span id="selectedCountDisplay" style="font-size:13px;font-weight:700;color:#0284c7;margin-left:8px;">0 Item Terpilih</span>'
         . '  </div>'
@@ -1252,7 +1244,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         $no++;
         $isDup = !empty($item['is_duplicate']);
         $rowBg = $isDup ? 'background:#fef2f2;border-left:4px solid #ef4444;' : ($no % 2 === 0 ? 'background:#f8fafc;' : 'background:#fff;');
-        $isChecked = !$isDup ? 'checked' : ''; // Default centang unit yang belum pernah diimpor, dan jangan centang yang sudah pernah diimpor
+        $isChecked = ''; // Default tidak terpilih apapun sesuai instruksi
 
         $statusBadge = $isDup
             ? '<div style="line-height:1.3;"><span class="badge danger" style="background:#ef4444;color:#fff;font-weight:700;padding:3px 8px;border-radius:4px;display:inline-block;white-space:nowrap;" title="Kode Lama ini sudah pernah diimpor">⚠️ Sudah Pernah Diimpor</span><br><a href="' . route_url('asset_items', ['q' => $item['dup_asset_code']]) . '" target="_blank" style="font-size:11px;color:#b91c1c;font-weight:700;text-decoration:underline;display:inline-block;margin-top:3px;" title="Lihat unit aset yang sudah ada">Unit: ' . e($item['dup_asset_code']) . ' ↗</a>' . (!empty($item['dup_asset_name']) ? ('<br><span class="muted" style="font-size:10.5px;">' . e(mb_strimwidth((string)$item['dup_asset_name'], 0, 24, '...')) . '</span>') : '') . '</div>'

@@ -6645,7 +6645,8 @@ function handle_route_asset_items(PDO $pdo): void
     // Baris 1: Pencarian Kata Kunci (Kode Baru / Kode Lama / SN / Nama / Custodian)
     // Baris 2: Komoditas | Kategori
     // Baris 3: Company | Lokasi (dan Reset Filter)
-    echo '<form method="get" style="margin:16px 0 14px 0;background:#f8fafc;padding:14px 16px;border:1px solid #e2e8f0;border-radius:8px;display:flex;flex-direction:column;gap:12px;">';
+        // Form Filter Ringkas & Rapi Selaras dengan Mutasi Aset (Form Inline .actions)
+    echo '<form method="get" class="actions" style="margin:16px 0 14px 0;align-items:flex-end;flex-wrap:wrap;gap:10px;">';
     echo '<input type="hidden" name="route" value="asset_items">';
     if ($masterItemId > 0) {
         echo '<input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
@@ -6654,148 +6655,34 @@ function handle_route_asset_items(PDO $pdo): void
         echo '<input type="hidden" name="backdoor" value="1">';
     }
 
-    // Baris 1: Pencarian Bebas Multi-Identitas (Pencarian Interaktif)
-    $assetSearchSuggestions = [];
-    try {
-        $assetSearchSuggestions = $pdo->query("SELECT asset_code, alias_code, asset_name, serial_number, custodian_name 
-                                                 FROM asset_items 
-                                                 WHERE status NOT IN ('inactive', 'deleted') 
-                                                 ORDER BY asset_code ASC LIMIT 1000")->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $ignored) {}
-    $cbAssetsJson = json_encode($assetSearchSuggestions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo '<label style="margin:0;flex:1;min-width:240px;">Cari (Kode / Nama / SN / PIC)'
+        . '<input name="q" value="' . e($q) . '" placeholder="Ketik kata kunci pencarian unit aset...">'
+        . '</label>';
 
-    echo '<div style="position:relative;display:flex;gap:10px;align-items:flex-end;">';
-    echo '  <div style="flex:1;position:relative;">';
-    echo '    <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:#334155;font-weight:600;">';
-    echo '      <span>Pencarian Bebas (Kode Baru / Kode Lama / Serial Number / PC / Nama Barang / Custodian)</span>';
-    
-    echo '    </label>';
-    echo '    <div style="position:relative;display:flex;align-items:stretch;">';
-    echo '      <input type="text" id="assetFreeSearchInput" name="q" value="' . e($q) . '" placeholder="🔍 Ketik atau pilih kode baru, kode lama (alias), SN, nama barang, PIC..." autocomplete="off" list="assetFreeDatalist" style="height:38px;box-sizing:border-box;width:100%;padding:8px 58px 8px 12px;font-size:13px;background:#fff;border:1.5px solid #0284c7;border-radius:6px;" onfocus="showAssetFreeDropdown(this.value)" oninput="showAssetFreeDropdown(this.value)">';
-    echo '      <button type="button" id="assetFreeClearBtn" onclick="clearAssetFreeSearch()" style="display:' . ($q !== '' ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:4px;line-height:1;" title="Hapus pencarian">✕</button>';
-    echo '      <button type="button" onclick="toggleAssetFreeDropdown(event)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:12px;cursor:pointer;padding:4px;line-height:1;" title="Buka daftar pilihan aset">▼</button>';
-    echo '    </div>';
-    
-    // Native HTML5 Datalist
-    echo '    <datalist id="assetFreeDatalist">';
-    foreach ($assetSearchSuggestions as $cOpt) {
-        $cVal = $cOpt['asset_code'];
-        $cLabel = $cOpt['asset_code'] . (!empty($cOpt['alias_code']) ? (' [Lama: ' . $cOpt['alias_code'] . ']') : '') . ' - ' . ($cOpt['asset_name'] ?: '-') . (!empty($cOpt['custodian_name']) ? (' (' . $cOpt['custodian_name'] . ')') : '');
-        echo '      <option value="' . e($cVal) . '">' . e($cLabel) . '</option>';
-        if (!empty($cOpt['alias_code'])) {
-            echo '      <option value="' . e($cOpt['alias_code']) . '">' . e($cOpt['alias_code'] . ' -> ' . $cOpt['asset_code'] . ' - ' . ($cOpt['asset_name'] ?: '-')) . '</option>';
-        }
-    }
-    echo '    </datalist>';
+    echo '<label style="margin:0;min-width:160px;">Komoditas'
+        . '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>'
+        . '</label>';
 
-    // Interactive Dropdown Results
-    echo '    <div id="assetFreeDropdownResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:280px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>';
-    echo '  </div>';
-    echo '  <button type="submit" class="btn primary" style="height:38px;box-sizing:border-box;padding:0 20px;font-weight:700;">Cari</button>';
-    echo '</div>';
-    ?>
-    <script>
-    var cbAssetItems = <?= $cbAssetsJson ?>;
-    function toggleAssetFreeDropdown(e) {
-        if (e) e.stopPropagation();
-        var dd = document.getElementById("assetFreeDropdownResults");
-        if (!dd) return;
-        if (dd.style.display === "block") {
-            dd.style.display = "none";
-        } else {
-            var inp = document.getElementById("assetFreeSearchInput");
-            showAssetFreeDropdown(inp ? inp.value : "");
-            if (inp) inp.focus();
-        }
-    }
-    function clearAssetFreeSearch() {
-        var inp = document.getElementById("assetFreeSearchInput");
-        if (inp) inp.value = "";
-        var btn = document.getElementById("assetFreeClearBtn");
-        if (btn) btn.style.display = "none";
-        var dd = document.getElementById("assetFreeDropdownResults");
-        if (dd) dd.style.display = "none";
-        if (inp) inp.focus();
-    }
-    function showAssetFreeDropdown(q) {
-        var dd = document.getElementById("assetFreeDropdownResults");
-        var btn = document.getElementById("assetFreeClearBtn");
-        if (!dd) return;
-        var term = (q || "").trim().toLowerCase();
-        if (btn) btn.style.display = term.length > 0 ? "block" : "none";
+    echo '<label style="margin:0;min-width:160px;">Kategori'
+        . '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>'
+        . '</label>';
 
-        var matches = cbAssetItems.filter(function(item) {
-            if (!term) return true;
-            var code = (item.asset_code || "").toLowerCase();
-            var alias = (item.alias_code || "").toLowerCase();
-            var name = (item.asset_name || "").toLowerCase();
-            var sn = (item.serial_number || "").toLowerCase();
-            var cust = (item.custodian_name || "").toLowerCase();
-            return code.includes(term) || alias.includes(term) || name.includes(term) || sn.includes(term) || cust.includes(term);
-        });
+    echo '<label style="margin:0;min-width:160px;">Company'
+        . '<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>'
+        . '</label>';
 
-        if (matches.length === 0) {
-            dd.innerHTML = "<div style=\"padding:12px;font-size:12px;color:#64748b;text-align:center;\">Tidak ada unit aset cocok</div>";
-            dd.style.display = "block";
-            return;
-        }
+    echo '<label style="margin:0;min-width:160px;">Lokasi'
+        . '<select name="location_id" onchange="this.form.submit()">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>'
+        . '</label>';
 
-        dd.innerHTML = "";
-        matches.slice(0, 30).forEach(function(item) {
-            var div = document.createElement("div");
-            div.style.cssText = "padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;transition:background 0.15s ease;";
-            var aliasBadge = item.alias_code ? (" <span style=\"background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;\">[Lama: " + item.alias_code + "]</span>") : "";
-            div.innerHTML = "<div style=\"font-size:13px;font-weight:700;color:#0f172a;\"><strong style=\"color:#0284c7;\">" + item.asset_code + "</strong>" + aliasBadge + " - " + (item.asset_name || "-") + "</div>"
-                + "<div style=\"font-size:11px;color:#64748b;margin-top:2px;\">" + (item.serial_number ? "SN: " + item.serial_number + " &bull; " : "") + (item.custodian_name ? "PIC: " + item.custodian_name : "") + "</div>";
-            div.onmouseenter = function() { div.style.background = "#f0f9ff"; };
-            div.onmouseleave = function() { div.style.background = "#fff"; };
-            div.onmousedown = function() {
-                var inp = document.getElementById("assetFreeSearchInput");
-                if (inp) inp.value = item.asset_code;
-                dd.style.display = "none";
-                inp.form.submit();
-            };
-            dd.appendChild(div);
-        });
-        dd.style.display = "block";
-    }
-    document.addEventListener("click", function(e) {
-        var dd = document.getElementById("assetFreeDropdownResults");
-        var inp = document.getElementById("assetFreeSearchInput");
-        if (dd && inp && !dd.contains(e.target) && e.target !== inp) {
-            dd.style.display = "none";
-        }
-    });
-    </script>
-    <?php
+    echo '<button class="btn primary" style="height:38px;align-self:flex-end;">Filter</button>';
 
-    // Baris 2: Komoditas | Kategori
-    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;">';
-    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Komoditas';
-    echo '    <select name="group_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>';
-    echo '  </label>';
-    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Kategori';
-    echo '    <select name="type_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>';
-    echo '  </label>';
-    echo '</div>';
-
-    // Baris 3: Company | Lokasi (+ Reset Filter)
-    echo '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:12px;align-items:flex-end;">';
-    echo '  <label style="margin:0;font-size:12.5px;color:#334155;">Company';
-    echo '    <select name="company_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>';
-    echo '  </label>';
-    echo '  <div style="display:flex;gap:10px;align-items:flex-end;">';
-    echo '    <label style="margin:0;flex:1;font-size:12.5px;color:#334155;">Lokasi';
-    echo '      <select name="location_id" onchange="this.form.submit()" style="height:38px;margin-top:4px;">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>';
-    echo '    </label>';
     if ($q !== '' || $masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId || $showBackdoor) {
-        echo '    <a class="btn" href="' . route_url('asset_items') . '" style="height:38px;box-sizing:border-box;display:inline-flex;align-items:center;padding:0 14px;white-space:nowrap;" title="Hapus seluruh filter">Reset Filter</a>';
+        echo '<a class="btn" href="' . route_url('asset_items') . '" style="height:38px;align-self:flex-end;display:inline-flex;align-items:center;">Reset</a>';
     }
-    echo '  </div>';
-    echo '</div>';
 
     echo '</form>';
-
+    
     echo asset_items_table($pdo, $rows);
     echo '</section>';
     render_footer();

@@ -21,8 +21,17 @@ declare(strict_types=1);
 function handle_route_setup_regulations(PDO $pdo): void
 {
     $user = require_role(['admin']);
-    ensure_role_regulations_schema($pdo);
-    ensure_menu_orders_schema($pdo);
+    if (function_exists('db_table_exists')) {
+        if (!db_table_exists($pdo, 'role_regulations') || !db_table_exists($pdo, 'role_settings')) {
+            ensure_role_regulations_schema($pdo);
+        }
+        if (!db_table_exists($pdo, 'system_menu_orders')) {
+            ensure_menu_orders_schema($pdo);
+        }
+    } else {
+        ensure_role_regulations_schema($pdo);
+        ensure_menu_orders_schema($pdo);
+    }
 
     $currentTab = (string)($_GET['tab'] ?? 'matrix');
     if (!in_array($currentTab, ['matrix', 'menu_order'], true)) {
