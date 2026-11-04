@@ -722,8 +722,7 @@ function render_header(string $title, ?array $user = null): void
     echo '.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-text);flex-shrink:0;position:fixed;top:0;bottom:0;left:0;z-index:100;display:flex;flex-direction:column;transition:width .22s cubic-bezier(0.4,0,0.2,1);box-shadow:2px 0 10px rgba(0,0,0,.15);user-select:none;overflow-x:hidden}';
     echo '.sidebar-resizer{position:absolute;top:0;right:0;width:7px;height:100%;cursor:ew-resize;z-index:120;background:transparent;transition:background .15s}';
     echo '.sidebar-resizer:hover,.app-layout.resizing .sidebar-resizer{background:rgba(56,189,248,.35)}';
-    echo '.sidebar-resizer::after{content:"";position:absolute;top:50%;right:2px;transform:translateY(-50%);width:3px;height:36px;border-radius:2px;background:rgba(255,255,255,.2);transition:background .15s}';
-    echo '.sidebar-resizer:hover::after,.app-layout.resizing .sidebar-resizer::after{background:#38bdf8}';
+    echo '.sidebar-resizer::after{display:none!important}';
     echo '.app-layout.resizing .sidebar,.app-layout.resizing .main-wrapper{transition:none!important}';
     echo '.sidebar-header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}';
     echo '.brand-link{display:flex;align-items:center;gap:12px;font-weight:700;font-size:17px;color:#fff;overflow:hidden;white-space:nowrap}';

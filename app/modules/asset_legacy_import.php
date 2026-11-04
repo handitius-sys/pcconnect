@@ -1240,7 +1240,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '<th style="width:40px;text-align:center;">No</th>'
         . '<th style="width:130px;">Kode Legacy (NO)</th>'
         . '<th style="width:125px;">Tgl Perolehan</th>'
-        . '<th style="width:230px;">Master Barang</th>'
+        . '<th style="width:230px;">Nama Barang</th>'
         . '<th style="width:320px;">Detail Barang:<br><span style="font-weight:600;font-size:11px;color:#0369a1;">Nama Unit Aset (Deskriptif)</span> &bull; <span style="font-weight:400;font-size:11px;color:#475569;">Merek &bull; Model / Varian</span></th>'
         . '<th>Spesifikasi & Identifiers</th>'
         . '<th style="width:220px;">Alokasi Master Lokasi & Ruangan</th>'
@@ -1272,7 +1272,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         // Input Master Barang (Combobox Datalist + Double Click Quick Add)
         $miTextVal = e($item['master_item_text'] ?? '');
         $miIdVal = (int)($item['master_item_id'] ?? 0);
-        $masterItemCell = '<input type="text" name="items[' . $idx . '][master_item_text]" class="master-item-combobox" list="legacyMasterItemDatalist" value="' . $miTextVal . '" placeholder="Pilih Master Barang..." ondblclick="handleMasterItemDblClick(this)" autocomplete="off" style="padding:4px 6px;font-size:11.5px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
+        $masterItemCell = '<input type="text" name="items[' . $idx . '][master_item_text]" class="master-item-combobox" list="legacyMasterItemDatalist" value="' . $miTextVal . '" placeholder="Pilih Nama Barang..." ondblclick="handleMasterItemDblClick(this)" autocomplete="off" style="padding:4px 6px;font-size:11.5px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
             . '<input type="hidden" name="items[' . $idx . '][master_item_id]" class="master-item-id-hidden" value="' . ($miIdVal ?: '') . '">';
 
         // Input Edit Nama Unit Aset (Deskriptif), Merek & Model/Varian

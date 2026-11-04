@@ -205,7 +205,7 @@ function asset_items_table(PDO $pdo, array $rows): string
         .badge-status-dipinjam { background: #0284c7 !important; color: #ffffff !important; font-weight: 700 !important; padding: 4px 12px !important; border-radius: 999px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 11.5px !important; letter-spacing: 0.3px !important; box-shadow: 0 1px 3px rgba(2,132,199,0.35) !important; }
     </style>';
 
-    $html .= '<table id="assetItemsTable" class="asset-table-sortable">';
+    $html .= '<div style="overflow-x:auto;"><table id="assetItemsTable" class="sortable-table">';
     $html .= '<thead><tr>';
     $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Aset <span class="sort-ind">⇅</span></th>';
     $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Lama (Legacy) <span class="sort-ind">⇅</span></th>';
@@ -311,7 +311,7 @@ function asset_items_table(PDO $pdo, array $rows): string
         $html .= '</tr>';
     }
 
-    $html .= '</tbody></table>';
+    $html .= '</tbody></table></div>';
 
     // Client-side Sorting Script
     $html .= '<script>
@@ -2701,14 +2701,10 @@ function asset_movements_table(array $rows): string
         }
 
         $mAliasBadge = !empty($row['alias_code']) ? ' <small style="display:inline-block;padding:1px 5px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:10.5px;font-weight:600;">[Lama: ' . e($row['alias_code']) . ']</small>' : '';
-        $legacyMoveCell = !empty($row['alias_code'])
-            ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($row['alias_code']) . '</span>'
-            : '<span class="muted" style="font-size:12px;">-</span>';
         $html .= '<tr>'
             . '<td>' . e($row['movement_date']) . '</td>'
             . '<td>' . $badge . '</td>'
             . '<td><strong><a href="' . route_url('asset_item_form', ['id' => $row['asset_item_id']]) . '">' . e($row['asset_code']) . '</a></strong><br><span class="muted">' . e($row['asset_name']) . '</span></td>'
-            . '<td>' . $legacyMoveCell . '</td>'
             . '<td>' . e($from) . '</td>'
             . '<td>' . e($to) . '</td>'
             . '<td>' . e($comp) . '</td>'
