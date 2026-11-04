@@ -97,6 +97,66 @@ function handle_route_asset_legacy_import(PDO $pdo): void
         exit;
     }
 
+    // AJAX: Tambah Master Barang Baru secara Cepat via Double Click
+    if ($action === 'ajax_add_master_item') {
+        header('Content-Type: application/json; charset=utf-8');
+        $itemName = trim((string)($_POST['item_name'] ?? ''));
+        if ($itemName === '') {
+            echo json_encode(['ok' => false, 'message' => 'Nama Master Barang tidak boleh kosong.']);
+            exit;
+        }
+
+        $groupId = !empty($_POST['asset_group_id']) ? (int)$_POST['asset_group_id'] : 0;
+        $typeId = !empty($_POST['asset_type_id']) ? (int)$_POST['asset_type_id'] : 0;
+        $brandName = trim((string)($_POST['brand_name'] ?? ''));
+        $modelName = trim((string)($_POST['model_name'] ?? ''));
+
+        try {
+            // Resolusi brand jika ada
+            $brandId = 0;
+            if ($brandName !== '') {
+                $bChk = $pdo->prepare("SELECT id FROM asset_brands WHERE UPPER(TRIM(brand_name)) = UPPER(?) LIMIT 1");
+                $bChk->execute([$brandName]);
+                $brandId = (int)($bChk->fetchColumn() ?: 0);
+                if ($brandId <= 0) {
+                    $cleanCode = strtoupper((string)preg_replace('/[^a-zA-Z0-9]/', '', $brandName));
+                    $brandCode = substr($cleanCode, 0, 6) ?: 'BRD';
+                    $insB = $pdo->prepare("INSERT INTO asset_brands (asset_group_id, asset_type_id, brand_code, brand_name, is_active) VALUES (?, ?, ?, ?, 1)");
+                    $insB->execute([$groupId ?: null, $typeId ?: null, $brandCode, $brandName]);
+                    $brandId = (int)$pdo->lastInsertId();
+                }
+            }
+
+            // Generate master item code
+            $itemCode = generate_master_item_code($pdo, $groupId, $typeId, $brandId);
+
+            $insMi = $pdo->prepare("INSERT INTO asset_master_items (item_code, item_name, asset_group_id, asset_type_id, brand_id, model_name, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)");
+            $insMi->execute([
+                $itemCode,
+                $itemName,
+                $groupId ?: null,
+                $typeId ?: null,
+                $brandId ?: null,
+                $modelName ?: null
+            ]);
+            $newMiId = (int)$pdo->lastInsertId();
+
+            $fullLabel = '[' . $itemCode . '] ' . $itemName . ($modelName !== '' ? ' (' . $modelName . ')' : '');
+
+            echo json_encode([
+                'ok' => true,
+                'id' => $newMiId,
+                'item_code' => $itemCode,
+                'item_name' => $itemName,
+                'model_name' => $modelName,
+                'full_label' => $fullLabel
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'message' => 'Gagal menambah Master Barang: ' . $e->getMessage()]);
+        }
+        exit;
+    }
+
     // 1. Download Template CSV Contoh
     if ($action === 'download_template') {
         header('Content-Type: text/csv; charset=utf-8');
@@ -233,6 +293,8 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                 if (isset($_POST['items'][$idx]) && is_array($_POST['items'][$idx])) {
                     $pItem = $_POST['items'][$idx];
                     if (!empty($pItem['legacy_code'])) $row['legacy_code'] = trim((string)$pItem['legacy_code']);
+                    if (isset($pItem['master_item_id'])) $row['master_item_id'] = (int)$pItem['master_item_id'];
+                    if (isset($pItem['master_item_text'])) $row['master_item_text'] = trim((string)$pItem['master_item_text']);
                     if (isset($pItem['asset_name']) && trim((string)$pItem['asset_name']) !== '') $row['asset_name'] = trim((string)$pItem['asset_name']);
                     if (isset($pItem['brand'])) $row['brand'] = trim((string)$pItem['brand']);
                     if (isset($pItem['model'])) $row['model'] = trim((string)$pItem['model']);
@@ -290,6 +352,25 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                 $custodianName = trim((string)($row['custodian_name'] ?? ''));
                 $rawNotes = 'Diimpor dari data lama (Legacy). Deskripsi asli: ' . trim((string)($row['raw_description'] ?? ''));
 
+                // Resolusi master_item_id dari input ID atau pencarian text/item_code
+                $masterItemId = !empty($row['master_item_id']) ? (int)$row['master_item_id'] : null;
+                if (!$masterItemId && !empty($row['master_item_text'])) {
+                    $mTxt = trim((string)$row['master_item_text']);
+                    if (preg_match('/^\[([^\]]+)\]/', $mTxt, $mMatches)) {
+                        $cCode = trim($mMatches[1]);
+                        $stM = $pdo->prepare("SELECT id FROM asset_master_items WHERE item_code = ? LIMIT 1");
+                        $stM->execute([$cCode]);
+                        $mIdFound = (int)$stM->fetchColumn();
+                        if ($mIdFound > 0) $masterItemId = $mIdFound;
+                    }
+                    if (!$masterItemId) {
+                        $stM2 = $pdo->prepare("SELECT id FROM asset_master_items WHERE UPPER(TRIM(item_name)) = UPPER(?) LIMIT 1");
+                        $stM2->execute([$mTxt]);
+                        $mIdFound2 = (int)$stM2->fetchColumn();
+                        if ($mIdFound2 > 0) $masterItemId = $mIdFound2;
+                    }
+                }
+
                 // Insert ke tabel asset_items
                 $insSql = "INSERT INTO asset_items (
                     master_item_id, brand_id, asset_code, alias_code, asset_group_id, asset_type_id,
@@ -297,13 +378,14 @@ function handle_route_asset_legacy_import(PDO $pdo): void
                     custodian_name, notes, company_id, location_id, location_label,
                     installed_at, asset_type, asset_category, status
                 ) VALUES (
-                    NULL, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
                     ?, 'standalone', ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, 'active'
                 )";
                 $insStmt = $pdo->prepare($insSql);
                 $insStmt->execute([
+                    $masterItemId,
                     $brandId,
                     $newAssetCode,
                     $legacyCode,
@@ -1066,6 +1148,29 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         }
     } catch (Throwable $e) {}
 
+    // Ambil daftar Master Barang aktif untuk combobox datalist
+    $targetGroupId = (int)($opts['asset_group_id'] ?? 0);
+    $targetTypeId = (int)($opts['asset_type_id'] ?? 0);
+    $existingMasterItems = [];
+    try {
+        $miSql = "SELECT id, item_code, item_name, model_name FROM asset_master_items WHERE is_active = 1";
+        if ($targetGroupId > 0) {
+            $miSql .= " AND (asset_group_id = " . $targetGroupId . " OR asset_group_id IS NULL OR asset_group_id = 0)";
+        }
+        if ($targetTypeId > 0) {
+            $miSql .= " AND (asset_type_id = " . $targetTypeId . " OR asset_type_id IS NULL OR asset_type_id = 0)";
+        }
+        $miSql .= " ORDER BY item_name ASC, item_code ASC";
+        $existingMasterItems = $pdo->query($miSql)->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {}
+
+    echo '<datalist id="legacyMasterItemDatalist">';
+    foreach ($existingMasterItems as $mi) {
+        $miLabel = '[' . $mi['item_code'] . '] ' . $mi['item_name'] . (!empty($mi['model_name']) ? ' (' . $mi['model_name'] . ')' : '');
+        echo '<option value="' . e($miLabel) . '" data-id="' . (int)$mi['id'] . '">';
+    }
+    echo '</datalist>';
+
     echo '<datalist id="legacyBrandDatalist">';
     foreach ($existingBrands as $bName) {
         echo '<option value="' . e($bName) . '">';
@@ -1135,6 +1240,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         . '<th style="width:40px;text-align:center;">No</th>'
         . '<th style="width:130px;">Kode Legacy (NO)</th>'
         . '<th style="width:125px;">Tgl Perolehan</th>'
+        . '<th style="width:230px;">Master Barang</th>'
         . '<th style="width:320px;">Detail Barang:<br><span style="font-weight:600;font-size:11px;color:#0369a1;">Nama Unit Aset (Deskriptif)</span> &bull; <span style="font-weight:400;font-size:11px;color:#475569;">Merek &bull; Model / Varian</span></th>'
         . '<th>Spesifikasi & Identifiers</th>'
         . '<th style="width:220px;">Alokasi Master Lokasi & Ruangan</th>'
@@ -1162,6 +1268,12 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         // Input Edit Tgl Perolehan
         $installedVal = !empty($item['installed_at']) ? date('Y-m-d', strtotime($item['installed_at'])) : '';
         $dateInput = '<input type="date" name="items[' . $idx . '][installed_at]" value="' . e($installedVal) . '" style="padding:4px 6px;font-size:12px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;">';
+
+        // Input Master Barang (Combobox Datalist + Double Click Quick Add)
+        $miTextVal = e($item['master_item_text'] ?? '');
+        $miIdVal = (int)($item['master_item_id'] ?? 0);
+        $masterItemCell = '<input type="text" name="items[' . $idx . '][master_item_text]" class="master-item-combobox" list="legacyMasterItemDatalist" value="' . $miTextVal . '" placeholder="Pilih Master Barang..." ondblclick="handleMasterItemDblClick(this)" autocomplete="off" style="padding:4px 6px;font-size:11.5px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;background:#fff;">'
+            . '<input type="hidden" name="items[' . $idx . '][master_item_id]" class="master-item-id-hidden" value="' . ($miIdVal ?: '') . '">';
 
         // Input Edit Nama Unit Aset (Deskriptif), Merek & Model/Varian
         $nameInput = '<label style="margin:0;font-size:11px;font-weight:700;color:#0369a1;display:block;">Nama Unit Aset (Deskriptif):</label>'
@@ -1205,6 +1317,7 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
             . '<td style="text-align:center;">' . $no . '</td>'
             . '<td><strong style="color:#0369a1;font-family:monospace;font-size:13px;">' . e($item['legacy_code']) . '</strong><input type="hidden" name="items[' . $idx . '][legacy_code]" value="' . e($item['legacy_code']) . '"></td>'
             . '<td>' . $dateInput . '</td>'
+            . '<td>' . $masterItemCell . '</td>'
             . '<td>' . $nameInput . '</td>'
             . '<td>' . $specText . '</td>'
             . '<td>' . $locInput . '</td>'
@@ -1292,6 +1405,130 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         if (modal) modal.style.display = "none";
     }
 
+    var activeMasterItemInput = null;
+
+    function handleMasterItemDblClick(inputEl) {
+        activeMasterItemInput = inputEl;
+        var curVal = (inputEl.value || "").trim();
+        // Bersihkan kode [CODE] jika ada
+        var cleanName = curVal.replace(/^\[[^\]]+\]\s*/, "").replace(/\s*\([^)]*\)$/, "").trim();
+        
+        // Ambil brand dan model dari baris yang sama untuk auto-fill modal
+        var rowEl = inputEl.closest("tr");
+        var brandEl = rowEl ? rowEl.querySelector(".brand-combobox-input") : null;
+        var modelEl = rowEl ? rowEl.querySelector("input[name*=\'[model]\']") : null;
+        var defaultBrand = brandEl ? brandEl.value : "";
+        var defaultModel = modelEl ? modelEl.value : "";
+
+        var modal = document.getElementById("quickAddMasterItemModal");
+        var nameInput = document.getElementById("quickMasterItemNameInput");
+        var brandInput = document.getElementById("quickMasterItemBrandInput");
+        var modelInput = document.getElementById("quickMasterItemModelInput");
+        
+        if (modal && nameInput) {
+            nameInput.value = cleanName;
+            if (brandInput) brandInput.value = defaultBrand;
+            if (modelInput) modelInput.value = defaultModel;
+            modal.style.display = "flex";
+            setTimeout(function() {
+                nameInput.focus();
+                nameInput.select();
+            }, 50);
+        }
+    }
+
+    function closeQuickMasterItemModal() {
+        var modal = document.getElementById("quickAddMasterItemModal");
+        if (modal) modal.style.display = "none";
+    }
+
+    function saveQuickMasterItem() {
+        var nameInput = document.getElementById("quickMasterItemNameInput");
+        var brandInput = document.getElementById("quickMasterItemBrandInput");
+        var modelInput = document.getElementById("quickMasterItemModelInput");
+        
+        var itemName = (nameInput ? nameInput.value : "").trim();
+        var brandName = (brandInput ? brandInput.value : "").trim();
+        var modelName = (modelInput ? modelInput.value : "").trim();
+
+        if (!itemName) {
+            alert("Nama Master Barang tidak boleh kosong.");
+            if (nameInput) nameInput.focus();
+            return;
+        }
+
+        var btn = document.getElementById("btnSaveQuickMasterItem");
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Menyimpan...";
+        }
+
+        var groupId = ' . (int)($opts['asset_group_id'] ?? 0) . ';
+        var typeId = ' . (int)($opts['asset_type_id'] ?? 0) . ';
+
+        var formData = new FormData();
+        formData.append("csrf", "' . csrf_token() . '");
+        formData.append("item_name", itemName);
+        formData.append("brand_name", brandName);
+        formData.append("model_name", modelName);
+        formData.append("asset_group_id", groupId);
+        formData.append("asset_type_id", typeId);
+
+        fetch("' . route_url('asset_legacy_import', ['action' => 'ajax_add_master_item']) . '", {
+            method: "POST",
+            body: formData
+        })
+        .then(function(res) {
+            return res.text().then(function(text) {
+                try {
+                    return JSON.parse(text);
+                } catch(e) {
+                    throw new Error(text || "Gagal parsing respons server (HTTP " + res.status + ")");
+                }
+            });
+        })
+        .then(function(res) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "Simpan";
+            }
+            if (res && res.ok) {
+                var finalLabel = res.full_label || ("[" + res.item_code + "] " + itemName);
+                if (activeMasterItemInput) {
+                    activeMasterItemInput.value = finalLabel;
+                    var rowEl = activeMasterItemInput.closest("tr");
+                    if (rowEl) {
+                        var hiddenId = rowEl.querySelector(".master-item-id-hidden");
+                        if (hiddenId) hiddenId.value = res.id || "";
+                        // Auto sync brand & model ke baris jika kosong
+                        var bInp = rowEl.querySelector(".brand-combobox-input");
+                        if (bInp && !bInp.value && brandName) bInp.value = brandName;
+                        var mInp = rowEl.querySelector("input[name*=\'[model]\']");
+                        if (mInp && !mInp.value && modelName) mInp.value = modelName;
+                    }
+                }
+                // Tambahkan ke datalist jika belum ada
+                var dl = document.getElementById("legacyMasterItemDatalist");
+                if (dl) {
+                    var opt = document.createElement("option");
+                    opt.value = finalLabel;
+                    opt.setAttribute("data-id", res.id);
+                    dl.appendChild(opt);
+                }
+                closeQuickMasterItemModal();
+            } else {
+                alert(res && res.message ? res.message : "Gagal menyimpan Master Barang.");
+            }
+        })
+        .catch(function(err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "Simpan";
+            }
+            alert("Gagal menyimpan Master Barang: " + (err && err.message ? err.message : err));
+        });
+    }
+
     function saveQuickBrand() {
         var nameInput = document.getElementById("quickBrandNameInput");
         var bName = (nameInput ? nameInput.value : "").trim();
@@ -1369,6 +1606,34 @@ function render_legacy_import_preview_selection_html(PDO $pdo, array $previewLis
         });
     }
     </script>
+
+    <!-- Modal Ringkas & Bersih Tambah Master Barang Baru via Double Click -->
+    <div id="quickAddMasterItemModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.45);z-index:99999;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:8px;padding:20px;width:380px;box-shadow:0 10px 25px rgba(0,0,0,0.2);box-sizing:border-box;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:15px;color:#0f172a;">Tambah Master Barang (SKU)</h3>
+          <button type="button" onclick="closeQuickMasterItemModal()" style="border:none;background:transparent;font-size:18px;color:#94a3b8;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+          <div>
+            <label style="margin:0 0 3px 0;font-size:11px;font-weight:700;color:#334155;">Nama Master Barang *</label>
+            <input type="text" id="quickMasterItemNameInput" placeholder="Contoh: AC Split Inverter" style="padding:7px 10px;font-size:12.5px;width:100%;box-sizing:border-box;border:1.5px solid #cbd5e1;border-radius:5px;">
+          </div>
+          <div>
+            <label style="margin:0 0 3px 0;font-size:11px;font-weight:700;color:#334155;">Brand / Merk</label>
+            <input type="text" id="quickMasterItemBrandInput" list="legacyBrandDatalist" placeholder="Contoh: Daikin" style="padding:7px 10px;font-size:12.5px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:5px;">
+          </div>
+          <div>
+            <label style="margin:0 0 3px 0;font-size:11px;font-weight:700;color:#334155;">Model / Varian</label>
+            <input type="text" id="quickMasterItemModelInput" placeholder="Contoh: FTKQ25UVM4 (1 PK)" style="padding:7px 10px;font-size:12.5px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:5px;">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" onclick="closeQuickMasterItemModal()" class="btn" style="padding:6px 14px;font-size:12px;">Batal</button>
+          <button type="button" id="btnSaveQuickMasterItem" onclick="saveQuickMasterItem()" class="btn primary" style="padding:6px 16px;font-size:12px;">Simpan</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal Ringkas & Bersih Tambah Brand Baru via Double Click -->
     <div id="quickAddBrandModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.45);z-index:99999;align-items:center;justify-content:center;">

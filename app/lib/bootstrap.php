@@ -813,6 +813,8 @@ function render_header(string $title, ?array $user = null): void
     echo 'th.sortable-th:hover{background:#f1f5f9 !important;color:#0369a1 !important}';
     echo '.th-sort-ind{display:inline-block;margin-left:5px;font-size:11px;opacity:.45}';
     echo '.th-sort-ind.active{opacity:1;color:#0284c7;font-weight:800}';
+    echo 'tbody tr:nth-child(even) td{background:#f8fafc;}';
+    echo 'tbody tr:nth-child(odd) td{background:#ffffff;}';
     echo 'tbody tr:hover td{background:#f0f9ff !important}';
     echo '.badge{display:inline-flex;align-items:center;border-radius:999px;background:#e2e8f0;color:#475569;padding:3px 10px;font-size:11.5px;font-weight:600}';
     echo '.badge.ok{background:#dcfce7;color:#15803d}';

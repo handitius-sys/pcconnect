@@ -957,10 +957,14 @@ function handle_route_api_pc_import(PDO $pdo): void
         }
     }
 
+    // Extract Serial Number
+    $serialNumber = trim((string)($rawSpecs['serial_number'] ?? ($pc['serial_number'] ?? ($rawSpecs['system']['serial_number'] ?? ''))));
+
     echo json_encode([
         'ok' => true,
         'pc_id' => $pc['pc_id'],
         'computer_name' => (string)($pc['computer_name'] ?? ''),
+        'serial_number' => $serialNumber,
         'custodian_nik' => $empNik,
         'custodian_name' => $empName,
         'department' => $dept,

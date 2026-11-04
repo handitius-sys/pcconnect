@@ -475,7 +475,22 @@ function pc_table(array $rows, bool $actions = false): string
         $rawCat = trim((string)($row['category'] ?? '')) ?: (trim((string)($row['asset_category'] ?? '')) ?: '');
         $normCat = normalize_pc_category($rawCat, $row['general_specs'] ?? '', $row['computer_name'] ?? '');
         $catLabel = pc_master_category_label($pdo, $normCat);
-        $catBadge = '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-weight:600;" title="' . e($catLabel) . '">' . e($normCat) . '</span>';
+        $catBg = '#e0f2fe';
+        $catColor = '#0369a1';
+        if ($normCat === 'NBK') {
+            $catBg = '#dcfce7';
+            $catColor = '#166534';
+        } elseif ($normCat === 'SRV') {
+            $catBg = '#f3e8ff';
+            $catColor = '#6b21a8';
+        } elseif ($normCat === 'DSP') {
+            $catBg = '#fef3c7';
+            $catColor = '#92400e';
+        } elseif ($normCat === 'PRT') {
+            $catBg = '#ffedd5';
+            $catColor = '#9a3412';
+        }
+        $catBadge = '<span class="badge" style="background:' . $catBg . ';color:' . $catColor . ';font-weight:700;" title="' . e($catLabel) . '">' . e($normCat) . '</span>';
 
         $rowActions = '<a class="btn-icon view" href="' . route_url('pc_detail', ['pc_id' => $row['pc_id']]) . '" title="Detail PC">'
             . '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'

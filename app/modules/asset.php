@@ -1390,16 +1390,21 @@ window.selectPcForImport = async function(pcId){
             }
         }
 
-        // Auto-match Identifiers in #identifierFields (Hostname / Computer Name)
+        // Auto-match Identifiers in #identifierFields (Hostname / Computer Name & Serial Number)
         var idContainer = document.getElementById("identifierFields");
-        if(idContainer && res.computer_name){
+        if(idContainer){
             var rawIdInputs = idContainer.getElementsByTagName("input");
             for(var ii = 0; ii < rawIdInputs.length; ii++){
                 var idInp = rawIdInputs[ii];
                 if(!idInp.name || idInp.name.indexOf("identifiers[") !== 0) continue;
                 var idLbl = (idInp.closest("label") ? idInp.closest("label").textContent : "").toLowerCase();
-                if(idLbl.indexOf("hostname") !== -1 || idLbl.indexOf("computer") !== -1 || idLbl.indexOf("komputer") !== -1){
+                if(res.computer_name && (idLbl.indexOf("hostname") !== -1 || idLbl.indexOf("computer") !== -1 || idLbl.indexOf("komputer") !== -1)){
                     idInp.value = res.computer_name;
+                    idInp.style.transition = "background-color 0.5s";
+                    idInp.style.backgroundColor = "#dcfce7";
+                    setTimeout(function(el){ return function(){ el.style.backgroundColor = ""; }; }(idInp), 2500);
+                } else if(res.serial_number && (idLbl.indexOf("serial") !== -1 || idLbl.indexOf("sn") !== -1 || idLbl.indexOf("s/n") !== -1)){
+                    idInp.value = res.serial_number;
                     idInp.style.transition = "background-color 0.5s";
                     idInp.style.backgroundColor = "#dcfce7";
                     setTimeout(function(el){ return function(){ el.style.backgroundColor = ""; }; }(idInp), 2500);
