@@ -3136,7 +3136,16 @@ function handle_route_reports(PDO $pdo): void
     foreach ($techs as $tech) {
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
-    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section><section class="panel"><div style="overflow-x:auto;"><table class="sortable-table"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
+    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section>'
+        . '<section class="panel">'
+        . '<div class="no-print font-resizer" style="margin-bottom:12px;">'
+        . '  <span>Ukuran Huruf:</span>'
+        . '  <button type="button" onclick="adjustPmFontSize(-1)">A-</button>'
+        . '  <button type="button" onclick="resetPmFontSize()">Normal</button>'
+        . '  <button type="button" onclick="adjustPmFontSize(1)">A+</button>'
+        . '  <span id="pmFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
+        . '</div>'
+        . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($stmt as $report) {
         $summary = maintenance_report_summary($pdo, $report);
         $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
@@ -3172,6 +3181,24 @@ function handle_route_reports(PDO $pdo): void
         echo '<tr><th>Waktu Real</th><td colspan="2"><strong>' . e($summary['real_duration_text'] ?? '-') . '</strong></td></tr></table></td><td><a class="btn" href="' . route_url('report_print', ['id' => $report['schedule_id']]) . '">Detail</a></td></tr>';
     }
     echo '</tbody></table></div></section>';
+    echo '<script>
+    var currentPmFontSize = 12;
+    function adjustPmFontSize(delta) {
+        currentPmFontSize = Math.max(9, Math.min(18, currentPmFontSize + delta));
+        applyPmFontSize();
+    }
+    function resetPmFontSize() {
+        currentPmFontSize = 12;
+        applyPmFontSize();
+    }
+    function applyPmFontSize() {
+        document.querySelectorAll(".report-target-table, .report-target-table th, .report-target-table td").forEach(function(el) {
+            el.style.fontSize = currentPmFontSize + "px";
+        });
+        var disp = document.getElementById("pmFontSizeDisplay");
+        if (disp) disp.innerText = currentPmFontSize + "px";
+    }
+    </script>';
     render_footer();
 }
 
@@ -3220,6 +3247,24 @@ function handle_route_maintenance_status_report(PDO $pdo): void
         echo '<tr><td>' . e($row['asset_type']) . '</td><td><strong>' . e($row['asset_id']) . '</strong></td><td>' . e($row['asset_name']) . '<br><span class="muted">' . e($row['asset_detail'] ?: '-') . '</span></td><td>' . e($row['technician'] ?: '-') . '</td><td>' . e($row['scheduled_date']) . '</td><td><span class="badge' . $badgeClass . '">' . e($row['status_label']) . '</span><br><span class="muted">' . e($row['raw_status']) . '</span></td><td>' . e($row['audit_flags'] ?: 'OK') . '</td><td><a class="btn" href="' . route_url('maintenance_do', ['id' => $row['schedule_id']]) . '">Buka</a> <a class="btn" href="' . route_url('report_print', ['id' => $row['schedule_id']]) . '">Detail</a></td></tr>';
     }
     echo '</tbody></table></div></section>';
+    echo '<script>
+    var currentPmFontSize = 12;
+    function adjustPmFontSize(delta) {
+        currentPmFontSize = Math.max(9, Math.min(18, currentPmFontSize + delta));
+        applyPmFontSize();
+    }
+    function resetPmFontSize() {
+        currentPmFontSize = 12;
+        applyPmFontSize();
+    }
+    function applyPmFontSize() {
+        document.querySelectorAll(".report-target-table, .report-target-table th, .report-target-table td").forEach(function(el) {
+            el.style.fontSize = currentPmFontSize + "px";
+        });
+        var disp = document.getElementById("pmFontSizeDisplay");
+        if (disp) disp.innerText = currentPmFontSize + "px";
+    }
+    </script>';
     render_footer();
 }
 
@@ -3580,20 +3625,45 @@ function export_excel(PDO $pdo, string $type): never
             $where[] = "LOWER(ai.status) <> 'deleted'";
         }
         if ($q !== '') {
-            $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR ai.brand_name LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR ai.owner_name LIKE ?)";
+            $where[] = "(ai.asset_code LIKE ? OR (ai.alias_code IS NOT NULL AND ai.alias_code LIKE ?) OR ai.asset_name LIKE ? OR (ai.brand IS NOT NULL AND ai.brand LIKE ?) OR (ai.model IS NOT NULL AND ai.model LIKE ?) OR (ai.serial_number IS NOT NULL AND ai.serial_number LIKE ?) OR (ai.custodian_name IS NOT NULL AND ai.custodian_name LIKE ?))";
             $kw = '%' . $q . '%';
-            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw]);
+            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw, $kw]);
         }
         $whereSql = implode(' AND ', $where);
 
-        $sql = "SELECT ai.id, ai.asset_code, ai.alias_code, c.company_name, ag.group_name, 
-                       COALESCE(at.type_name, ai.asset_type) AS asset_type_name,
-                       ai.asset_mode, ai.asset_name, ai.brand_name, ai.model, ai.serial_number, ai.custodian_name, ai.custodian_nik, ai.warranty_until, ai.installed_at, ai.purchase_value, ai.status, l.location_name 
+        $hasLocId = db_column_exists($pdo, 'asset_items', 'location_id');
+        $hasBrandId = db_column_exists($pdo, 'asset_items', 'brand_id');
+        $hasAlias = db_column_exists($pdo, 'asset_items', 'alias_code');
+        $hasCustodianNik = db_column_exists($pdo, 'asset_items', 'custodian_nik');
+
+        $locJoin = $hasLocId ? "LEFT JOIN asset_locations l ON l.id = ai.location_id" : "";
+        $locSelect = $hasLocId ? "COALESCE(l.location_name, ai.location_label, '-')" : "COALESCE(ai.location_label, '-')";
+
+        $brandJoin = $hasBrandId ? "LEFT JOIN asset_brands ab ON ab.id = ai.brand_id" : "";
+        $brandSelect = $hasBrandId ? "COALESCE(ab.brand_name, ai.brand, '-')" : "COALESCE(ai.brand, '-')";
+
+        $aliasSelect = $hasAlias ? "COALESCE(ai.alias_code, '-')" : "'-'";
+        $custNikSelect = $hasCustodianNik ? "COALESCE(ai.custodian_nik, '-')" : "'-'";
+
+        $sql = "SELECT ai.id, ai.asset_code, {$aliasSelect} AS alias_code, 
+                       COALESCE(c.company_name, '-') AS company_name, 
+                       COALESCE(ag.group_name, 'IT') AS group_name, 
+                       COALESCE(at.type_name, ai.asset_type, '-') AS asset_type_name,
+                       COALESCE(ai.asset_mode, 'standalone') AS asset_mode, 
+                       COALESCE(ai.asset_name, ai.model, '-') AS asset_name, 
+                       {$brandSelect} AS brand_name, 
+                       COALESCE(ai.model, '-') AS model, 
+                       COALESCE(ai.serial_number, '-') AS serial_number, 
+                       COALESCE(ai.custodian_name, '-') AS custodian_name, 
+                       {$custNikSelect} AS custodian_nik, 
+                       ai.warranty_until, ai.installed_at, ai.purchase_value, ai.status, 
+                       {$locSelect} AS location_name 
                 FROM asset_items ai 
                 LEFT JOIN asset_companies c ON c.id=ai.company_id 
                 LEFT JOIN asset_groups ag ON ag.id=ai.asset_group_id 
                 LEFT JOIN asset_types at ON at.id=ai.asset_type_id 
-                LEFT JOIN asset_locations l ON l.id=ai.location_id 
+                {$brandJoin}
+                {$locJoin}
                 WHERE {$whereSql}
                 ORDER BY ag.group_name ASC, ai.asset_code ASC";
         $stmt = $pdo->prepare($sql);

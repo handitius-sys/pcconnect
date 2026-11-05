@@ -2276,14 +2276,23 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 <h1>Riwayat Reparasi & Penggantian Sparepart</h1>
                 <p class="muted">Daftar seluruh tindakan corrective maintenance dan sparepart yang pernah diganti pada unit.</p>
             </div>
-            <div class="actions">
+            <div class="actions no-print">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
-                <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">📥 Export Excel</a>
+                <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">Export Excel</a>
+                <button type="button" class="btn" onclick="window.print()">Cetak Report</button>
             </div>
         </div>
 
+        <div class="no-print font-resizer" style="margin-bottom:12px;">
+            <span>Ukuran Huruf:</span>
+            <button type="button" onclick="adjustCorrectiveFontSize(-1)">A-</button>
+            <button type="button" onclick="resetCorrectiveFontSize()">Normal</button>
+            <button type="button" onclick="adjustCorrectiveFontSize(1)">A+</button>
+            <span id="correctiveFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>
+        </div>
+
         <div style="overflow-x:auto;">
-        <table class="sortable-table">
+        <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">
             <thead>
                 <tr>
                     <th>Tanggal & Tiket</th>
@@ -2319,15 +2328,13 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                 <small class="muted"><?= e(mb_strimwidth((string)$r['maintenance_asset_name'], 0, 35, '...')) ?></small>
                             </td>
                             <td>
-                                <?= !empty($r['legacy_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($r['legacy_code']) . '</span>' : '<span class="muted">-</span>' ?>
+                                <?= !empty($r['legacy_code']) ? e($r['legacy_code']) : '-' ?>
                             </td>
                             <td>
-                                <?= e($r['technician_name']) ?><br>
-                                <?= $r['vendor_name'] ? '<span class="muted">Vendor: ' . e($r['vendor_name']) . '</span>' : '' ?>
+                                <?= e($r['technician_name']) ?><?= $r['vendor_name'] ? ' (Vendor: ' . e($r['vendor_name']) . ')' : '' ?>
                             </td>
                             <td>
-                                <span class="badge ok"><?= e($r['action_type']) ?></span><br>
-                                <?= e(mb_strimwidth((string)$r['solution_details'], 0, 90, '...')) ?>
+                                <?= e($r['action_type']) ?> - <?= e(mb_strimwidth((string)$r['solution_details'], 0, 90, '...')) ?>
                             </td>
                             <td>
                                 <?php if (!$parts): ?>

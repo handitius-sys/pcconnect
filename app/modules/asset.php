@@ -7337,11 +7337,18 @@ function handle_route_asset_movements(PDO $pdo): void
         . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
         . '  </div>'
         . '</div>'
+        . '<div class="no-print font-resizer" style="margin-bottom:12px;">'
+        . '  <span>Ukuran Huruf:</span>'
+        . '  <button type="button" onclick="adjustReportFontSize(-1)">A-</button>'
+        . '  <button type="button" onclick="resetReportFontSize()">Normal</button>'
+        . '  <button type="button" onclick="adjustReportFontSize(1)">A+</button>'
+        . '  <span id="reportFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
+        . '</div>'
         . '<form method="get" class="actions" style="margin:16px 0 14px 0;align-items:flex-end;">'
         . '<input type="hidden" name="route" value="asset_movements">'
         . '<label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
         . '<label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>'
-        . '<label style="margin:0;flex:1;min-width:200px;">Cari (Kode / Nama / Alasan / PIC)<input name="q" value="' . e($q) . '" placeholder="Ketik kata kunci pencarian..."></label>'
+        . ''
         . '<button class="btn primary" style="height:38px;align-self:flex-end;">Filter</button>'
         . ($q !== '' || $startDate !== '' || $endDate !== '' ? '<a class="btn" href="' . route_url('asset_movements') . '" style="height:38px;align-self:flex-end;">Reset</a>' : '')
         . '</form>'
@@ -7590,21 +7597,14 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '  </div>';
     echo '</div>';
 
-    // 8. Tampilan Ringkasan Metrik (Total & per Komoditas)
-    echo '<div class="grid three" style="margin-bottom:18px;">';
-    echo '  <div class="stat"><h3 style="margin:0 0 4px 0;font-size:12px;color:#64748b;">TOTAL SELURUH UNIT ASET</h3><div style="font-size:28px;font-weight:800;color:#0f172a;">' . number_format($totalCount) . ' <span style="font-size:14px;font-weight:500;">Unit</span></div></div>';
-    echo '  <div class="stat" style="grid-column: span 2;"><h3 style="margin:0 0 6px 0;font-size:12px;color:#64748b;">REKAPITULASI PER KOMODITAS (GRUP ASET)</h3>';
-    echo '    <div style="display:flex;gap:8px;flex-wrap:wrap;">';
-    if ($groupStats) {
-        foreach ($groupStats as $gName => $count) {
-            echo '<span class="badge ok" style="padding:6px 12px;font-size:12px;"><strong>' . e($gName) . ':</strong>&nbsp;' . $count . ' Unit</span>';
-        }
-    } else {
-        echo '<span class="muted">Tidak ada data.</span>';
-    }
-    echo '    </div>';
-    echo '  </div>';
-    echo '</div>';
+    // Metrik ringkasan blok ditiadakan sesuai preferensi tampilan report bersih
+    echo '<div class="no-print font-resizer" style="margin-bottom:12px;">'
+        . '<span>Ukuran Huruf:</span>'
+        . '<button type="button" onclick="adjustReportFontSize(-1)">A-</button>'
+        . '<button type="button" onclick="resetReportFontSize()">Normal</button>'
+        . '<button type="button" onclick="adjustReportFontSize(1)">A+</button>'
+        . '<span id="reportFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
+        . '</div>';
 
     // 9. Form Filter Pencarian
     echo '<section class="panel no-print" style="padding:14px 18px;margin-bottom:20px;">';
@@ -7613,7 +7613,7 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '    <label style="margin:0;flex:1;min-width:180px;">Komoditas (Grup Aset)<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select></label>';
     echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori Aset (Tipe)<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori (Tipe)', true) . '</select></label>';
     echo '    <label style="margin:0;flex:1;min-width:160px;">Company<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select></label>';
-    echo '    <label style="margin:0;flex:1.2;min-width:200px;">Cari (Kode/Nama/Brand/SN)<input name="q" value="' . e($q) . '" placeholder="Ketik kata kunci..."></label>';
+    // Cari (Kode/Nama/Brand/SN) ditiadakan
     echo '    <button class="btn primary" type="submit">Filter</button>';
     echo '    <a class="btn" href="' . route_url('report_asset_items') . '">Reset</a>';
     echo '  </form>';
@@ -7626,11 +7626,11 @@ function handle_route_report_asset_items(PDO $pdo): void
         foreach ($grouped as $groupNameLabel => $items) {
             echo '<section class="panel" style="margin-bottom:24px;">';
             echo '  <div class="split" style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:14px;">';
-            echo '    <h2 style="margin:0;color:#1e3a8a;font-size:16px;">📦 Komoditas: ' . e($groupNameLabel) . '</h2>';
-            echo '    <span class="badge ok" style="font-size:12px;">Total ' . count($items) . ' Unit</span>';
+            echo '    <h2 style="margin:0;color:#0f172a;font-size:15px;font-weight:700;">Komoditas: ' . e($groupNameLabel) . '</h2>';
+            echo '    <span style="font-size:12px;color:#475569;font-weight:600;">(Total ' . count($items) . ' Unit)</span>';
             echo '  </div>';
             echo '  <div style="overflow-x:auto;">';
-            echo '    <table class="table sortable-table">';
+            echo '    <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">';
             echo '      <thead>';
             echo '        <tr>';
             echo '          <th style="width:40px;">No</th>';
@@ -7662,21 +7662,20 @@ function handle_route_report_asset_items(PDO $pdo): void
                 $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
                 $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
 
-                $legacyReportCell = !empty($item['alias_code']) 
-                    ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($item['alias_code']) . '</span>' 
-                    : '<span class="muted">-</span>';
+                $legacyReportCell = !empty($item['alias_code']) ? e($item['alias_code']) : '-';
+                $plainStatus = strtoupper(e((string)($item['status'] ?? '-')));
                 echo '        <tr>';
                 echo '          <td>' . $no++ . '</td>';
-                echo '          <td><strong><a href="' . route_url('asset_items', ['q' => $item['asset_code']]) . '">' . e($item['asset_code']) . '</a></strong></td>';
+                echo '          <td>' . e($item['asset_code']) . '</td>';
                 echo '          <td>' . $legacyReportCell . '</td>';
                 echo '          <td>' . e($assetName) . '</td>';
                 echo '          <td>' . e($brandName) . '</td>';
                 echo '          <td>' . e($categoryName) . '</td>';
-                echo '          <td><span class="badge" style="font-size:10px;">' . e($modeLabel) . '</span></td>';
-                echo '          <td><code>' . e($serialNum) . '</code></td>';
+                echo '          <td>' . e($modeLabel) . '</td>';
+                echo '          <td>' . e($serialNum) . '</td>';
                 echo '          <td>' . e($locName) . '</td>';
                 echo '          <td>' . e($compName) . '</td>';
-                echo '          <td>' . $statusBadge . '</td>';
+                echo '          <td>' . $plainStatus . '</td>';
                 echo '        </tr>';
             }
             echo '      </tbody>';
