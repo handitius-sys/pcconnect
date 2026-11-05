@@ -267,6 +267,46 @@ function handle_route_asset_loans(PDO $pdo): void
         . '  </div>'
         . '</div>'
 
+        // Kartu Ringkasan (Rounded, Warna-warni, & Transparancy Icon)
+        . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">'
+        // 1. Sedang Dipinjam (Biru / Sky)
+        . '  <div style="background:linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);border:1px solid #bae6fd;border-left:4px solid #0284c7;border-radius:14px;padding:12px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(2,132,199,0.06);">'
+        . '    <div style="position:absolute;right:-10px;top:-10px;width:75px;height:75px;opacity:0.16;transform:rotate(-10deg);pointer-events:none;">'
+        . '      <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>'
+        . '    </div>'
+        . '    <div style="position:relative;z-index:1;">'
+        . '      <div style="font-size:24px;font-weight:800;color:#0284c7;margin-top:3px;line-height:1.2;">' . $stats['active'] . ' <span style="font-size:12.5px;font-weight:600;color:#0284c7;opacity:0.75;">transaksi</span></div>'
+        . '    </div>'
+        . '  </div>'
+        // 2. Terlambat (Merah / Rose)
+        . '  <div style="background:' . ($stats['overdue'] > 0 ? 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)' : '#f8fafc') . ';border:1px solid ' . ($stats['overdue'] > 0 ? '#fecdd3' : '#e2e8f0') . ';border-left:4px solid ' . ($stats['overdue'] > 0 ? '#e11d48' : '#94a3b8') . ';border-radius:14px;padding:12px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(225,29,72,0.06);">'
+        . '    <div style="position:absolute;right:-10px;top:-10px;width:75px;height:75px;opacity:' . ($stats['overdue'] > 0 ? '0.16' : '0.08') . ';transform:rotate(-10deg);pointer-events:none;">'
+        . '      <svg viewBox="0 0 24 24" fill="none" stroke="' . ($stats['overdue'] > 0 ? '#e11d48' : '#64748b') . '" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>'
+        . '    </div>'
+        . '    <div style="position:relative;z-index:1;">'
+        . '      <div style="font-size:24px;font-weight:800;color:' . ($stats['overdue'] > 0 ? '#e11d48' : '#64748b') . ';margin-top:3px;line-height:1.2;">' . $stats['overdue'] . ' <span style="font-size:12.5px;font-weight:600;color:' . ($stats['overdue'] > 0 ? '#e11d48' : '#64748b') . ';opacity:0.75;">transaksi</span></div>'
+        . '    </div>'
+        . '  </div>'
+        // 3. Total Unit di Luar (Ungu / Fuchsia)
+        . '  <div style="background:linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%);border:1px solid #f5d0fe;border-left:4px solid #a21caf;border-radius:14px;padding:12px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(162,28,175,0.06);">'
+        . '    <div style="position:absolute;right:-10px;top:-10px;width:75px;height:75px;opacity:0.16;transform:rotate(-10deg);pointer-events:none;">'
+        . '      <svg viewBox="0 0 24 24" fill="none" stroke="#a21caf" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>'
+        . '    </div>'
+        . '    <div style="position:relative;z-index:1;">'
+        . '      <div style="font-size:24px;font-weight:800;color:#a21caf;margin-top:3px;line-height:1.2;">' . $stats['total_items_out'] . ' <span style="font-size:12.5px;font-weight:600;color:#a21caf;opacity:0.75;">unit fisik</span></div>'
+        . '    </div>'
+        . '  </div>'
+        // 4. Sudah Kembali (Hijau / Emerald)
+        . '  <div style="background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:14px;padding:12px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(22,163,74,0.06);">'
+        . '    <div style="position:absolute;right:-10px;top:-10px;width:75px;height:75px;opacity:0.16;transform:rotate(-10deg);pointer-events:none;">'
+        . '      <svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+        . '    </div>'
+        . '    <div style="position:relative;z-index:1;">'
+        . '      <div style="font-size:24px;font-weight:800;color:#16a34a;margin-top:3px;line-height:1.2;">' . $stats['returned'] . ' <span style="font-size:12.5px;font-weight:600;color:#16a34a;opacity:0.75;">transaksi</span></div>'
+        . '    </div>'
+        . '  </div>'
+        . '</div>'
+
         // Filter Tabs & Search (Tanpa Button Primary di bawah Block)
         . '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:16px;">'
         . '  <div style="display:flex;gap:6px;flex-wrap:wrap;">'
