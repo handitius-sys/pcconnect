@@ -256,7 +256,7 @@ function handle_route_asset_loans(PDO $pdo): void
     echo '<section class="panel">'
         . '<div class="split" style="align-items:center;margin-bottom:16px;">'
         . '  <div>'
-        . '    <h1 style="margin:0;display:flex;align-items:center;gap:8px;">📦 Peminjaman Aset</h1>'
+        . '    <h1 style="margin:0;display:flex;align-items:center;gap:8px;">📋 Peminjaman Aset</h1>'
         . '    <p class="muted" style="margin:4px 0 0 0;">Pengelolaan serah-terima peminjaman perkakas, alat kerja, dan unit aset operasional.</p>'
         . '  </div>'
         . '  <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap;">'
@@ -307,7 +307,7 @@ function handle_route_asset_loans(PDO $pdo): void
     // Tabel Daftar Peminjaman
     if (empty($loans)) {
         echo '<div style="text-align:center;padding:48px 16px;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;color:#64748b;">'
-            . '<div style="font-size:36px;margin-bottom:8px;">📦</div>'
+            . '<div style="font-size:36px;margin-bottom:8px;">📋</div>'
             . '<div style="font-size:16px;font-weight:600;color:#334155;">Tidak ada data peminjaman ditemukan</div>'
             . '<p style="margin:4px 0 16px 0;">' . ($q !== '' ? 'Tidak ada hasil untuk kata kunci "' . e($q) . '".' : 'Belum ada transaksi peminjaman untuk kategori ini.') . '</p>'
             . '<a class="btn primary" href="' . route_url('asset_loan_form') . '">+ Catat Peminjaman Baru</a>'
