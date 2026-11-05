@@ -3121,7 +3121,7 @@ function handle_route_reports(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a></div><form method="get"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div><form method="get"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
     }
@@ -3138,13 +3138,7 @@ function handle_route_reports(PDO $pdo): void
     }
     echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section>'
         . '<section class="panel">'
-        . '<div class="no-print font-resizer" style="margin-bottom:12px;">'
-        . '  <span>Ukuran Huruf:</span>'
-        . '  <button type="button" onclick="adjustPmFontSize(-1)">A-</button>'
-        . '  <button type="button" onclick="resetPmFontSize()">Normal</button>'
-        . '  <button type="button" onclick="adjustPmFontSize(1)">A+</button>'
-        . '  <span id="pmFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
-        . '</div>'
+
         . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($stmt as $report) {
         $summary = maintenance_report_summary($pdo, $report);
@@ -3234,7 +3228,7 @@ function handle_route_maintenance_status_report(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a></div></div></section>';
+    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div></div></section>';
     echo '<section class="panel"><div class="grid five"><div class="stat"><strong>' . e($counts['total']) . '</strong><span>Total</span></div><div class="stat"><strong>' . e($counts['completed']) . '</strong><span>Sudah Maintenance</span></div><div class="stat"><strong>' . e($counts['pending']) . '</strong><span>Pending</span></div><div class="stat"><strong>' . e($counts['cancelled']) . '</strong><span>Batal (Tenggang Waktu)</span></div><div class="stat"><strong>' . e($counts['expired']) . '</strong><span>Expired &gt; 7 Hari</span></div></div></section>';
     echo '<section class="panel"><form method="get"><input type="hidden" name="route" value="maintenance_status_report"><div class="grid four"><label>Tipe Aset<select name="asset_type"><option value="">Semua</option><option value="pc"' . ($assetTypeFilter === 'pc' ? ' selected' : '') . '>PC</option><option value="printer"' . ($assetTypeFilter === 'printer' ? ' selected' : '') . '>Printer</option></select></label><label>Status<select name="status_group"><option value="">Semua</option><option value="completed"' . ($statusFilter === 'completed' ? ' selected' : '') . '>Sudah Maintenance</option><option value="pending"' . ($statusFilter === 'pending' ? ' selected' : '') . '>Pending</option><option value="cancelled"' . ($statusFilter === 'cancelled' ? ' selected' : '') . '>Batal (Tenggang Waktu)</option><option value="expired"' . ($statusFilter === 'expired' ? ' selected' : '') . '>Expired &gt; 7 Hari</option></select></label><label>Teknisi<select name="technician_id"><option value="0">Semua Teknisi</option>';
     foreach ($techs as $tech) {
@@ -3390,9 +3384,19 @@ function export_excel(PDO $pdo, string $type): never
         }
     }
 
+    // Bersihkan buffer output sebelumnya agar header Content-Disposition dapat terkirim dengan sempurna
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+
     $filename = 'pcconnect-' . preg_replace('/[^a-z0-9_-]/i', '', $type) . '-' . date('Ymd-His') . '.xls';
+    header('Pragma: public');
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    header('Cache-Control: private', false);
     header('Content-Type: application/vnd.ms-excel; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Transfer-Encoding: binary');
     echo "\xEF\xBB\xBF";
 
     if ($type === 'reports') {

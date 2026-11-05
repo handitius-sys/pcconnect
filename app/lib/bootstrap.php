@@ -709,6 +709,82 @@ function require_regulation(string $menuKey, string $action = 'view'): array
     return $user;
 }
 
+function render_report_print_settings_modal(): void
+{
+    echo '<div id="reportPrintSettingsModal" class="print-settings-modal no-print" onclick="if(event.target===this)closePrintSettings()">'
+        . '  <div class="print-settings-box">'
+        . '    <h3>'
+        . '      <span>Page Setup & Print Settings</span>'
+        . '      <button type="button" onclick="closePrintSettings()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#64748b;">✕</button>'
+        . '    </h3>'
+        . '    <form onsubmit="event.preventDefault();executeCustomPrint();">'
+        . '      <label>Orientasi Kertas'
+        . '        <select id="printOrientation">'
+        . '          <option value="landscape" selected>Landscape (Melebar - Direkomendasikan)</option>'
+        . '          <option value="portrait">Portrait (Tegak)</option>'
+        . '        </select>'
+        . '      </label>'
+        . '      <label>Ukuran Kertas'
+        . '        <select id="printPaperSize">'
+        . '          <option value="A4" selected>A4 (210 x 297 mm)</option>'
+        . '          <option value="Letter">Letter (8.5 x 11 in)</option>'
+        . '          <option value="Legal">Legal (8.5 x 14 in)</option>'
+        . '          <option value="F4">F4 / Folio (215 x 330 mm)</option>'
+        . '        </select>'
+        . '      </label>'
+        . '      <label>Skala / Ukuran Huruf Cetak'
+        . '        <select id="printScale">'
+        . '          <option value="auto" selected>Auto Fit (Otomatis Muat 1 Halaman A4)</option>'
+        . '          <option value="7pt">Kecil Ringkas (7pt)</option>'
+        . '          <option value="8pt">Sedang Standar (8pt)</option>'
+        . '          <option value="9pt">Besar Jelas (9pt)</option>'
+        . '        </select>'
+        . '      </label>'
+        . '      <label>Margin Halaman'
+        . '        <select id="printMargin">'
+        . '          <option value="5mm" selected>Ramping / Narrow (5 mm)</option>'
+        . '          <option value="10mm">Standar (10 mm)</option>'
+        . '          <option value="15mm">Lebar (15 mm)</option>'
+        . '        </select>'
+        . '      </label>'
+        . '      <div style="margin-top:20px;display:flex;gap:8px;justify-content:flex-end;">'
+        . '        <button type="button" class="btn" onclick="closePrintSettings()">Batal</button>'
+        . '        <button type="submit" class="btn primary">Terapkan & Cetak</button>'
+        . '      </div>'
+        . '    </form>'
+        . '  </div>'
+        . '</div>';
+
+    echo '<style id="dynamicPrintStyle"></style>';
+    echo '<script>
+    function openPrintSettings() {
+        var m = document.getElementById("reportPrintSettingsModal");
+        if (m) m.classList.add("active");
+    }
+    function closePrintSettings() {
+        var m = document.getElementById("reportPrintSettingsModal");
+        if (m) m.classList.remove("active");
+    }
+    function executeCustomPrint() {
+        var ori = document.getElementById("printOrientation").value;
+        var size = document.getElementById("printPaperSize").value;
+        var scale = document.getElementById("printScale").value;
+        var margin = document.getElementById("printMargin").value;
+        
+        var fontSize = scale === "auto" ? "7.5pt" : scale;
+        var css = "@page { size: " + size + " " + ori + "; margin: " + margin + "; } "
+                + "@media print { .report-table-plain { font-size: " + fontSize + " !important; } }";
+        
+        document.getElementById("dynamicPrintStyle").innerHTML = css;
+        closePrintSettings();
+        setTimeout(function() {
+            window.print();
+        }, 150);
+    }
+    </script>';
+}
+
+
 function render_header(string $title, ?array $user = null): void
 {
     $flash = flash();
@@ -835,9 +911,12 @@ function render_header(string $title, ?array $user = null): void
     // Mobile responsive
     echo '@media(max-width:900px){.sidebar{transform:translateX(-100%);transition:transform .25s ease}.sidebar.mobile-open{transform:translateX(0)}.sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99}.sidebar-overlay.active{display:block}.main-wrapper,.app-layout.collapsed .main-wrapper{margin-left:0;width:100%}.hero,.two,.three,.four,.six{grid-template-columns:1fr}main{padding:14px}table{display:block;overflow-x:auto}}';
     echo '@page{size:A4 landscape;margin:7mm 7mm 7mm 7mm}
-.font-resizer{display:inline-flex;align-items:center;gap:4px;background:#f8fafc;padding:3px 8px;border-radius:6px;border:1px solid #cbd5e1;font-size:12px;}
-.font-resizer button{background:#fff;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;padding:2px 7px;font-weight:700;font-size:11px;}
-.font-resizer button:hover{background:#e2e8f0;}
+.print-settings-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.6);z-index:999999;align-items:center;justify-content:center;padding:16px;}
+.print-settings-modal.active{display:flex;}
+.print-settings-box{background:#fff;border-radius:12px;padding:22px;width:100%;max-width:440px;box-shadow:0 20px 40px rgba(0,0,0,0.25);border:1px solid #cbd5e1;}
+.print-settings-box h3{margin:0 0 14px 0;font-size:16px;color:#0f172a;display:flex;align-items:center;justify-content:space-between;}
+.print-settings-box label{margin:10px 0 4px 0;font-weight:600;font-size:12.5px;color:#334155;}
+.print-settings-box select{padding:7px 10px;font-size:13px;}
 .report-table-plain{width:100%;border-collapse:collapse;background:#fff!important;border:1px solid #cbd5e1;}
 .report-table-plain th{background:#f8fafc!important;color:#0f172a!important;font-weight:700!important;border:1px solid #cbd5e1!important;padding:7px 9px!important;white-space:nowrap;}
 .report-table-plain td{background:#fff!important;color:#1e293b!important;border:1px solid #cbd5e1!important;padding:6px 9px!important;font-weight:normal;}

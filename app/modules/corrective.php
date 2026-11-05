@@ -2279,17 +2279,10 @@ function handle_route_corrective_repairs(PDO $pdo): void
             <div class="actions no-print">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
                 <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">Export Excel</a>
-                <button type="button" class="btn" onclick="window.print()">Cetak Report</button>
+                <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>
             </div>
         </div>
-
-        <div class="no-print font-resizer" style="margin-bottom:12px;">
-            <span>Ukuran Huruf:</span>
-            <button type="button" onclick="adjustCorrectiveFontSize(-1)">A-</button>
-            <button type="button" onclick="resetCorrectiveFontSize()">Normal</button>
-            <button type="button" onclick="adjustCorrectiveFontSize(1)">A+</button>
-            <span id="correctiveFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>
-        </div>
+        <?php render_report_print_settings_modal(); ?>
 
         <div style="overflow-x:auto;">
         <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">

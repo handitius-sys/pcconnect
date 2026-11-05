@@ -7333,17 +7333,12 @@ function handle_route_asset_movements(PDO $pdo): void
         . '    <h1 style="margin:0;">Report Mutasi Aset</h1>'
         . '    <p class="muted" style="margin:4px 0 0 0;">Laporan riwayat mutasi aset, perubahan keanggotaan bundle, pelepasan unit single, dan perpindahan antar unit.</p>'
         . '  </div>'
-        . '  <div class="actions">'
+        . '  <div class="actions no-print">'
         . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
+        . '    <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>'
         . '  </div>'
         . '</div>'
-        . '<div class="no-print font-resizer" style="margin-bottom:12px;">'
-        . '  <span>Ukuran Huruf:</span>'
-        . '  <button type="button" onclick="adjustReportFontSize(-1)">A-</button>'
-        . '  <button type="button" onclick="resetReportFontSize()">Normal</button>'
-        . '  <button type="button" onclick="adjustReportFontSize(1)">A+</button>'
-        . '  <span id="reportFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
-        . '</div>'
+
         . '<form method="get" class="actions" style="margin:16px 0 14px 0;align-items:flex-end;">'
         . '<input type="hidden" name="route" value="asset_movements">'
         . '<label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
@@ -7360,6 +7355,7 @@ function handle_route_asset_movements(PDO $pdo): void
             . '<div style="margin-top:12px;">' . asset_movement_transaction_form_html($pdo, $user) . '</div>'
             . '</details>';
     }
+    render_report_print_settings_modal();
     render_footer();
 }
 
@@ -7592,19 +7588,13 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '    <p class="muted" style="margin:4px 0 0 0;">Laporan rekapitulasi & detail Unit Aset terstruktur dan terpilah berdasarkan Komoditas (Grup Aset).</p>';
     echo '  </div>';
     echo '  <div class="actions no-print">';
-    echo '    <a class="btn primary" href="' . e($exportUrl) . '">📥 Export Excel</a>';
-    echo '    <button class="btn" onclick="window.print()">🖨️ Cetak Report</button>';
+    echo '    <a class="btn primary" href="' . e($exportUrl) . '">Export Excel</a>';
+    echo '    <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>';
     echo '  </div>';
     echo '</div>';
 
-    // Metrik ringkasan blok ditiadakan sesuai preferensi tampilan report bersih
-    echo '<div class="no-print font-resizer" style="margin-bottom:12px;">'
-        . '<span>Ukuran Huruf:</span>'
-        . '<button type="button" onclick="adjustReportFontSize(-1)">A-</button>'
-        . '<button type="button" onclick="resetReportFontSize()">Normal</button>'
-        . '<button type="button" onclick="adjustReportFontSize(1)">A+</button>'
-        . '<span id="reportFontSizeDisplay" style="color:#64748b;font-size:11px;margin-left:4px;">12px</span>'
-        . '</div>';
+    // Metrik ringkasan blok dan ukuran huruf ditiadakan
+    render_report_print_settings_modal();
 
     // 9. Form Filter Pencarian
     echo '<section class="panel no-print" style="padding:14px 18px;margin-bottom:20px;">';
