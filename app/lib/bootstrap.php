@@ -936,6 +936,28 @@ function render_header(string $title, ?array $user = null): void
 
         echo '</nav>'; // End sidebar-nav
 
+        // Sidebar user profile footer (Kiri Bawah dengan User Sign In & Sign Out)
+        $initial = strtoupper(substr((string)($user['name'] ?? 'U'), 0, 1));
+        $roleLabel = match ($role) {
+            'admin' => 'Administrator',
+            'maintenance_admin' => 'Admin Maintenance',
+            'technician' => 'Teknisi PM',
+            'corrective_maintenance' => 'Corrective Maint.',
+            'loan_officer' => 'Petugas Peminjaman',
+            default => $role,
+        };
+        echo '<div class="sidebar-user">';
+        echo '  <div class="user-avatar">' . e($initial) . '</div>';
+        echo '  <div class="user-info">';
+        echo '    <div class="user-name">' . e($user['name'] ?? 'User') . '</div>';
+        echo '    <div class="user-role">' . e($roleLabel) . '</div>';
+        echo '  </div>';
+        echo '  <div style="display:flex;gap:4px;align-items:center;">';
+        echo '    <a class="logout-btn" href="' . route_url('login') . '" title="Sign In / Ganti User" style="color:#60a5fa;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg></a>';
+        echo '    <a class="logout-btn" href="' . route_url('logout') . '" title="Sign Out / Logout"><span style="width:17px;height:17px;">' . $svgLogout . '</span></a>';
+        echo '  </div>';
+        echo '</div>';
+
         echo '</aside>'; // End sidebar
 
         // Main content wrapper (Topbar Kanan Atas dengan Sign In / Sign Out)
