@@ -307,21 +307,14 @@ function handle_route_asset_loans(PDO $pdo): void
         . '  </div>'
         . '</div>'
 
-        // Filter Tabs & Search (Tanpa Button Primary di bawah Block)
-        . '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:16px;">'
-        . '  <div style="display:flex;gap:6px;flex-wrap:wrap;">'
-        . '    <a href="' . route_url('asset_loans', ['tab' => 'active', 'q' => $q]) . '" style="padding:6px 14px;border-radius:20px;font-size:13px;text-decoration:none;font-weight:600;display:inline-block;' . ($tab === 'active' ? 'background:#0284c7;color:#fff;box-shadow:0 2px 4px rgba(2,132,199,0.3);' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;') . '">Sedang Dipinjam (' . $stats['active'] . ')</a>'
-        . '    <a href="' . route_url('asset_loans', ['tab' => 'overdue', 'q' => $q]) . '" style="padding:6px 14px;border-radius:20px;font-size:13px;text-decoration:none;font-weight:600;display:inline-block;' . ($tab === 'overdue' ? 'background:#dc2626;color:#fff;box-shadow:0 2px 4px rgba(220,38,38,0.3);' : ($stats['overdue'] > 0 ? 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;')) . '">Terlambat (' . $stats['overdue'] . ')</a>'
-        . '    <a href="' . route_url('asset_loans', ['tab' => 'returned', 'q' => $q]) . '" style="padding:6px 14px;border-radius:20px;font-size:13px;text-decoration:none;font-weight:600;display:inline-block;' . ($tab === 'returned' ? 'background:#16a34a;color:#fff;box-shadow:0 2px 4px rgba(22,163,74,0.3);' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;') . '">Sudah Kembali (' . $stats['returned'] . ')</a>'
-        . '    <a href="' . route_url('asset_loans', ['tab' => 'all', 'q' => $q]) . '" style="padding:6px 14px;border-radius:20px;font-size:13px;text-decoration:none;font-weight:600;display:inline-block;' . ($tab === 'all' ? 'background:#475569;color:#fff;box-shadow:0 2px 4px rgba(71,85,105,0.3);' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;') . '">Semua Transaksi</a>'
-        . '  </div>'
-        . '  <form method="get" style="margin:0;display:flex;gap:6px;">'
-        . '    <input type="hidden" name="route" value="asset_loans">'
-        . '    <input type="hidden" name="tab" value="' . e($tab) . '">'
-        . '    <input name="q" value="' . e($q) . '" placeholder="Cari no pinjam / peminjam / alat..." style="padding:6px 12px;font-size:13px;width:240px;">'
-        . '    <button class="btn" style="padding:6px 12px;">Cari</button>'
-        . ($q !== '' ? '    <a class="btn" href="' . route_url('asset_loans', ['tab' => $tab]) . '" style="padding:6px 10px;">✕</a>' : '')
-        . '  </form>'
+        // Search Form (Tab filter Sedang Dipinjam, Terlambat, dll ditiadakan)
+        . '<div style="display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:16px;">' . "\n"
+        . '  <form method="get" style="margin:0;display:flex;gap:6px;">' . "\n"
+        . '    <input type="hidden" name="route" value="asset_loans">' . "\n"
+        . '    <input name="q" value="' . e($q) . '" placeholder="Cari no pinjam / peminjam / alat..." style="padding:6px 12px;font-size:13px;width:260px;">' . "\n"
+        . '    <button class="btn" style="padding:6px 12px;">Cari</button>' . "\n"
+        . ($q !== '' ? '    <a class="btn" href="' . route_url('asset_loans') . '" style="padding:6px 12px;">Reset</a>' : '') . "\n"
+        . '  </form>' . "\n"
         . '</div>';
 
     // Tabel Daftar Peminjaman
@@ -1616,7 +1609,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
     echo '<section class="panel">'
         . '<div class="split" style="align-items:center;">'
         . '  <div>'
-        . '    <h1 style="margin:0;">📊 Report Peminjaman Aset</h1>'
+        . '    <h1 style="margin:0;">Report Peminjaman Aset</h1>'
         . '    <p class="muted" style="margin:4px 0 0 0;">Laporan riwayat peminjaman dan pengembalian unit aset, perkakas, dan alat kerja.</p>'
         . '  </div>'
         . '  <div class="actions no-print">'
@@ -1627,7 +1620,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
 
         // Form Filter
 
-        . '<form method="get" class="actions" style="margin:16px 0 20px 0;align-items:flex-end;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">'
+        . '<form method="get" class="actions no-print" style="margin:16px 0 20px 0;align-items:flex-end;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">'
         . '  <input type="hidden" name="route" value="report_asset_loans">'
         . '  <label style="margin:0;">Tgl Pinjam Dari<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
         . '  <label style="margin:0;">Tgl Pinjam Sampai<input type="date" name="end_date" value="' . e($endDate) . '"></label>'

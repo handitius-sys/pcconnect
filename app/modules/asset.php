@@ -2662,7 +2662,7 @@ function asset_movements_table(array $rows): string
         return '<p class="muted" style="padding:16px 0;">Belum ada data riwayat mutasi aset yang sesuai.</p>';
     }
     $canDelete = has_regulation('asset_movements', 'delete');
-    $html = '<div style="overflow-x:auto;"><table class="sortable-table">'
+    $html = '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table">'
         . '<thead><tr>'
         . '<th>Tanggal</th>'
         . '<th>Aksi / Status Mutasi</th>'
@@ -7339,7 +7339,7 @@ function handle_route_asset_movements(PDO $pdo): void
         . '  </div>'
         . '</div>'
 
-        . '<form method="get" class="actions" style="margin:16px 0 14px 0;align-items:flex-end;">'
+        . '<form method="get" class="actions no-print" style="margin:16px 0 14px 0;align-items:flex-end;">'
         . '<input type="hidden" name="route" value="asset_movements">'
         . '<label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
         . '<label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>'
@@ -7578,7 +7578,9 @@ function handle_route_report_asset_items(PDO $pdo): void
     // 6. Rendering Header Halaman
     render_header('Report Unit Aset Terpilah per Komoditas', $user);
 
-    $exportParams = array_merge(['type' => 'asset_items'], $_GET);
+    $cleanFilters = $_GET;
+    unset($cleanFilters['route']);
+    $exportParams = array_merge(['type' => 'asset_items'], $cleanFilters);
     $exportUrl = route_url('export_excel', $exportParams);
 
     // 7. Tampilan Judul & Aksi Export

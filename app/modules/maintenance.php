@@ -3121,7 +3121,7 @@ function handle_route_reports(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div><form method="get"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
     }
@@ -3384,19 +3384,17 @@ function export_excel(PDO $pdo, string $type): never
         }
     }
 
-    // Bersihkan buffer output sebelumnya agar header Content-Disposition dapat terkirim dengan sempurna
+    // Bersihkan seluruh buffer output agar file excel dapat di-stream & di-download langsung
     while (ob_get_level()) {
         ob_end_clean();
     }
 
     $filename = 'pcconnect-' . preg_replace('/[^a-z0-9_-]/i', '', $type) . '-' . date('Ymd-His') . '.xls';
-    header('Pragma: public');
+    header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
     header('Expires: 0');
     header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-    header('Cache-Control: private', false);
-    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Content-Transfer-Encoding: binary');
     echo "\xEF\xBB\xBF";
 
     if ($type === 'reports') {

@@ -804,7 +804,7 @@ function handle_route_tickets(PDO $pdo): void
                                     <br><a href="<?= e(url($t['invoice_photo'])) ?>" target="_blank" style="font-size:11px; text-decoration:none; color:#0284c7; font-weight:600; display:inline-flex; align-items:center; gap:3px; margin-top:3px;">🧾 Kwitansi</a>
                                 <?php endif; ?>
                             </td>
-                            <td style="text-align:center;">
+                            <td style="text-align:center;" class="no-print">
                                 <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Detail Tiket & Penanganan" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
                                 <?php if (has_regulation('tickets', 'delete')): ?>
                                     <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Batalkan tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
@@ -2295,7 +2295,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                     <th>Tindakan & Solusi</th>
                     <th>Sparepart Diganti</th>
                     <th>Biaya Jasa Servis</th>
-                    <th style="text-align:center;">Foto Kwitansi / Invoice</th>
+                    <th style="text-align:center;" class="no-print">Foto Kwitansi / Invoice</th>
                 </tr>
             </thead>
             <tbody>
@@ -2341,7 +2341,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                             <td>
                                 Rp <?= number_format((float)$r['repair_cost'], 0, ',', '.') ?>
                             </td>
-                            <td style="text-align:center;">
+                            <td style="text-align:center;" class="no-print">
                                 <?php if (!$invPhoto): ?>
                                     <span class="muted">-</span>
                                 <?php elseif ($isPdf): ?>
