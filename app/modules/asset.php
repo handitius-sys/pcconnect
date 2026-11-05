@@ -6576,15 +6576,15 @@ function handle_route_asset_items(PDO $pdo): void
         echo '    <input type="hidden" name="backdoor" value="1">';
     }
 
-    echo '    <label style="margin:0;flex:1;min-width:180px;">1. Komoditas (Grup Aset) *';
-    echo '      <select name="group_id" id="assetFilterGroup" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, '- Semua / Pilih Komoditas -') . '</select>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">1. Komoditas (Grup Aset)';
+    echo '      <select name="group_id" id="assetFilterGroup" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, '- Semua Komoditas -') . '</select>';
     echo '    </label>';
     
-    echo '    <label style="margin:0;flex:1;min-width:180px;">2. Kategori Aset (Tipe) *';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">2. Kategori Aset (Tipe)';
     if ($groupId > 0) {
-        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, '- Semua / Pilih Kategori -') . '</select>';
+        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, '- Semua Kategori -', true) . '</select>';
     } else {
-        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, 0, true, '- Pilih Komoditas Terlebih Dahulu -') . '</select>';
+        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, 0, true, '- Semua Kategori -', true) . '</select>';
     }
     echo '    </label>';
 
@@ -6607,15 +6607,8 @@ function handle_route_asset_items(PDO $pdo): void
     echo '  </form>';
     echo '</div>';
 
-    // VALIDASI PEMILIHAN: Jika belum memilih Komoditas & Kategori dan belum mencari teks -> Tampilkan kotak petunjuk seperti di Mutasi Aset
-    if (($groupId <= 0 || $typeId <= 0) && $q === '' && $masterItemId <= 0 && !$showBackdoor) {
-        echo '<div style="text-align:center;padding:48px 24px;color:#475569;background:#f8fafc;border-radius:8px;border:2px dashed #cbd5e1;margin-bottom:24px;">';
-        echo '  <div style="font-size:36px;margin-bottom:10px;">📦</div>';
-        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Pilih Komoditas & Kategori, atau Cari Unit Aset</h3>';
-        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> & <strong>Kategori</strong> pada filter, atau gunakan <strong>Pencarian Aset</strong> untuk langsung mencari dan memilih unit aset yang ingin ditampilkan.</p>';
-        echo '</div>';
-    } else {
-        $where = ["1=1"];
+    // DAFTAR UNIT ASET: Menampilkan semua aset secara default jika filter Komoditas / Kategori tidak diset
+    $where = ["1=1"];
         $params = [];
 
         if ($showBackdoor) {
@@ -6688,7 +6681,6 @@ function handle_route_asset_items(PDO $pdo): void
             echo '</div>';
             echo asset_items_table($pdo, $rows);
         }
-    }
 
     echo '</section>';
 
