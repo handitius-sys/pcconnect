@@ -6474,7 +6474,7 @@ function handle_route_asset_items(PDO $pdo): void
                     flash('Gagal menghapus unit aset: ' . $e->getMessage(), 'err');
                 }
             }
-            redirect_to('asset_items');
+            redirect_to('asset_items', $_GET);
         } elseif ($action === 'restore_item') {
             require_regulation('asset_items', 'delete');
             $delId = (int)($_POST['id'] ?? 0);
@@ -6485,130 +6485,49 @@ function handle_route_asset_items(PDO $pdo): void
             } catch (Throwable $e) {
                 flash('Gagal memulihkan unit aset: ' . $e->getMessage(), 'err');
             }
-            redirect_to('asset_items', ['backdoor' => 1]);
+            redirect_to('asset_items', $_GET);
         }
     }
-    
-    $masterItemId = (int)($_GET['master_item_id'] ?? 0);
+
     $groupId = (int)($_GET['group_id'] ?? 0);
     $typeId = (int)($_GET['type_id'] ?? ($_GET['asset_type_id'] ?? ($_GET['category'] ?? 0)));
     $categoryRaw = trim((string)($_GET['category'] ?? ''));
     if ($typeId <= 0 && is_numeric($categoryRaw) && (int)$categoryRaw > 0) {
         $typeId = (int)$categoryRaw;
     }
-    $companyId = (int)($_GET['company_id'] ?? 0);
-    $locationId = (int)($_GET['location_id'] ?? 0);
+    $masterItemId = (int)($_GET['master_item_id'] ?? 0);
     $q = trim((string)($_GET['q'] ?? ''));
-
     $showBackdoor = !empty($_GET['backdoor']) || !empty($_GET['show_deleted']) || (isset($_GET['status']) && strtolower((string)$_GET['status']) === 'deleted');
 
-    $where = ["1=1"];
-    $params = [];
-
-    if ($showBackdoor) {
-        $where[] = "LOWER(ai.status) = 'deleted'";
-    } else {
-        $where[] = "LOWER(ai.status) <> 'deleted'";
-    }
-
-    if ($q !== '') {
-        $where[] = "(ai.asset_code LIKE ? OR (ai.alias_code IS NOT NULL AND ai.alias_code LIKE ?) OR (ai.serial_number IS NOT NULL AND ai.serial_number LIKE ?) OR (ai.source_pc_id IS NOT NULL AND ai.source_pc_id LIKE ?) OR ai.asset_name LIKE ? OR (ai.custodian_name IS NOT NULL AND ai.custodian_name LIKE ?))";
-        $likeQ = '%' . $q . '%';
-        $params[] = $likeQ;
-        $params[] = $likeQ;
-        $params[] = $likeQ;
-        $params[] = $likeQ;
-        $params[] = $likeQ;
-        $params[] = $likeQ;
-    }
-
-    if ($masterItemId > 0) {
-        $where[] = "ai.master_item_id = ?";
-        $params[] = $masterItemId;
-    }
-    if ($groupId > 0) {
-        $where[] = "ai.asset_group_id = ?";
-        $params[] = $groupId;
-    }
-    // Filter Kategori berbasis Tipe Aset (asset_type / asset_type_id)
-    if ($typeId > 0) {
-        $stmtT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
-        $stmtT->execute([$typeId]);
-        $tRow = $stmtT->fetch(PDO::FETCH_ASSOC);
-        $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
-        $tName = $tRow ? trim((string)$tRow['type_name']) : '';
-
-        $typeClauses = ["ai.asset_type_id = ?"];
-        $params[] = $typeId;
-        if ($tCode !== '') {
-            $typeClauses[] = "ai.asset_type = ?";
-            $params[] = $tCode;
+    // Data aset untuk combobox interaktif (Multi-kolom search)
+    $comboAssets = [];
+    try {
+        $cSql = "SELECT a.id, a.asset_code, a.alias_code, a.asset_name, a.brand, a.model, a.serial_number,
+                        a.asset_group_id, a.asset_type_id,
+                        COALESCE(g.group_name, 'IT') AS group_name,
+                        COALESCE(t.type_name, a.asset_type, '-') AS type_name,
+                        a.company_id, COALESCE(c.company_name, '-') AS company_name,
+                        a.location_id, COALESCE(loc.location_name, a.location_label, '-') AS display_location,
+                        a.location_label,
+                        COALESCE(a.custodian_name, '') AS custodian_name,
+                        COALESCE(a.custodian_nik, '') AS custodian_nik,
+                        a.asset_mode
+                 FROM asset_items a
+                 LEFT JOIN asset_groups g ON g.id = a.asset_group_id
+                 LEFT JOIN asset_types t ON t.id = a.asset_type_id
+                 LEFT JOIN asset_companies c ON a.company_id = c.id
+                 LEFT JOIN asset_locations loc ON a.location_id = loc.id
+                 WHERE LOWER(a.status) NOT IN ('inactive', 'deleted')";
+        if ($groupId > 0) {
+            $cSql .= " AND a.asset_group_id = " . (int)$groupId;
         }
-        if ($tName !== '' && $tName !== $tCode) {
-            $typeClauses[] = "ai.asset_type = ?";
-            $params[] = $tName;
+        if ($typeId > 0) {
+            $cSql .= " AND (a.asset_type_id = " . (int)$typeId . " OR a.asset_type = (SELECT type_code FROM asset_types WHERE id = " . (int)$typeId . " LIMIT 1))";
         }
-        $where[] = "(" . implode(" OR ", $typeClauses) . ")";
-    } elseif ($categoryRaw !== '') {
-        $stmtT2 = $pdo->prepare("SELECT id FROM asset_types WHERE type_code = ? OR type_name = ?");
-        $stmtT2->execute([$categoryRaw, $categoryRaw]);
-        $matchingTypeIds = $stmtT2->fetchAll(PDO::FETCH_COLUMN);
-
-        $catClauses = ["ai.asset_type = ?"];
-        $params[] = $categoryRaw;
-        if (!empty($matchingTypeIds)) {
-            $inPlaceholders = implode(',', array_fill(0, count($matchingTypeIds), '?'));
-            $catClauses[] = "ai.asset_type_id IN ($inPlaceholders)";
-            foreach ($matchingTypeIds as $mtId) {
-                $params[] = (int)$mtId;
-            }
-        }
-        $where[] = "(" . implode(" OR ", $catClauses) . ")";
-    }
-    if ($companyId > 0) {
-        $where[] = "ai.company_id = ?";
-        $params[] = $companyId;
-    }
-    if ($locationId > 0) {
-        $where[] = "ai.location_id = ?";
-        $params[] = $locationId;
-    }
-
-    $allowedSortFields = [
-        'created_at' => 'ai.created_at',
-        'asset_code' => 'ai.asset_code',
-        'company'    => 'c.company_name',
-        'custodian'  => 'ai.custodian_name',
-        'type_name'  => 'type_name',
-        'category'   => 'type_name',
-        'mode'       => 'ai.asset_mode',
-        'asset_name' => 'ai.asset_name',
-        'status'     => 'ai.status',
-    ];
-    $sortBy = trim((string)($_GET['sort_by'] ?? 'created_at'));
-    if (!isset($allowedSortFields[$sortBy])) {
-        $sortBy = 'created_at';
-    }
-    $sortDir = strtoupper(trim((string)($_GET['sort_dir'] ?? 'ASC')));
-    if ($sortDir !== 'DESC') {
-        $sortDir = 'ASC';
-    }
-
-    $orderByClause = $allowedSortFields[$sortBy] . ' ' . $sortDir . ', ai.id ' . $sortDir;
-
-    $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code,
-            COALESCE(t.type_name, ai.asset_type, '-') AS type_name,
-            COALESCE(NULLIF(ai.status, ''), st.status_code, 'active') AS status
-            FROM asset_items ai 
-            LEFT JOIN asset_companies c ON c.id = ai.company_id 
-            LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id 
-            LEFT JOIN asset_types t ON t.id = ai.asset_type_id
-            LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id
-            WHERE " . implode(" AND ", $where) . " 
-            ORDER BY {$orderByClause}";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $cSql .= " ORDER BY a.asset_code ASC LIMIT 1000";
+        $comboAssets = $pdo->query($cSql)->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {}
+    $comboAssetsJson = json_encode($comboAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     render_header('Unit Aset', $user);
     echo asset_nav_html();
@@ -6624,9 +6543,8 @@ function handle_route_asset_items(PDO $pdo): void
     }
 
     $addBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn primary" href="' . route_url('asset_item_form', $masterItemId ? ['master_item_id' => $masterItemId] : []) . '">+ Tambah Unit Aset</a>' : '';
-
-    // Tombol backdoor history deleted dihapus sesuai instruksi
-    $backdoorBtn = '';
+    $importBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn" href="' . route_url('asset_legacy_import') . '" style="background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600;">📥 Import Aset Lama (Excel)</a>' : '';
+    $exportBtn = '<a class="btn" href="' . route_url('export_excel', array_merge(['type' => 'asset_items'], $showBackdoor ? ['status' => 'deleted'] : [])) . '">Export Excel Unit Aset</a>';
 
     echo '<section class="panel">';
     
@@ -6637,69 +6555,359 @@ function handle_route_asset_items(PDO $pdo): void
             . '</div>';
     }
 
-    $importBtn = has_regulation('asset_items', 'create', $user) ? '<a class="btn" href="' . route_url('asset_legacy_import') . '" style="background:#0f766e;color:#fff;border-color:#0f766e;font-weight:600;">📥 Import Aset Lama (Excel)</a>' : '';
+    echo '<div class="split" style="align-items:center;margin-bottom:16px;">'
+        . '<div>'
+        . '  <h1 style="margin:0;display:flex;align-items:center;gap:8px;">📦 ' . e($filterTitle) . '</h1>'
+        . '  <p class="muted" style="margin:4px 0 0 0;">Pengelolaan daftar dan rincian unit aset fisik perusahaan.</p>'
+        . '</div>'
+        . '<div class="actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+        . $importBtn . $addBtn . $exportBtn
+        . '</div>'
+        . '</div>';
 
-    echo '<div class="split"><h1>' . $filterTitle . '</h1><div class="actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' . $backdoorBtn . $importBtn . $addBtn . '<a class="btn" href="' . route_url('export_excel', array_merge(['type' => 'asset_items'], $showBackdoor ? ['status' => 'deleted'] : [])) . '">Export Excel</a></div></div>';
-
-    // Layout Filter:
-    // Baris 1: Pencarian Kata Kunci (Kode Baru / Kode Lama / SN / Nama / Custodian)
-    // Baris 2: Komoditas | Kategori
-    // Baris 3: Company | Lokasi (dan Reset Filter)
-        // Form Filter Ringkas & Rapi Selaras dengan Mutasi Aset (Form Inline .actions)
-    echo '<form method="get" class="actions" style="margin:16px 0 14px 0;align-items:flex-end;flex-wrap:wrap;gap:10px;">';
-    echo '<input type="hidden" name="route" value="asset_items">';
+    // Form Filter: Wajib Pilih Komoditas & Kategori (asset_type) atau Pencarian Interaktif persis model Mutasi Aset
+    echo '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">';
+    echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;flex-wrap:wrap;margin:0;">';
+    echo '    <input type="hidden" name="route" value="asset_items">';
     if ($masterItemId > 0) {
-        echo '<input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
+        echo '    <input type="hidden" name="master_item_id" value="' . $masterItemId . '">';
     }
     if ($showBackdoor) {
-        echo '<input type="hidden" name="backdoor" value="1">';
+        echo '    <input type="hidden" name="backdoor" value="1">';
     }
 
-    echo '<label style="margin:0;flex:1;min-width:240px;">Cari (Kode / Nama / SN / PIC)'
-        . '<input name="q" value="' . e($q) . '" placeholder="Ketik kata kunci pencarian unit aset...">'
-        . '</label>';
-
-    echo '<label style="margin:0;min-width:160px;">Komoditas'
-        . '<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select>'
-        . '</label>';
-
-    echo '<label style="margin:0;min-width:160px;">Kategori'
-        . '<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select>'
-        . '</label>';
-
-    echo '<label style="margin:0;min-width:160px;">Company'
-        . '<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select>'
-        . '</label>';
-
-    echo '<label style="margin:0;min-width:160px;">Lokasi'
-        . '<select name="location_id" onchange="this.form.submit()">' . asset_location_options($pdo, $locationId, true, 'Semua Lokasi') . '</select>'
-        . '</label>';
-
-    echo '<button class="btn primary" style="height:38px;align-self:flex-end;">Filter</button>';
-
-    if ($q !== '' || $masterItemId || $groupId || $typeId > 0 || $categoryRaw !== '' || $companyId || $locationId || $showBackdoor) {
-        echo '<a class="btn" href="' . route_url('asset_items') . '" style="height:38px;align-self:flex-end;display:inline-flex;align-items:center;">Reset</a>';
-    }
-
-    echo '</form>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">1. Komoditas (Grup Aset) *';
+    echo '      <select name="group_id" id="assetFilterGroup" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, '- Semua / Pilih Komoditas -') . '</select>';
+    echo '    </label>';
     
-    echo asset_items_table($pdo, $rows);
+    echo '    <label style="margin:0;flex:1;min-width:180px;">2. Kategori Aset (Tipe) *';
+    if ($groupId > 0) {
+        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, '- Semua / Pilih Kategori -') . '</select>';
+    } else {
+        echo '      <select name="type_id" id="assetFilterType" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, 0, true, '- Pilih Komoditas Terlebih Dahulu -') . '</select>';
+    }
+    echo '    </label>';
+
+    echo '    <div style="position:relative;flex:1.5;min-width:280px;">';
+    echo '      <label style="margin:0 0 4px 0;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">';
+    echo '        <span>Cari & Pilih Unit Aset (Kode Baru / Kode Lama / Nama / SN / Pengguna)</span>';
+    echo '      </label>';
+    echo '      <div style="position:relative;display:flex;align-items:stretch;">';
+    echo '        <input type="text" id="unitAssetSearch" name="q" value="' . e($q) . '" placeholder="🔍 Ketik kode, nama, SN, pengguna..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 58px 8px 12px;font-size:13px;border:1.5px solid #0284c7;border-radius:6px;height:38px;background:#fff;" onfocus="showUnitAssetDropdown(this.value)" oninput="showUnitAssetDropdown(this.value)" onkeydown="onUnitAssetKeyDown(event)">';
+    echo '        <button type="button" id="unitAssetClearBtn" onclick="clearUnitAssetSearch()" style="display:' . ($q !== '' ? 'block' : 'none') . ';position:absolute;right:28px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:4px;line-height:1;" title="Hapus pencarian">✕</button>';
+    echo '        <button type="button" id="unitAssetDropdownBtn" onclick="toggleUnitAssetDropdown(event)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#0284c7;font-size:12px;cursor:pointer;padding:4px;line-height:1;" title="Buka / Tutup daftar pilihan aset">▼</button>';
+    echo '      </div>';
+    echo '      <div id="unitAssetDropdownResults" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:300px;overflow-y:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.18);z-index:99999;"></div>';
+    echo '    </div>';
+    
+    echo '    <button class="btn primary" type="submit" style="height:38px;">Tampilkan</button>';
+    if ($groupId > 0 || $typeId > 0 || $q !== '' || $masterItemId > 0 || $showBackdoor) {
+        echo '    <a href="' . route_url('asset_items') . '" class="btn" style="height:38px;">Reset</a>';
+    }
+    echo '  </form>';
+    echo '</div>';
+
+    // VALIDASI PEMILIHAN: Jika belum memilih Komoditas & Kategori dan belum mencari teks -> Tampilkan kotak petunjuk seperti di Mutasi Aset
+    if (($groupId <= 0 || $typeId <= 0) && $q === '' && $masterItemId <= 0 && !$showBackdoor) {
+        echo '<div style="text-align:center;padding:48px 24px;color:#475569;background:#f8fafc;border-radius:8px;border:2px dashed #cbd5e1;margin-bottom:24px;">';
+        echo '  <div style="font-size:36px;margin-bottom:10px;">📦</div>';
+        echo '  <h3 style="margin:0 0 6px 0;color:#0f172a;font-size:17px;font-weight:700;">Pilih Komoditas & Kategori, atau Cari Unit Aset</h3>';
+        echo '  <p style="margin:0;color:#64748b;font-size:13.5px;max-width:540px;margin:0 auto;line-height:1.5;">Silakan pilih <strong>Komoditas</strong> & <strong>Kategori</strong> pada filter, atau gunakan <strong>Pencarian Aset</strong> untuk langsung mencari dan memilih unit aset yang ingin ditampilkan.</p>';
+        echo '</div>';
+    } else {
+        $where = ["1=1"];
+        $params = [];
+
+        if ($showBackdoor) {
+            $where[] = "LOWER(ai.status) = 'deleted'";
+        } else {
+            $where[] = "LOWER(ai.status) <> 'deleted'";
+        }
+
+        if ($q !== '') {
+            $where[] = "(ai.asset_code LIKE ? OR (ai.alias_code IS NOT NULL AND ai.alias_code LIKE ?) OR (ai.serial_number IS NOT NULL AND ai.serial_number LIKE ?) OR (ai.source_pc_id IS NOT NULL AND ai.source_pc_id LIKE ?) OR ai.asset_name LIKE ? OR (ai.custodian_name IS NOT NULL AND ai.custodian_name LIKE ?))";
+            $likeQ = '%' . $q . '%';
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+            $params[] = $likeQ;
+        }
+
+        if ($masterItemId > 0) {
+            $where[] = "ai.master_item_id = ?";
+            $params[] = $masterItemId;
+        }
+        if ($groupId > 0) {
+            $where[] = "ai.asset_group_id = ?";
+            $params[] = $groupId;
+        }
+        if ($typeId > 0) {
+            $stmtT = $pdo->prepare("SELECT type_code, type_name FROM asset_types WHERE id = ?");
+            $stmtT->execute([$typeId]);
+            $tRow = $stmtT->fetch(PDO::FETCH_ASSOC);
+            $tCode = $tRow ? trim((string)$tRow['type_code']) : '';
+            $tName = $tRow ? trim((string)$tRow['type_name']) : '';
+
+            $typeClauses = ["ai.asset_type_id = ?"];
+            $params[] = $typeId;
+            if ($tCode !== '') {
+                $typeClauses[] = "ai.asset_type = ?";
+                $params[] = $tCode;
+            }
+            if ($tName !== '' && $tName !== $tCode) {
+                $typeClauses[] = "ai.asset_type = ?";
+                $params[] = $tName;
+            }
+            $where[] = "(" . implode(" OR ", $typeClauses) . ")";
+        }
+
+        $sql = "SELECT ai.*, c.company_name, ami.item_name AS master_item_name, ami.item_code AS master_item_code,
+                COALESCE(t.type_name, ai.asset_type, '-') AS type_name,
+                COALESCE(NULLIF(ai.status, ''), st.status_code, 'active') AS status
+                FROM asset_items ai 
+                LEFT JOIN asset_companies c ON c.id = ai.company_id 
+                LEFT JOIN asset_master_items ami ON ami.id = ai.master_item_id 
+                LEFT JOIN asset_types t ON t.id = ai.asset_type_id
+                LEFT JOIN asset_statuses st ON st.id = ai.asset_status_id
+                WHERE " . implode(" AND ", $where) . " 
+                ORDER BY ai.asset_code ASC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            echo '<div style="text-align:center;padding:36px;color:#64748b;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;margin-bottom:24px;">Tidak ada unit aset yang sesuai dengan filter ini.</div>';
+        } else {
+            echo '<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">';
+            echo '  <h3 style="margin:0;color:#1e3a8a;font-size:15px;">Daftar Unit Aset (' . count($rows) . ' Unit)</h3>';
+            if (!empty($rows[0]['type_name'])) {
+                echo '  <span class="badge ok">' . e($rows[0]['type_name']) . '</span>';
+            }
+            echo '</div>';
+            echo asset_items_table($pdo, $rows);
+        }
+    }
+
     echo '</section>';
+
+    // Client-side script untuk autocomplete Unit Aset sama seperti di Mutasi Aset
+    echo '<script>
+    var comboUnitAssets = ' . $comboAssetsJson . ';
+    var currentUnitMatches = [];
+    var activeUnitIndex = -1;
+
+    function toggleUnitAssetDropdown(e) {
+        if (e) e.stopPropagation();
+        var dd = document.getElementById("unitAssetDropdownResults");
+        if (!dd) return;
+        if (dd.style.display === "block") {
+            dd.style.display = "none";
+        } else {
+            var searchInput = document.getElementById("unitAssetSearch");
+            showUnitAssetDropdown(searchInput ? searchInput.value : "");
+            if (searchInput) searchInput.focus();
+        }
+    }
+
+    function clearUnitAssetSearch() {
+        var input = document.getElementById("unitAssetSearch");
+        if (input) input.value = "";
+        var clearBtn = document.getElementById("unitAssetClearBtn");
+        if (clearBtn) clearBtn.style.display = "none";
+        var dd = document.getElementById("unitAssetDropdownResults");
+        if (dd) dd.style.display = "none";
+        if (input) input.focus();
+    }
+
+    function showUnitAssetDropdown(q) {
+        var dd = document.getElementById("unitAssetDropdownResults");
+        var clearBtn = document.getElementById("unitAssetClearBtn");
+        if (!dd) return;
+
+        var term = (q || "").trim().toLowerCase();
+        if (clearBtn) clearBtn.style.display = term.length > 0 ? "block" : "none";
+
+        activeUnitIndex = -1;
+        currentUnitMatches = comboUnitAssets.filter(function(item) {
+            if (!term) return true;
+            var code = (item.asset_code || "").toLowerCase();
+            var alias = (item.alias_code || "").toLowerCase();
+            var name = (item.asset_name || "").toLowerCase();
+            var brand = (item.brand || "").toLowerCase();
+            var model = (item.model || "").toLowerCase();
+            var sn = (item.serial_number || "").toLowerCase();
+            var custName = (item.custodian_name || "").toLowerCase();
+            var custNik = (item.custodian_nik || "").toLowerCase();
+            var comp = (item.company_name || "").toLowerCase();
+            var loc = (item.display_location || "").toLowerCase();
+            return code.includes(term) || alias.includes(term) || name.includes(term) || brand.includes(term) || model.includes(term) || sn.includes(term) || custName.includes(term) || custNik.includes(term) || comp.includes(term) || loc.includes(term);
+        });
+
+        if (currentUnitMatches.length === 0) {
+            dd.innerHTML = "<div style=\"padding:14px;font-size:12px;color:#64748b;text-align:center;\">Tidak ada unit aset yang cocok dengan kata kunci &ldquo;" + escapeHtml(q) + "&rdquo;.</div>";
+            dd.style.display = "block";
+            return;
+        }
+
+        dd.innerHTML = "";
+
+        var header = document.createElement("div");
+        header.style.cssText = "padding:6px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#64748b;font-weight:600;display:flex;justify-content:space-between;align-items:center;";
+        header.innerHTML = "<span>Menampilkan " + Math.min(currentUnitMatches.length, 30) + " dari " + currentUnitMatches.length + " unit aset</span><span style=\"font-size:10px;color:#94a3b8;\">Gunakan panah ↑↓ & Enter</span>";
+        dd.appendChild(header);
+
+        currentUnitMatches.slice(0, 30).forEach(function(item, idx) {
+            var row = document.createElement("div");
+            row.className = "combo-item-row";
+            row.setAttribute("data-idx", idx);
+            row.style.cssText = "padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:background 0.15s ease;";
+
+            var left = document.createElement("div");
+            left.style.cssText = "flex:1;min-width:0;";
+
+            var aliasBadge = item.alias_code ? (" <span style=\"background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid #bae6fd;\">[Lama: " + escapeHtml(item.alias_code) + "]</span>") : "";
+            var titleHtml = "<div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;\">"
+                + "<span style=\"font-weight:700;color:#0284c7;font-size:13px;\">" + escapeHtml(item.asset_code) + "</span>"
+                + aliasBadge
+                + "<span style=\"font-weight:600;color:#0f172a;font-size:13px;\">" + escapeHtml(item.asset_name || item.model || "-") + "</span>"
+                + "</div>";
+
+            var subHtml = "<div style=\"font-size:11.5px;color:#475569;margin-top:2px;\">"
+                + (item.serial_number && item.serial_number !== "-" ? ("SN: " + escapeHtml(item.serial_number) + " • ") : "")
+                + escapeHtml(item.group_name || "IT") + " › " + escapeHtml(item.type_name || "-")
+                + "</div>";
+
+            var metaHtml = "<div style=\"font-size:11px;color:#64748b;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;\">"
+                + "<span>🏢 " + escapeHtml(item.company_name || "-") + "</span>"
+                + "<span>📍 " + escapeHtml(item.display_location || item.location_label || "-") + "</span>"
+                + "<span>👤 " + (item.custodian_name ? (escapeHtml(item.custodian_name) + (item.custodian_nik ? " (" + escapeHtml(item.custodian_nik) + ")" : "")) : "Belum ada pengguna") + "</span>"
+                + "</div>";
+
+            left.innerHTML = titleHtml + subHtml + metaHtml;
+
+            row.appendChild(left);
+
+            row.onmouseenter = function() {
+                highlightUnitItem(idx);
+            };
+
+            row.onclick = function() {
+                selectUnitAsset(item);
+            };
+
+            dd.appendChild(row);
+        });
+
+        dd.style.display = "block";
+    }
+
+    function highlightUnitItem(idx) {
+        activeUnitIndex = idx;
+        var rows = document.querySelectorAll("#unitAssetDropdownResults .combo-item-row");
+        rows.forEach(function(r, i) {
+            if (i === idx) {
+                r.style.background = "#eff6ff";
+                r.style.borderLeft = "3px solid #0284c7";
+            } else {
+                r.style.background = "#fff";
+                r.style.borderLeft = "none";
+            }
+        });
+    }
+
+    function selectUnitAsset(item) {
+        var input = document.getElementById("unitAssetSearch");
+        if (input) input.value = item.asset_code;
+        var dd = document.getElementById("unitAssetDropdownResults");
+        if (dd) dd.style.display = "none";
+
+        var form = input ? input.closest("form") : null;
+        if (form) {
+            if (item.asset_group_id) {
+                var g = document.getElementById("assetFilterGroup");
+                if (g) g.value = item.asset_group_id;
+            }
+            if (item.asset_type_id) {
+                var t = document.getElementById("assetFilterType");
+                if (t) t.value = item.asset_type_id;
+            }
+            form.submit();
+        }
+    }
+
+    function onUnitAssetKeyDown(e) {
+        var dd = document.getElementById("unitAssetDropdownResults");
+        var isVisible = dd && dd.style.display === "block";
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!isVisible) {
+                showUnitAssetDropdown(e.target.value);
+                return;
+            }
+            var max = Math.min(currentUnitMatches.length, 30);
+            if (max > 0) {
+                var next = activeUnitIndex + 1;
+                if (next >= max) next = 0;
+                highlightUnitItem(next);
+                scrollUnitItemIntoView(next);
+            }
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (!isVisible) {
+                showUnitAssetDropdown(e.target.value);
+                return;
+            }
+            var max = Math.min(currentUnitMatches.length, 30);
+            if (max > 0) {
+                var prev = activeUnitIndex - 1;
+                if (prev < 0) prev = max - 1;
+                highlightUnitItem(prev);
+                scrollUnitItemIntoView(prev);
+            }
+        } else if (e.key === "Enter") {
+            if (isVisible && activeUnitIndex >= 0 && activeUnitIndex < currentUnitMatches.length) {
+                e.preventDefault();
+                selectUnitAsset(currentUnitMatches[activeUnitIndex]);
+            }
+        } else if (e.key === "Escape") {
+            if (dd) dd.style.display = "none";
+        }
+    }
+
+    function scrollUnitItemIntoView(idx) {
+        var rows = document.querySelectorAll("#unitAssetDropdownResults .combo-item-row");
+        if (rows[idx]) {
+            rows[idx].scrollIntoView({ block: "nearest" });
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/\'/g, "&#039;");
+    }
+
+    document.addEventListener("click", function(e) {
+        var dd = document.getElementById("unitAssetDropdownResults");
+        var searchInput = document.getElementById("unitAssetSearch");
+        var dropdownBtn = document.getElementById("unitAssetDropdownBtn");
+        if (dd && searchInput) {
+            if (!dd.contains(e.target) && e.target !== searchInput && e.target !== dropdownBtn && (!dropdownBtn || !dropdownBtn.contains(e.target))) {
+                dd.style.display = "none";
+            }
+        }
+    });
+    </script>';
+
     render_footer();
 }
-
-/**
- * Handler Rute: Form Tambah / Edit / Lihat Detail (Read-Only) Unit Aset (`?route=asset_item_form`).
- *
- * [PROSES & TROUBLESHOOT]:
- * 1. Mengecek apakah parameter `view=1` dikirim untuk mengaktifkan Mode Lihat Detail (Read-Only).
- * 2. Validasi hak akses regulasi:
- *    - Mode View (`$viewOnly = true`): hanya membutuhkan izin `view` pada modul `asset_items`.
- *    - Mode Edit (`$id > 0`): membutuhkan izin `edit` pada modul `asset_items`.
- *    - Mode Create (`$id === 0`): membutuhkan izin `create` pada modul `asset_items`.
- * 3. Memblokir segala request `POST` jika sedang berada di Mode View (`$viewOnly = true`).
- * 4. Merender form unit aset, panel anggota bundle, dan panel riwayat mutasi.
- */
 function handle_route_asset_item_form(PDO $pdo): void
 {
     $user = require_login();
