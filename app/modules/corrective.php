@@ -2279,7 +2279,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             <div class="actions no-print">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
                 <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">Export Excel</a>
-                <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>
+                <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>
             </div>
         </div>
         <?php render_report_print_settings_modal(); ?>

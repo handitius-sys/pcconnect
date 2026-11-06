@@ -1614,7 +1614,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
         . '  </div>'
         . '  <div class="actions no-print">'
         . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
-        . '    <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>'
+        . '    <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>'
         . '  </div>'
         . '</div>'
 

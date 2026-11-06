@@ -7388,7 +7388,7 @@ function handle_route_asset_movements(PDO $pdo): void
         . '  </div>'
         . '  <div class="actions no-print">'
         . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
-        . '    <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>'
+        . '    <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>'
         . '  </div>'
         . '</div>'
 
@@ -7644,7 +7644,7 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '  </div>';
     echo '  <div class="actions no-print">';
     echo '    <a class="btn primary" href="' . e($exportUrl) . '">Export Excel</a>';
-    echo '    <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button>';
+    echo '    <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>';
     echo '  </div>';
     echo '</div>';
 

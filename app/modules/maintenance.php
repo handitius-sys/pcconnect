@@ -3121,7 +3121,7 @@ function handle_route_reports(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
     }
@@ -3228,7 +3228,7 @@ function handle_route_maintenance_status_report(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn" onclick="openPrintSettings()">Print Setting & Page Setup</button></div></div></section>';
+    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button></div></div></section>';
     echo '<section class="panel"><div class="grid five"><div class="stat"><strong>' . e($counts['total']) . '</strong><span>Total</span></div><div class="stat"><strong>' . e($counts['completed']) . '</strong><span>Sudah Maintenance</span></div><div class="stat"><strong>' . e($counts['pending']) . '</strong><span>Pending</span></div><div class="stat"><strong>' . e($counts['cancelled']) . '</strong><span>Batal (Tenggang Waktu)</span></div><div class="stat"><strong>' . e($counts['expired']) . '</strong><span>Expired &gt; 7 Hari</span></div></div></section>';
     echo '<section class="panel"><form method="get"><input type="hidden" name="route" value="maintenance_status_report"><div class="grid four"><label>Tipe Aset<select name="asset_type"><option value="">Semua</option><option value="pc"' . ($assetTypeFilter === 'pc' ? ' selected' : '') . '>PC</option><option value="printer"' . ($assetTypeFilter === 'printer' ? ' selected' : '') . '>Printer</option></select></label><label>Status<select name="status_group"><option value="">Semua</option><option value="completed"' . ($statusFilter === 'completed' ? ' selected' : '') . '>Sudah Maintenance</option><option value="pending"' . ($statusFilter === 'pending' ? ' selected' : '') . '>Pending</option><option value="cancelled"' . ($statusFilter === 'cancelled' ? ' selected' : '') . '>Batal (Tenggang Waktu)</option><option value="expired"' . ($statusFilter === 'expired' ? ' selected' : '') . '>Expired &gt; 7 Hari</option></select></label><label>Teknisi<select name="technician_id"><option value="0">Semua Teknisi</option>';
     foreach ($techs as $tech) {
@@ -3389,13 +3389,12 @@ function export_excel(PDO $pdo, string $type): never
         ob_end_clean();
     }
 
-    $filename = 'pcconnect-' . preg_replace('/[^a-z0-9_-]/i', '', $type) . '-' . date('Ymd-His') . '.xls';
-    header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+    $filename = 'pcconnect-' . preg_replace('/[^a-z0-9_-]/i', '', $type) . '-' . date('Ymd-His') . '.xlsx';
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Pragma: no-cache');
     header('Expires: 0');
     header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-    echo "\xEF\xBB\xBF";
 
     if ($type === 'reports') {
         ensure_maintenance_work_schema($pdo);
@@ -3934,46 +3933,137 @@ function export_excel(PDO $pdo, string $type): never
 
 function output_tsv(array $headers, array $rows, string $title = 'Laporan'): void
 {
-    // Render Excel XML/HTML Workbook yang kompatibel penuh dengan MS Excel,
-    // menampilkan header tebal dengan border jelas, gridlines, dan format data rapi
-    echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' . "\r\n";
-    echo '<head>' . "\r\n";
-    echo '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' . "\r\n";
-    echo '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>' . htmlspecialchars($title) . '</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->' . "\r\n";
-    echo '<style>' . "\r\n";
-    echo '  table { border-collapse: collapse; width: 100%; font-family: Calibri, Arial, sans-serif; }' . "\r\n";
-    echo '  th { background-color: #f1f5f9; color: #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; font-weight: bold; text-transform: uppercase; border: 0.5pt solid #000000; padding: 6px 10px; text-align: left; vertical-align: middle; }' . "\r\n";
-    echo '  td { color: #000000; font-family: Calibri, Arial, sans-serif; font-size: 10pt; border: 0.5pt solid #000000; padding: 5px 8px; vertical-align: middle; mso-number-format: "\\@"; }' . "\r\n";
-    echo '  .num { text-align: right; mso-number-format: "#,##0"; }' . "\r\n";
-    echo '  .date { text-align: center; mso-number-format: "yyyy-mm-dd"; }' . "\r\n";
-    echo '  .center { text-align: center; }' . "\r\n";
-    echo '</style>' . "\r\n";
-    echo '</head>' . "\r\n";
-    echo '<body>' . "\r\n";
-    echo '<table border="1">' . "\r\n";
-    echo '<thead><tr>' . "\r\n";
-    foreach ($headers as $h) {
-        echo '  <th>' . htmlspecialchars((string)$h) . '</th>' . "\r\n";
-    }
-    echo '</tr></thead>' . "\r\n";
-    echo '<tbody>' . "\r\n";
-    foreach ($rows as $row) {
-        echo '<tr>' . "\r\n";
-        foreach ($row as $val) {
-            $strVal = (string)$val;
-            $class = '';
-            if (preg_match('/^\d{4}-\d{2}-\d{2}/', $strVal)) {
-                $class = ' class="date"';
-            } elseif (is_numeric($strVal) && strlen($strVal) > 0 && !str_starts_with($strVal, '0')) {
-                $class = ' class="num"';
+    // Generate native OpenXML .xlsx file using PHP ZipArchive
+    if (class_exists('ZipArchive')) {
+        $tempFile = tempnam(sys_get_temp_dir(), 'xlsx_');
+        $zip = new ZipArchive();
+        if ($zip->open($tempFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+            $contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' . "\r\n"
+                . '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' . "\r\n"
+                . '  <Default Extension="xml" ContentType="application/xml"/>' . "\r\n"
+                . '  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' . "\r\n"
+                . '  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' . "\r\n"
+                . '  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' . "\r\n"
+                . '</Types>';
+
+            $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . "\r\n"
+                . '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' . "\r\n"
+                . '</Relationships>';
+
+            $wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . "\r\n"
+                . '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' . "\r\n"
+                . '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' . "\r\n"
+                . '</Relationships>';
+
+            $cleanTitle = preg_replace('/[\\\/\?\*\[\]:]/', '', $title);
+            $cleanTitle = mb_substr($cleanTitle ?: 'Sheet1', 0, 31);
+            $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' . "\r\n"
+                . '  <sheets>' . "\r\n"
+                . '    <sheet name="' . htmlspecialchars($cleanTitle, ENT_XML1, 'UTF-8') . '" sheetId="1" r:id="rId1"/>' . "\r\n"
+                . '  </sheets>' . "\r\n"
+                . '</workbook>';
+
+            $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' . "\r\n"
+                . '  <fonts count="2">' . "\r\n"
+                . '    <font><sz val="10"/><color rgb="FF000000"/><name val="Calibri"/></font>' . "\r\n"
+                . '    <font><b/><sz val="10.5"/><color rgb="FF000000"/><name val="Calibri"/></font>' . "\r\n"
+                . '  </fonts>' . "\r\n"
+                . '  <fills count="3">' . "\r\n"
+                . '    <fill><patternFill patternType="none"/></fill>' . "\r\n"
+                . '    <fill><patternFill patternType="gray125"/></fill>' . "\r\n"
+                . '    <fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/></patternFill></fill>' . "\r\n"
+                . '  </fills>' . "\r\n"
+                . '  <borders count="2">' . "\r\n"
+                . '    <border><left/><right/><top/><bottom/><diagonal/></border>' . "\r\n"
+                . '    <border>' . "\r\n"
+                . '      <left style="thin"><color rgb="FF000000"/></left>' . "\r\n"
+                . '      <right style="thin"><color rgb="FF000000"/></right>' . "\r\n"
+                . '      <top style="thin"><color rgb="FF000000"/></top>' . "\r\n"
+                . '      <bottom style="thin"><color rgb="FF000000"/></bottom>' . "\r\n"
+                . '    </border>' . "\r\n"
+                . '  </borders>' . "\r\n"
+                . '  <cellStyleXfs count="1">' . "\r\n"
+                . '    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>' . "\r\n"
+                . '  </cellStyleXfs>' . "\r\n"
+                . '  <cellXfs count="5">' . "\r\n"
+                . '    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' . "\r\n"
+                . '    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>' . "\r\n"
+                . '    <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' . "\r\n"
+                . '    <xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>' . "\r\n"
+                . '    <xf numFmtId="14" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' . "\r\n"
+                . '  </cellXfs>' . "\r\n"
+                . '</styleSheet>';
+
+            $colLetter = function(int $n): string {
+                $s = '';
+                while ($n >= 0) {
+                    $s = chr(($n % 26) + 65) . $s;
+                    $n = intdiv($n, 26) - 1;
+                }
+                return $s;
+            };
+
+            $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
+                . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' . "\r\n"
+                . '  <sheetViews><sheetView tabSelected="1" workbookViewId="0"><pane state="frozen" ySplit="1" topLeftCell="A2"/></sheetView></sheetViews>' . "\r\n"
+                . '  <sheetData>' . "\r\n";
+
+            // Row 1: Headers
+            $sheetXml .= '    <row r="1">' . "\r\n";
+            foreach ($headers as $cIdx => $h) {
+                $ref = $colLetter($cIdx) . '1';
+                $sheetXml .= '      <c r="' . $ref . '" t="inlineStr" s="1"><is><t>' . htmlspecialchars((string)$h, ENT_XML1, 'UTF-8') . '</t></is></c>' . "\r\n";
             }
-            echo '  <td' . $class . '>' . htmlspecialchars($strVal) . '</td>' . "\r\n";
+            $sheetXml .= '    </row>' . "\r\n";
+
+            // Data rows
+            $rNum = 2;
+            foreach ($rows as $row) {
+                $sheetXml .= '    <row r="' . $rNum . '">' . "\r\n";
+                $cIdx = 0;
+                foreach ($row as $val) {
+                    $ref = $colLetter($cIdx) . $rNum;
+                    $strVal = (string)$val;
+                    if ($strVal !== '' && is_numeric($strVal) && strlen($strVal) < 11 && !str_starts_with($strVal, '0')) {
+                        $sheetXml .= '      <c r="' . $ref . '" s="3"><v>' . $strVal . '</v></c>' . "\r\n";
+                    } elseif (preg_match('/^\d{4}-\d{2}-\d{2}/', $strVal)) {
+                        $sheetXml .= '      <c r="' . $ref . '" t="inlineStr" s="4"><is><t>' . htmlspecialchars($strVal, ENT_XML1, 'UTF-8') . '</t></is></c>' . "\r\n";
+                    } else {
+                        $sheetXml .= '      <c r="' . $ref . '" t="inlineStr" s="2"><is><t>' . htmlspecialchars($strVal, ENT_XML1, 'UTF-8') . '</t></is></c>' . "\r\n";
+                    }
+                    $cIdx++;
+                }
+                $sheetXml .= '    </row>' . "\r\n";
+                $rNum++;
+            }
+
+            $sheetXml .= '  </sheetData>' . "\r\n";
+            $sheetXml .= '</worksheet>';
+
+            $zip->addFromString('[Content_Types].xml', $contentTypes);
+            $zip->addFromString('_rels/.rels', $rels);
+            $zip->addFromString('xl/_rels/workbook.xml.rels', $wbRels);
+            $zip->addFromString('xl/workbook.xml', $workbook);
+            $zip->addFromString('xl/styles.xml', $styles);
+            $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+            $zip->close();
+
+            readfile($tempFile);
+            @unlink($tempFile);
+            return;
         }
-        echo '</tr>' . "\r\n";
     }
-    echo '</tbody>' . "\r\n";
-    echo '</table>' . "\r\n";
-    echo '</body></html>' . "\r\n";
+
+    // Fallback: TSV
+    echo implode("\t", array_map('excel_cell', $headers)) . "\r\n";
+    foreach ($rows as $row) {
+        echo implode("\t", array_map('excel_cell', array_values($row))) . "\r\n";
+    }
 }
 
 function excel_cell(mixed $value): string
@@ -3982,4 +4072,5 @@ function excel_cell(mixed $value): string
     $text = str_replace(["\r\n", "\n", "\r", "\t"], ' ', $text);
     return $text;
 }
+
 
