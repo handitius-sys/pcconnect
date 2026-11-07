@@ -2259,14 +2259,31 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $user = require_role(['admin', 'maintenance_admin', 'technician', 'corrective_maintenance']);
     ensure_corrective_maintenance_schema($pdo);
 
+    $startDate = trim((string)($_GET['start_date'] ?? ''));
+    $endDate = trim((string)($_GET['end_date'] ?? ''));
+    $where = ["1=1"];
+    $params = [];
+    if ($startDate !== '') {
+        $where[] = "DATE(cr.repaired_at) >= ?";
+        $params[] = $startDate;
+    }
+    if ($endDate !== '') {
+        $where[] = "DATE(cr.repaired_at) <= ?";
+        $params[] = $endDate;
+    }
+    $whereSql = implode(' AND ', $where);
+
     $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
                    ma.maintenance_asset_code, ma.name AS maintenance_asset_name, ai.alias_code AS legacy_code
             FROM corrective_repairs cr
             JOIN corrective_tickets t ON t.id = cr.ticket_id
             LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
             LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
+            WHERE {$whereSql}
             ORDER BY cr.repaired_at DESC, cr.id DESC";
-    $repairs = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($_GET['print'])) {
         $headers = ['No', 'Tanggal & Tiket', 'Kode Aset', 'Kode Lama', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
@@ -2303,11 +2320,13 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 $costTxt
             ];
         }
-        render_report_print_standalone_page('Laporan Corrective Maintenance (Reparasi & Sparepart)', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+        $periodLabel = format_report_period_label($startDate, $endDate);
+        render_report_print_standalone_page('Laporan Corrective Maintenance (Reparasi & Sparepart)', $periodLabel, $headers, $printRows, $pdo);
     }
 
     render_header('Riwayat Reparasi & Sparepart', $user);
-    render_report_document_header('Laporan Corrective Maintenance (Reparasi & Sparepart)', 'Per ' . date('F Y'), $pdo);
+    $periodLabel = format_report_period_label($startDate, $endDate);
+    render_report_document_header('Laporan Corrective Maintenance (Reparasi & Sparepart)', $periodLabel, $pdo);
     ?>
     <section class="panel">
         <div class="split">
@@ -2317,11 +2336,35 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </div>
             <div class="actions no-print">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
-                <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">Export Excel</a>
+                <?php
+    $exportParams = ['type' => 'corrective_repairs'];
+    if ($startDate !== '') $exportParams['start_date'] = $startDate;
+    if ($endDate !== '') $exportParams['end_date'] = $endDate;
+    ?>
+                <a class="btn" href="<?= route_url('export_excel', $exportParams) ?>">Export Excel</a>
                 <a class="btn primary" href="<?= e(route_url('corrective_repairs', array_merge($_GET, ['print' => 1]))) ?>" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>
             </div>
         </div>
         <?php render_report_print_settings_modal(); ?>
+        <?php
+        $todayStr = date('Y-m-d');
+        $valStart = $startDate !== '' ? $startDate : $todayStr;
+        $valEnd = $endDate !== '' ? $endDate : $todayStr;
+        ?>
+        <form method="get" class="actions no-print" style="margin:16px 0 16px 0;align-items:flex-end;gap:12px;">
+            <input type="hidden" name="route" value="corrective_repairs">
+            <label style="margin:0;">Rentang Tanggal
+                <div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
+                    <input type="date" name="start_date" value="<?= e($valStart) ?>" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;">
+                    <span style="font-weight:600;color:#64748b;">s/d</span>
+                    <input type="date" name="end_date" value="<?= e($valEnd) ?>" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;">
+                </div>
+            </label>
+            <button class="btn primary" style="height:38px;">Filter</button>
+            <?php if ($startDate !== '' || $endDate !== ''): ?>
+                <a class="btn" href="<?= route_url('corrective_repairs') ?>" style="height:38px;line-height:24px;">Reset</a>
+            <?php endif; ?>
+        </form>
 
         <div style="overflow-x:auto;">
         <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">

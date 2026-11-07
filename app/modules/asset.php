@@ -7756,15 +7756,20 @@ function handle_route_report_asset_items(PDO $pdo): void
     render_report_print_settings_modal();
 
     // 9. Form Filter Pencarian
+    $todayStr = date('Y-m-d');
+    $valStart = $startDate !== '' ? $startDate : $todayStr;
+    $valEnd = $endDate !== '' ? $endDate : $todayStr;
+
     echo '<section class="panel no-print" style="padding:14px 18px;margin-bottom:20px;">';
     echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;">';
     echo '    <input type="hidden" name="route" value="report_asset_items">';
-    echo '    <label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>';
-    echo '    <span style="padding-bottom:10px;font-weight:600;color:#64748b;">s/d</span>';
-    echo '    <label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>';
-    echo '    <label style="margin:0;flex:1;min-width:180px;">Komoditas (Grup Aset)<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select></label>';
-    echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori Aset (Tipe)<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori (Tipe)', true) . '</select></label>';
-    echo '    <label style="margin:0;flex:1;min-width:160px;">Company<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select></label>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">Komoditas<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select></label>';
+    echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori', true) . '</select></label>';
+    echo '    <div style="display:inline-flex;align-items:center;gap:6px;">';
+    echo '      <input type="date" name="start_date" value="' . e($valStart) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;">';
+    echo '      <span style="font-weight:600;color:#64748b;">s/d</span>';
+    echo '      <input type="date" name="end_date" value="' . e($valEnd) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;">';
+    echo '    </div>';
     echo '    <button class="btn primary" type="submit">Filter</button>';
     echo '    <a class="btn" href="' . route_url('report_asset_items') . '">Reset</a>';
     echo '  </form>';

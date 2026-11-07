@@ -3081,7 +3081,8 @@ function handle_route_reports(PDO $pdo): void
     ensure_maintenance_work_schema($pdo);
     cancel_expired_maintenance_schedules($pdo);
     render_header('Report Maintenance', $user);
-    render_report_document_header('Laporan Preventive Maintenance', 'Per ' . date('F Y'), $pdo);
+    $periodLabel = format_report_period_label($startDate, $endDate);
+    render_report_document_header('Laporan Preventive Maintenance', $periodLabel, $pdo);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
         echo printer_schema_warning();
@@ -3093,6 +3094,8 @@ function handle_route_reports(PDO $pdo): void
 
     $pcFilter = trim($_GET['pc_id'] ?? '');
     $techFilter = (int)($_GET['technician_id'] ?? 0);
+    $startDate = trim((string)($_GET['start_date'] ?? ''));
+    $endDate = trim((string)($_GET['end_date'] ?? ''));
     $sql = $printerReady
         ? "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id, s.printer_id) pc_id, ai.alias_code, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(ai.custodian_name, p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
         : "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id) pc_id, ai.alias_code, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(ai.custodian_name, p.owner_name) owner_name FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
@@ -3108,6 +3111,14 @@ function handle_route_reports(PDO $pdo): void
     if ($user['role'] === 'technician') {
         $sql .= ' AND s.technician_id = ?';
         $params[] = $user['id'];
+    }
+    if ($startDate !== '') {
+        $sql .= ' AND s.scheduled_date >= ?';
+        $params[] = $startDate;
+    }
+    if ($endDate !== '') {
+        $sql .= ' AND s.scheduled_date <= ?';
+        $params[] = $endDate;
     }
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
@@ -3135,7 +3146,7 @@ function handle_route_reports(PDO $pdo): void
                 (string)($summary['summary_text'] ?? '-')
             ];
         }
-        $periodLabel = format_report_period_label('', '');
+        $periodLabel = format_report_period_label($startDate, $endDate);
         render_report_print_standalone_page('Laporan Preventive Maintenance', $periodLabel, $headers, $printRows, $pdo);
     }
     $pcs = $pdo->query('SELECT pc_id, owner_name FROM pcs ORDER BY pc_id')->fetchAll();
@@ -3148,7 +3159,18 @@ function handle_route_reports(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <a class="btn primary" href="' . e(route_url('reports', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
+    if ($startDate !== '') {
+        $exportParams['start_date'] = $startDate;
+    }
+    if ($endDate !== '') {
+        $exportParams['end_date'] = $endDate;
+    }
+        $todayStr = date('Y-m-d');
+    $valStart = $startDate !== '' ? $startDate : $todayStr;
+    $valEnd = $endDate !== '' ? $endDate : $todayStr;
+
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <a class="btn primary" href="' . e(route_url('reports', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a></div>';
+    echo '<form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;"><label style="margin:0;">Rentang Tanggal<div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;"><input type="date" name="start_date" value="' . e($valStart) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"><span style="font-weight:600;color:#64748b;">s/d</span><input type="date" name="end_date" value="' . e($valEnd) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"></div></label><label style="margin:0;min-width:180px;">Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
     }
@@ -3163,7 +3185,7 @@ function handle_route_reports(PDO $pdo): void
     foreach ($techs as $tech) {
         echo '<option value="' . e($tech['id']) . '"' . ($techFilter === (int)$tech['id'] ? ' selected' : '') . '>' . e($tech['name']) . '</option>';
     }
-    echo '</select></label><label>&nbsp;<button class="btn primary">Filter Report</button></label></div></form></section>'
+    echo '</select></label><label style="margin:0;">&nbsp;<button class="btn primary" style="height:38px;">Filter Report</button></label><label style="margin:0;">&nbsp;<a class="btn" href="' . route_url('reports') . '" style="height:38px;line-height:24px;">Reset</a></label></div></form></section>'
         . '<section class="panel">'
 
         . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
@@ -3433,6 +3455,8 @@ function export_excel(PDO $pdo, string $type): never
         $printerReady = printer_schema_ready($pdo);
         $pcFilter = trim((string)($_GET['pc_id'] ?? ''));
         $techFilter = (int)($_GET['technician_id'] ?? 0);
+        $startDate = trim((string)($_GET['start_date'] ?? ''));
+        $endDate = trim((string)($_GET['end_date'] ?? ''));
         $sql = $printerReady
             ? "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id, s.printer_id) pc_id, ai.alias_code, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(ai.custodian_name, p.owner_name, pr.printer_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
             : "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id) pc_id, ai.alias_code, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.arrival_at, s.completed_at, s.photo_challenge_code schedule_challenge_code, COALESCE(ai.custodian_name, p.owner_name) owner_name, u.name technician FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
@@ -3448,6 +3472,14 @@ function export_excel(PDO $pdo, string $type): never
         if (($user['role'] ?? '') === 'technician') {
             $sql .= ' AND s.technician_id = ?';
             $params[] = $user['id'];
+        }
+        if ($startDate !== '') {
+            $sql .= ' AND s.scheduled_date >= ?';
+            $params[] = $startDate;
+        }
+        if ($endDate !== '') {
+            $sql .= ' AND s.scheduled_date <= ?';
+            $params[] = $endDate;
         }
         $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
         $stmt = $pdo->prepare($sql);
