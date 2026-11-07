@@ -7372,7 +7372,8 @@ function handle_route_asset_movements(PDO $pdo): void
     $endDate = trim((string)($_GET['end_date'] ?? ''));
 
     render_header('Report Mutasi Aset', $user);
-    render_report_document_header('Laporan Riwayat Mutasi Aset', 'Per ' . date('F Y'), $pdo);
+    $periodLabel = format_report_period_label($startDate, $endDate);
+    render_report_document_header('Laporan Riwayat Mutasi Aset', $periodLabel, $pdo);
     echo asset_nav_html();
     $rows = asset_movement_rows($pdo, $q, $startDate, $endDate);
 
@@ -7427,7 +7428,8 @@ function handle_route_asset_movements(PDO $pdo): void
                 (string)($row['pic'] ?? '-')
             ];
         }
-        render_report_print_standalone_page('Laporan Riwayat Mutasi Aset', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+        $periodLabel = format_report_period_label($startDate, $endDate);
+        render_report_print_standalone_page('Laporan Riwayat Mutasi Aset', $periodLabel, $headers, $printRows, $pdo);
     }
 
     $exportParams = ['type' => 'asset_movements'];
@@ -7450,6 +7452,7 @@ function handle_route_asset_movements(PDO $pdo): void
         . '<form method="get" class="actions no-print" style="margin:16px 0 14px 0;align-items:flex-end;">'
         . '<input type="hidden" name="route" value="asset_movements">'
         . '<label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
+        . '<span style="padding-bottom:10px;font-weight:600;color:#64748b;">s/d</span>'
         . '<label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>'
         . ''
         . '<button class="btn primary" style="height:38px;align-self:flex-end;">Filter</button>'
@@ -7581,6 +7584,8 @@ function handle_route_report_asset_items(PDO $pdo): void
     $locationId = (int)($_GET['location_id'] ?? 0);
     $status = trim((string)($_GET['status'] ?? ''));
     $q = trim((string)($_GET['q'] ?? ''));
+    $startDate = trim((string)($_GET['start_date'] ?? ''));
+    $endDate = trim((string)($_GET['end_date'] ?? ''));
 
     // 3. Penyusunan Klausa WHERE SQL Berdasarkan Filter Aktif
     $where = ["1=1"];
@@ -7638,6 +7643,14 @@ function handle_route_report_asset_items(PDO $pdo): void
         $params[] = $status;
     } else {
         $where[] = "LOWER(ai.status) <> 'deleted'";
+    }
+    if ($startDate !== '') {
+        $where[] = "DATE(ai.created_at) >= ?";
+        $params[] = $startDate;
+    }
+    if ($endDate !== '') {
+        $where[] = "DATE(ai.created_at) <= ?";
+        $params[] = $endDate;
     }
     if ($q !== '') {
         $where[] = "(ai.asset_code LIKE ? OR ai.asset_name LIKE ? OR COALESCE(ab.brand_name, ai.brand) LIKE ? OR ai.model LIKE ? OR ai.serial_number LIKE ? OR COALESCE(al.location_name, ai.location_label) LIKE ?)";
@@ -7697,7 +7710,8 @@ function handle_route_report_asset_items(PDO $pdo): void
                 $statusLabel
             ];
         }
-        render_report_print_standalone_page('Laporan Inventaris Unit Aset', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+        $periodLabel = format_report_period_label($startDate, $endDate);
+        render_report_print_standalone_page('Laporan Unit Aset', $periodLabel, $headers, $printRows, $pdo);
     }
 
     // 5. Pengelompokan Data & Agregasi Berdasarkan Komoditas
@@ -7716,8 +7730,9 @@ function handle_route_report_asset_items(PDO $pdo): void
     }
 
     // 6. Rendering Header Halaman
-    render_header('Report Unit Aset Terpilah per Komoditas', $user);
-    render_report_document_header('Laporan Inventaris Unit Aset', 'Per ' . date('F Y'), $pdo);
+    $periodLabel = format_report_period_label($startDate, $endDate);
+    render_header('Report Unit Aset', $user);
+    render_report_document_header('Laporan Unit Aset', $periodLabel, $pdo);
 
     $cleanFilters = $_GET;
     unset($cleanFilters['route']);
@@ -7728,7 +7743,7 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '<div class="split" style="margin-bottom:16px;">';
     echo '  <div>';
     echo '    <h1 style="margin:0;">Report Unit Aset</h1>';
-    echo '    <p class="muted" style="margin:4px 0 0 0;">Laporan rekapitulasi & detail Unit Aset terstruktur dan terpilah berdasarkan Komoditas (Grup Aset).</p>';
+    echo '    <p class="muted" style="margin:4px 0 0 0;">Laporan Detail Unit Aset</p>';
     echo '  </div>';
     echo '  <div class="actions no-print">';
     echo '    <a class="btn primary" href="' . e($exportUrl) . '">Export Excel</a>';
@@ -7744,10 +7759,12 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '<section class="panel no-print" style="padding:14px 18px;margin-bottom:20px;">';
     echo '  <form method="get" class="actions" style="gap:12px;align-items:flex-end;">';
     echo '    <input type="hidden" name="route" value="report_asset_items">';
+    echo '    <label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>';
+    echo '    <span style="padding-bottom:10px;font-weight:600;color:#64748b;">s/d</span>';
+    echo '    <label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>';
     echo '    <label style="margin:0;flex:1;min-width:180px;">Komoditas (Grup Aset)<select name="group_id" onchange="this.form.submit()">' . asset_group_options($pdo, $groupId, true, 'Semua Komoditas') . '</select></label>';
     echo '    <label style="margin:0;flex:1;min-width:180px;">Kategori Aset (Tipe)<select name="type_id" onchange="this.form.submit()">' . asset_type_options($pdo, $typeId, $groupId, true, 'Semua Kategori (Tipe)', true) . '</select></label>';
     echo '    <label style="margin:0;flex:1;min-width:160px;">Company<select name="company_id" onchange="this.form.submit()">' . company_options($pdo, $companyId, true, 'Semua Company') . '</select></label>';
-    // Cari (Kode/Nama/Brand/SN) ditiadakan
     echo '    <button class="btn primary" type="submit">Filter</button>';
     echo '    <a class="btn" href="' . route_url('report_asset_items') . '">Reset</a>';
     echo '  </form>';

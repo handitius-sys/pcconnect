@@ -3604,6 +3604,8 @@ function export_excel(PDO $pdo, string $type): never
         $locationId = (int)($_GET['location_id'] ?? 0);
         $status = trim((string)($_GET['status'] ?? ''));
         $q = trim((string)($_GET['q'] ?? ''));
+        $startDate = trim((string)($_GET['start_date'] ?? ''));
+        $endDate = trim((string)($_GET['end_date'] ?? ''));
 
         $where = ["1=1"];
         $params = [];
@@ -3650,6 +3652,14 @@ function export_excel(PDO $pdo, string $type): never
             $params[] = $status; 
         } else {
             $where[] = "LOWER(ai.status) <> 'deleted'";
+        }
+        if ($startDate !== '') {
+            $where[] = "DATE(ai.created_at) >= ?";
+            $params[] = $startDate;
+        }
+        if ($endDate !== '') {
+            $where[] = "DATE(ai.created_at) <= ?";
+            $params[] = $endDate;
         }
         if ($q !== '') {
             $where[] = "(ai.asset_code LIKE ? OR (ai.alias_code IS NOT NULL AND ai.alias_code LIKE ?) OR ai.asset_name LIKE ? OR (ai.brand IS NOT NULL AND ai.brand LIKE ?) OR (ai.model IS NOT NULL AND ai.model LIKE ?) OR (ai.serial_number IS NOT NULL AND ai.serial_number LIKE ?) OR (ai.custodian_name IS NOT NULL AND ai.custodian_name LIKE ?))";

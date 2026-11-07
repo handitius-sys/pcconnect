@@ -849,6 +849,22 @@ function render_report_print_settings_modal(): void
 }
 
 
+function format_report_period_label(string $startDate = '', string $endDate = ''): string
+{
+    $startDate = trim($startDate);
+    $endDate = trim($endDate);
+    if ($startDate !== '' && $endDate !== '') {
+        $d1 = date('d/m/Y', strtotime($startDate));
+        $d2 = date('d/m/Y', strtotime($endDate));
+        return 'Per ' . $d1 . ' s/d ' . $d2;
+    } elseif ($startDate !== '') {
+        return 'Per Mulai ' . date('d/m/Y', strtotime($startDate));
+    } elseif ($endDate !== '') {
+        return 'Per Sampai ' . date('d/m/Y', strtotime($endDate));
+    }
+    return 'Per ' . date('d/m/Y');
+}
+
 function render_report_print_standalone_page(string $docTitle, string $periodSubtitle, array $headers, array $rows, ?PDO $pdo = null): void
 {
     while (ob_get_level()) {
@@ -906,12 +922,16 @@ function render_report_print_standalone_page(string $docTitle, string $periodSub
     echo '<div class="print-bar">' . "\r\n";
     echo '  <button onclick="window.print()">PRINT</button>' . "\r\n";
     echo '</div>' . "\r\n";
+    $docTitle = trim(preg_replace('/\bInventaris\s*/i', '', $docTitle));
+    if ($periodSubtitle !== '') {
+        $periodSubtitle = preg_replace('/^Per\s+Bulan\s+/i', 'Per ', $periodSubtitle);
+    }
+
     echo '<div class="doc-header-box">' . "\r\n";
-    echo '  <div class="doc-brand">' . htmlspecialchars($appName) . '</div>' . "\r\n";
-    echo '  <div class="doc-company">' . htmlspecialchars($companyName) . '</div>' . "\r\n";
-    echo '  <div class="doc-address">' . htmlspecialchars($companyAddress) . '</div>' . "\r\n";
     echo '  <div class="doc-title">' . htmlspecialchars($docTitle) . '</div>' . "\r\n";
-    echo '  <div class="doc-period">' . htmlspecialchars($periodSubtitle) . '</div>' . "\r\n";
+    if ($periodSubtitle !== '') {
+        echo '  <div class="doc-period">' . htmlspecialchars($periodSubtitle) . '</div>' . "\r\n";
+    }
     echo '</div>' . "\r\n";
     echo '<table class="doc-table">' . "\r\n";
     echo '<thead><tr>' . "\r\n";
@@ -968,12 +988,16 @@ function render_report_document_header(string $reportTitle, ?string $periodSubti
         $periodSubtitle = 'Per ' . date('F Y');
     }
 
+    $reportTitle = trim(preg_replace('/\bInventaris\s*/i', '', $reportTitle));
+    if ($periodSubtitle !== '') {
+        $periodSubtitle = preg_replace('/^Per\s+Bulan\s+/i', 'Per ', $periodSubtitle);
+    }
+
     echo '<div class="print-doc-header">';
-    echo '  <div class="doc-brand">' . e($appName) . '</div>';
-    echo '  <div class="doc-company">' . e($companyName) . '</div>';
-    echo '  <div class="doc-address">' . e($companyAddress) . '</div>';
     echo '  <div class="doc-title">' . e($reportTitle) . '</div>';
-    echo '  <div class="doc-period">' . e($periodSubtitle) . '</div>';
+    if ($periodSubtitle !== '') {
+        echo '  <div class="doc-period">' . e($periodSubtitle) . '</div>';
+    }
     echo '</div>';
 }
 

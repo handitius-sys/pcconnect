@@ -1624,11 +1624,13 @@ function handle_route_report_asset_loans(PDO $pdo): void
                 $stLabel
             ];
         }
-        render_report_print_standalone_page('Laporan Peminjaman Aset', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+        $periodLabel = format_report_period_label($startDate, $endDate);
+        render_report_print_standalone_page('Laporan Peminjaman Aset', $periodLabel, $headers, $printRows, $pdo);
     }
 
     render_header('Report Peminjaman Aset', $user);
-    render_report_document_header('Laporan Peminjaman Aset', 'Per ' . date('F Y'), $pdo);
+    $periodLabel = format_report_period_label($startDate, $endDate);
+    render_report_document_header('Laporan Peminjaman Aset', $periodLabel, $pdo);
 
     $exportParams = ['type' => 'asset_loans'];
     if ($startDate !== '') $exportParams['start_date'] = $startDate;
@@ -1652,8 +1654,9 @@ function handle_route_report_asset_loans(PDO $pdo): void
 
         . '<form method="get" class="actions no-print" style="margin:16px 0 20px 0;align-items:flex-end;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">'
         . '  <input type="hidden" name="route" value="report_asset_loans">'
-        . '  <label style="margin:0;">Tgl Pinjam Dari<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
-        . '  <label style="margin:0;">Tgl Pinjam Sampai<input type="date" name="end_date" value="' . e($endDate) . '"></label>'
+        . '  <label style="margin:0;">Tanggal Mulai<input type="date" name="start_date" value="' . e($startDate) . '"></label>'
+        . '  <span style="padding-bottom:10px;font-weight:600;color:#64748b;">s/d</span>'
+        . '  <label style="margin:0;">Tanggal Akhir<input type="date" name="end_date" value="' . e($endDate) . '"></label>'
         . '  <label style="margin:0;">Status'
         . '    <select name="status">'
         . '      <option value="">-- Semua Status --</option>'
