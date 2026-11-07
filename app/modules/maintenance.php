@@ -912,31 +912,6 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
-    $allReports = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    if (!empty($_GET['print'])) {
-        $headers = ['No', 'Tanggal', 'PcID / Asset ID', 'Kode Lama', 'Owner / Pengguna', 'Teknisi', 'Status', 'Summary Maintenance'];
-        $printRows = [];
-        $no = 1;
-        foreach ($allReports as $rep) {
-            $summary = maintenance_report_summary($pdo, $rep);
-            $isCancelled = ($rep['schedule_status'] ?? '') === 'cancelled';
-            $dateDisplay = (string)($rep['created_at'] ?? $rep['scheduled_date'] ?? $rep['schedule_created_at'] ?? '-');
-            $statusDisplay = $isCancelled ? 'Batal (Tenggang)' : (!empty($rep['id']) ? 'Selesai' : 'Terjadwal');
-
-            $printRows[] = [
-                $no++,
-                $dateDisplay,
-                (string)($rep['pc_id'] ?? '-'),
-                (string)($rep['alias_code'] ?? '-'),
-                (string)($rep['owner_name'] ?? '-'),
-                (string)($rep['technician'] ?? '-'),
-                $statusDisplay,
-                (string)($summary['summary_text'] ?? '-')
-            ];
-        }
-        render_report_print_standalone_page('Laporan Preventive Maintenance', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
-    }
     $rows = [];
     $today = new DateTimeImmutable(date('Y-m-d'));
     foreach ($stmt->fetchAll() as $row) {
@@ -3137,6 +3112,32 @@ function handle_route_reports(PDO $pdo): void
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
+    $allReports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($_GET['print'])) {
+        $headers = ['No', 'Tanggal', 'PcID / Asset ID', 'Kode Lama', 'Owner / Pengguna', 'Teknisi', 'Status', 'Summary Maintenance'];
+        $printRows = [];
+        $no = 1;
+        foreach ($allReports as $rep) {
+            $summary = maintenance_report_summary($pdo, $rep);
+            $isCancelled = ($rep['schedule_status'] ?? '') === 'cancelled';
+            $dateDisplay = (string)($rep['created_at'] ?? $rep['scheduled_date'] ?? $rep['schedule_created_at'] ?? '-');
+            $statusDisplay = $isCancelled ? 'Batal (Tenggang)' : (!empty($rep['id']) ? 'Selesai' : 'Terjadwal');
+
+            $printRows[] = [
+                $no++,
+                $dateDisplay,
+                (string)($rep['pc_id'] ?? '-'),
+                (string)($rep['alias_code'] ?? '-'),
+                (string)($rep['owner_name'] ?? '-'),
+                (string)($rep['technician'] ?? '-'),
+                $statusDisplay,
+                (string)($summary['summary_text'] ?? '-')
+            ];
+        }
+        $periodLabel = format_report_period_label('', '');
+        render_report_print_standalone_page('Laporan Preventive Maintenance', $periodLabel, $headers, $printRows, $pdo);
+    }
     $pcs = $pdo->query('SELECT pc_id, owner_name FROM pcs ORDER BY pc_id')->fetchAll();
     $printers = $printerReady ? $pdo->query('SELECT prn_id, printer_name FROM printers ORDER BY prn_id')->fetchAll() : [];
     $techs = $pdo->query("SELECT id, name FROM users WHERE role='technician' ORDER BY name")->fetchAll();
