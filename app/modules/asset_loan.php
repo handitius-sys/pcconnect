@@ -1599,6 +1599,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     render_header('Report Peminjaman Aset', $user);
+    render_report_document_header('Laporan Peminjaman Aset', 'Per ' . date('F Y'), $pdo);
 
     $exportParams = ['type' => 'asset_loans'];
     if ($startDate !== '') $exportParams['start_date'] = $startDate;

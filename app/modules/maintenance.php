@@ -3081,6 +3081,7 @@ function handle_route_reports(PDO $pdo): void
     ensure_maintenance_work_schema($pdo);
     cancel_expired_maintenance_schedules($pdo);
     render_header('Report Maintenance', $user);
+    render_report_document_header('Laporan Preventive Maintenance', 'Per ' . date('F Y'), $pdo);
     $printerReady = printer_schema_ready($pdo);
     if (!$printerReady) {
         echo printer_schema_warning();

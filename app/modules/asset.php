@@ -7372,6 +7372,7 @@ function handle_route_asset_movements(PDO $pdo): void
     $endDate = trim((string)($_GET['end_date'] ?? ''));
 
     render_header('Report Mutasi Aset', $user);
+    render_report_document_header('Laporan Riwayat Mutasi Aset', 'Per ' . date('F Y'), $pdo);
     echo asset_nav_html();
     $rows = asset_movement_rows($pdo, $q, $startDate, $endDate);
 
@@ -7630,6 +7631,7 @@ function handle_route_report_asset_items(PDO $pdo): void
 
     // 6. Rendering Header Halaman
     render_header('Report Unit Aset Terpilah per Komoditas', $user);
+    render_report_document_header('Laporan Inventaris Unit Aset', 'Per ' . date('F Y'), $pdo);
 
     $cleanFilters = $_GET;
     unset($cleanFilters['route']);

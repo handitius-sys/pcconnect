@@ -2269,6 +2269,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $repairs = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
     render_header('Riwayat Reparasi & Sparepart', $user);
+    render_report_document_header('Laporan Corrective Maintenance (Reparasi & Sparepart)', 'Per ' . date('F Y'), $pdo);
     ?>
     <section class="panel">
         <div class="split">
