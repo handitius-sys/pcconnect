@@ -207,16 +207,16 @@ function asset_items_table(PDO $pdo, array $rows): string
 
     $html .= '<div style="overflow-x:auto;"><table id="assetItemsTable" class="sortable-table">';
     $html .= '<thead><tr>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(0)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Aset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(1)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kode Lama (Legacy) <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(2)" style="cursor:pointer;" title="Klik untuk mengurutkan">Company <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(3)" style="cursor:pointer;" title="Klik untuk mengurutkan">Pengguna <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(4)" style="cursor:pointer;" title="Klik untuk mengurutkan">Kategori <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(5)" style="cursor:pointer;" title="Klik untuk mengurutkan">Mode Asset <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(6)" style="cursor:pointer;" title="Klik untuk mengurutkan">Nama Barang <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(7)" style="cursor:pointer;" title="Klik untuk mengurutkan">Status <span class="sort-ind">⇅</span></th>';
-    $html .= '<th class="sortable" onclick="sortAssetTable(8)" style="cursor:pointer;" title="Klik untuk mengurutkan">Tanggal Input <span class="sort-ind">⇅</span></th>';
-    $html .= '<th style="text-align:center;width:124px;">Aksi</th>';
+    $html .= '<th>Kode Aset</th>';
+    $html .= '<th>Kode Lama (Legacy)</th>';
+    $html .= '<th>Company</th>';
+    $html .= '<th>Pengguna</th>';
+    $html .= '<th>Kategori</th>';
+    $html .= '<th>Mode Asset</th>';
+    $html .= '<th>Nama Barang</th>';
+    $html .= '<th>Status</th>';
+    $html .= '<th>Tanggal Input</th>';
+    $html .= '<th style="text-align:center;width:124px;" data-nosort="1">Aksi</th>';
     $html .= '</tr></thead><tbody>';
 
     foreach ($rows as $row) {
@@ -298,7 +298,7 @@ function asset_items_table(PDO $pdo, array $rows): string
             : '<span class="muted" style="font-size:12px;">-</span>';
 
         $html .= '<tr>';
-        $html .= '<td><a href="' . route_url('asset_item_form', ['id' => $row['id'], 'view' => 1]) . '" style="color:#0f172a;text-decoration:none;" title="Klik untuk melihat detail unit aset (Read-Only)"><strong>' . e($row['asset_code']) . '</strong></a><br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span>' . $sourcePcBadge . $idfHtml . '</td>';
+        $html .= '<td><a href="' . route_url('asset_item_form', ['id' => $row['id'], 'view' => 1]) . '" style="color:#0f172a;text-decoration:none;" title="Klik untuk melihat detail unit aset (Read-Only)"><strong>' . e($row['asset_code']) . '</strong></a><br><span class="muted">SN: ' . e($row['serial_number'] ?: '-') . '</span></td>';
         $html .= '<td>' . $legacyItemCell . '</td>';
         $html .= '<td>' . e($row['company_name'] ?: '-') . '</td>';
         $html .= '<td>' . $custodianText . '</td>';
@@ -313,68 +313,7 @@ function asset_items_table(PDO $pdo, array $rows): string
 
     $html .= '</tbody></table></div>';
 
-    // Client-side Sorting Script
-    $html .= '<script>
-    function sortAssetTable(colIndex) {
-        var table = document.getElementById("assetItemsTable");
-        if (!table) return;
-        var tbody = table.querySelector("tbody") || table;
-        var rows = Array.from(tbody.querySelectorAll("tr")).filter(function(r) { 
-            return !r.querySelector("th"); 
-        });
-        if (rows.length === 0) return;
 
-        var ths = table.querySelectorAll("thead th");
-        var targetTh = ths[colIndex];
-        if (!targetTh) return;
-
-        var currentDir = targetTh.getAttribute("data-sort-dir");
-        var isAsc = currentDir !== "asc";
-
-        ths.forEach(function(th, idx) {
-            var ind = th.querySelector(".sort-ind");
-            if (ind) {
-                ind.textContent = "⇅";
-                ind.classList.remove("active");
-            }
-            if (idx !== colIndex) th.removeAttribute("data-sort-dir");
-        });
-
-        targetTh.setAttribute("data-sort-dir", isAsc ? "asc" : "desc");
-        var activeInd = targetTh.querySelector(".sort-ind");
-        if (activeInd) {
-            activeInd.textContent = isAsc ? " ▲" : " ▼";
-            activeInd.classList.add("active");
-        }
-
-        rows.sort(function(a, b) {
-            var cellA = a.children[colIndex] ? a.children[colIndex].innerText.trim() : "";
-            var cellB = b.children[colIndex] ? b.children[colIndex].innerText.trim() : "";
-
-            if (colIndex === 7) {
-                var parseDate = function(str) {
-                    var line = str.split("\n")[0].trim();
-                    var parts = line.split("/");
-                    if (parts.length === 3) {
-                        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10)).getTime() || 0;
-                    }
-                    return 0;
-                };
-                var dateA = parseDate(cellA);
-                var dateB = parseDate(cellB);
-                return isAsc ? (dateA - dateB) : (dateB - dateA);
-            }
-
-            return isAsc 
-                ? cellA.localeCompare(cellB, undefined, {numeric: true, sensitivity: "base"})
-                : cellB.localeCompare(cellA, undefined, {numeric: true, sensitivity: "base"});
-        });
-
-        rows.forEach(function(row) {
-            tbody.appendChild(row);
-        });
-    }
-    </script>';
 
     return $html;
 }
