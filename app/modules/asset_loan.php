@@ -1598,6 +1598,35 @@ function handle_route_report_asset_loans(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    if (!empty($_GET['print'])) {
+        $headers = ['No', 'No. Pinjam', 'Peminjam', 'Departemen', 'Aset Dipinjam', 'Tgl Pinjam', 'Target Kembali', 'Realisasi Kembali', 'Keperluan', 'Status'];
+        $printRows = [];
+        $num = 1;
+        $today = date('Y-m-d');
+        foreach ($rows as $r) {
+            $isOver = ($r['status'] === 'active' && !empty($r['expected_return_date']) && $r['expected_return_date'] < $today);
+            $stLabel = $isOver ? 'Terlambat' : ($r['status'] === 'active' ? 'Sedang Dipinjam' : ($r['status'] === 'returned' ? 'Sudah Kembali' : ucfirst((string)$r['status'])));
+            $realisasi = !empty($r['actual_return_date']) ? date('d/m/Y', strtotime($r['actual_return_date'])) : '-';
+            $tglPinjam = !empty($r['loan_date']) ? date('d/m/Y', strtotime($r['loan_date'])) : '-';
+            $targetKembali = !empty($r['expected_return_date']) ? date('d/m/Y', strtotime($r['expected_return_date'])) : '-';
+            $borrower = trim((string)$r['borrower_name']) . (!empty($r['borrower_nik']) ? ' (' . $r['borrower_nik'] . ')' : '');
+
+            $printRows[] = [
+                $num++,
+                (string)($r['loan_code'] ?? '-'),
+                $borrower,
+                (string)($r['borrower_department'] ?? '-'),
+                (string)($r['asset_items_summary'] ?? '-'),
+                $tglPinjam,
+                $targetKembali,
+                $realisasi,
+                (string)($r['purpose'] ?? '-'),
+                $stLabel
+            ];
+        }
+        render_report_print_standalone_page('Laporan Peminjaman Aset', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+    }
+
     render_header('Report Peminjaman Aset', $user);
     render_report_document_header('Laporan Peminjaman Aset', 'Per ' . date('F Y'), $pdo);
 
@@ -1615,7 +1644,7 @@ function handle_route_report_asset_loans(PDO $pdo): void
         . '  </div>'
         . '  <div class="actions no-print">'
         . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
-        . '    <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>'
+        . '    <a class="btn primary" href="' . e(route_url('report_asset_loans', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>'
         . '  </div>'
         . '</div>'
 

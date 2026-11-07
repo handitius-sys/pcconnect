@@ -912,6 +912,31 @@ function maintenance_status_rows(PDO $pdo, bool $printerReady, string $assetType
     $sql .= ' ORDER BY s.scheduled_date DESC, s.id DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
+    $allReports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($_GET['print'])) {
+        $headers = ['No', 'Tanggal', 'PcID / Asset ID', 'Kode Lama', 'Owner / Pengguna', 'Teknisi', 'Status', 'Summary Maintenance'];
+        $printRows = [];
+        $no = 1;
+        foreach ($allReports as $rep) {
+            $summary = maintenance_report_summary($pdo, $rep);
+            $isCancelled = ($rep['schedule_status'] ?? '') === 'cancelled';
+            $dateDisplay = (string)($rep['created_at'] ?? $rep['scheduled_date'] ?? $rep['schedule_created_at'] ?? '-');
+            $statusDisplay = $isCancelled ? 'Batal (Tenggang)' : (!empty($rep['id']) ? 'Selesai' : 'Terjadwal');
+
+            $printRows[] = [
+                $no++,
+                $dateDisplay,
+                (string)($rep['pc_id'] ?? '-'),
+                (string)($rep['alias_code'] ?? '-'),
+                (string)($rep['owner_name'] ?? '-'),
+                (string)($rep['technician'] ?? '-'),
+                $statusDisplay,
+                (string)($summary['summary_text'] ?? '-')
+            ];
+        }
+        render_report_print_standalone_page('Laporan Preventive Maintenance', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+    }
     $rows = [];
     $today = new DateTimeImmutable(date('Y-m-d'));
     foreach ($stmt->fetchAll() as $row) {
@@ -3122,7 +3147,7 @@ function handle_route_reports(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <a class="btn primary" href="' . e(route_url('reports', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a></div><form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid three"><label>Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
     }
@@ -3141,7 +3166,7 @@ function handle_route_reports(PDO $pdo): void
         . '<section class="panel">'
 
         . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
-    foreach ($stmt as $report) {
+    foreach ($allReports as $report) {
         $summary = maintenance_report_summary($pdo, $report);
         $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
         $expDate = !empty($report['expired_date']) ? $report['expired_date'] : date('Y-m-d', strtotime(($report['scheduled_date'] ?? date('Y-m-d')) . ' +3 days'));

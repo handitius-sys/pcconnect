@@ -2268,6 +2268,44 @@ function handle_route_corrective_repairs(PDO $pdo): void
             ORDER BY cr.repaired_at DESC, cr.id DESC";
     $repairs = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
+    if (!empty($_GET['print'])) {
+        $headers = ['No', 'Tanggal & Tiket', 'Kode Aset', 'Kode Lama', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
+        $printRows = [];
+        $no = 1;
+        foreach ($repairs as $r) {
+            $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
+            $pStmt->execute([(int)$r['id']]);
+            $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+            $partsArr = [];
+            foreach ($parts as $p) {
+                $pStr = $p['part_name'];
+                if (!empty($p['part_code'])) $pStr .= ' (' . $p['part_code'] . ')';
+                $pStr .= ' x' . $p['qty'] . ' @ Rp ' . number_format((float)$p['price'], 0, ',', '.');
+                $partsArr[] = $pStr;
+            }
+            $partsTxt = !empty($partsArr) ? implode('; ', $partsArr) : '-';
+
+            $ticketTxt = date('d/m/Y H:i', strtotime($r['repaired_at'])) . ' | ' . $r['ticket_code'] . ' - ' . $r['subject'];
+            $assetTxt = !empty($r['maintenance_asset_code']) ? $r['maintenance_asset_code'] : '-';
+            $legacyTxt = !empty($r['legacy_code']) ? $r['legacy_code'] : '-';
+            $techTxt = !empty($r['vendor_name']) ? $r['vendor_name'] . ' (Vendor)' : (!empty($r['technician_name']) ? $r['technician_name'] : '-');
+            $actionTxt = !empty($r['action_taken']) ? $r['action_taken'] : '-';
+            $costTxt = 'Rp ' . number_format((float)($r['service_cost'] ?? 0), 0, ',', '.');
+
+            $printRows[] = [
+                $no++,
+                $ticketTxt,
+                $assetTxt,
+                $legacyTxt,
+                $techTxt,
+                $actionTxt,
+                $partsTxt,
+                $costTxt
+            ];
+        }
+        render_report_print_standalone_page('Laporan Corrective Maintenance (Reparasi & Sparepart)', 'Per ' . date('F Y'), $headers, $printRows, $pdo);
+    }
+
     render_header('Riwayat Reparasi & Sparepart', $user);
     render_report_document_header('Laporan Corrective Maintenance (Reparasi & Sparepart)', 'Per ' . date('F Y'), $pdo);
     ?>
@@ -2280,7 +2318,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             <div class="actions no-print">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
                 <a class="btn" href="<?= route_url('export_excel', ['type' => 'corrective_repairs']) ?>">Export Excel</a>
-                <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button>
+                <a class="btn primary" href="<?= e(route_url('corrective_repairs', array_merge($_GET, ['print' => 1]))) ?>" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>
             </div>
         </div>
         <?php render_report_print_settings_modal(); ?>
