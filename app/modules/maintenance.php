@@ -778,6 +778,73 @@ function photo_evidence_audit_summary(PDO $pdo, array $report): array
     return ['score' => $score, 'status' => $status, 'class' => $class, 'text' => 'Audit bukti foto ' . $score . '/100.', 'rows' => $rows];
 }
 
+function summarize_maintenance_short(array $summary): string
+{
+    $doneList = [];
+    $pendingList = [];
+    foreach ($summary['checklist_rows'] ?? [] as $job) {
+        $title = trim((string)($job['title'] ?? ''));
+        if (($job['status'] ?? '') === 'Done') {
+            $doneList[] = $title;
+        } else {
+            $pendingList[] = $title;
+        }
+    }
+    $parts = [];
+    if (!empty($doneList)) {
+        $cntDone = count($doneList);
+        $parts[] = $cntDone . ' Pekerjaan Maintenance Selesai';
+    }
+    if (!empty($pendingList)) {
+        $cntPending = count($pendingList);
+        $pendingDesc = implode(', ', array_slice($pendingList, 0, 3));
+        if (count($pendingList) > 3) {
+            $pendingDesc .= ' dkk';
+        }
+        $parts[] = $cntPending . ' Pekerjaan ' . $pendingDesc . ' Pending';
+    }
+    if (empty($parts)) {
+        return (string)($summary['job_progress'] ?? '-');
+    }
+    return implode(', ', $parts);
+}
+
+function maintenance_work_analysis(array $summary): array
+{
+    $auditScore = (int)($summary['photo_evidence_score'] ?? 0);
+    $auditStatus = (string)($summary['challenge_audit_status'] ?? '');
+    $auditText = (string)($summary['challenge_audit_text'] ?? '');
+    $realMin = $summary['real_duration_minutes'] ?? null;
+    $minMin = $summary['minimum_duration_minutes'] ?? 0;
+
+    $isPhotoOk = ($auditScore >= 80 && stripos($auditStatus, 'Lengkap') !== false);
+    $photoPart = 'audit foto-foto = ' . ($isPhotoOk ? 'sesuai' : 'ada yang tidak sesuai');
+    if (!empty($auditText) && !$isPhotoOk) {
+        $photoPart .= ' (' . $auditText . ')';
+    }
+
+    $timePart = '';
+    if ($realMin !== null) {
+        if ($minMin > 0 && $realMin < $minMin) {
+            $timePart = 'tidak dalam range waktu yang sesuai (' . $realMin . ' mnt < min ' . $minMin . ' mnt)';
+        } else {
+            $timePart = 'dalam range waktu yang sesuai (' . $realMin . ' mnt)';
+        }
+    } else {
+        $timePart = 'waktu pengerjaan belum tercatat';
+    }
+
+    $combinedText = $photoPart . ' & ' . $timePart;
+    $isWarning = (!$isPhotoOk || ($minMin > 0 && $realMin !== null && $realMin < $minMin));
+
+    return [
+        'text' => $combinedText,
+        'is_warning' => $isWarning,
+        'score' => $auditScore,
+        'ai_note' => $summary['ai_challenge_audit']['note'] ?? null
+    ];
+}
+
 function maintenance_report_summary(PDO $pdo, array $report): array
 {
     $scheduleId = (int)($report['schedule_id'] ?? 0);
@@ -3086,7 +3153,7 @@ function handle_route_reports(PDO $pdo): void
     $startDate = trim((string)($_GET['start_date'] ?? ''));
     $endDate = trim((string)($_GET['end_date'] ?? ''));
 
-    render_header('Report Maintenance', $user);
+    render_header('Report Preventive Maintenance', $user);
     $periodLabel = format_report_period_label($startDate, $endDate);
     render_report_document_header('Laporan Preventive Maintenance', $periodLabel, $pdo);
     $printerReady = printer_schema_ready($pdo);
@@ -3127,7 +3194,7 @@ function handle_route_reports(PDO $pdo): void
     $allReports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($_GET['print'])) {
-        $headers = ['No', 'Tanggal', 'PcID / Asset ID', 'Kode Lama', 'Owner / Pengguna', 'Teknisi', 'Status', 'Summary Maintenance'];
+        $headers = ['No', 'Tanggal', 'PcID / Asset ID', 'Kode Lama', 'Owner / Pengguna', 'Teknisi', 'Status', 'Summarize Maintenance', 'Analisa Kerja'];
         $printRows = [];
         $no = 1;
         foreach ($allReports as $rep) {
@@ -3135,6 +3202,8 @@ function handle_route_reports(PDO $pdo): void
             $isCancelled = ($rep['schedule_status'] ?? '') === 'cancelled';
             $dateDisplay = (string)($rep['created_at'] ?? $rep['scheduled_date'] ?? $rep['schedule_created_at'] ?? '-');
             $statusDisplay = $isCancelled ? 'Batal (Tenggang)' : (!empty($rep['id']) ? 'Selesai' : 'Terjadwal');
+            $shortSummary = summarize_maintenance_short($summary);
+            $analysis = maintenance_work_analysis($summary);
 
             $printRows[] = [
                 $no++,
@@ -3144,7 +3213,8 @@ function handle_route_reports(PDO $pdo): void
                 (string)($rep['owner_name'] ?? '-'),
                 (string)($rep['technician'] ?? '-'),
                 $statusDisplay,
-                (string)($summary['summary_text'] ?? '-')
+                $shortSummary,
+                $analysis['text']
             ];
         }
         $periodLabel = format_report_period_label($startDate, $endDate);
@@ -3170,7 +3240,7 @@ function handle_route_reports(PDO $pdo): void
     $valStart = $startDate !== '' ? $startDate : $todayStr;
     $valEnd = $endDate !== '' ? $endDate : $todayStr;
 
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">' . btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Maintenance') . btn_icon_print(route_url('reports', array_merge($_GET, ['print' => 1])), 'Print Report Maintenance') . '</div></div>';
+    echo '<section class="panel"><div class="split"><h1>Report Preventive Maintenance</h1><div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">' . btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Preventive Maintenance') . btn_icon_print(route_url('reports', array_merge($_GET, ['print' => 1])), 'Print Report Preventive Maintenance') . '</div></div>';
     echo '<form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;"><label style="margin:0;">Rentang Tanggal<div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;"><input type="date" name="start_date" value="' . e($valStart) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"><span style="font-weight:600;color:#64748b;">s/d</span><input type="date" name="end_date" value="' . e($valEnd) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"></div></label><label style="margin:0;min-width:180px;">Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
@@ -3189,7 +3259,7 @@ function handle_route_reports(PDO $pdo): void
     echo '</select></label><label style="margin:0;">&nbsp;<button class="btn primary" style="height:38px;">Filter Report</button></label><label style="margin:0;">&nbsp;<a class="btn" href="' . route_url('reports') . '" style="height:38px;line-height:24px;">Reset</a></label></div></form></section>'
         . '<section class="panel">'
 
-        . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summary Maintenance</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
+        . '<div style="overflow-x:auto;"><table class="report-table-plain report-target-table sortable-table" style="font-size:12px;"><thead><tr><th>Tanggal</th><th>PcID / Asset ID</th><th>Kode Lama (Legacy)</th><th>Owner</th><th>Teknisi</th><th>Summarize Maintenance</th><th>Analisa Kerja</th><th data-nosort="1">Aksi</th></tr></thead><tbody>';
     foreach ($allReports as $report) {
         $summary = maintenance_report_summary($pdo, $report);
         $isCancelled = ($report['schedule_status'] ?? '') === 'cancelled';
@@ -3209,20 +3279,32 @@ function handle_route_reports(PDO $pdo): void
                 . '</div>';
         }
 
-        echo '<tr><td>' . $dateDisplay . '</td><td><strong>' . e($report['pc_id']) . '</strong></td><td>' . (!empty($report['alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($report['alias_code']) . '</span>' : '<span class="muted">-</span>') . '</td><td>' . e($report['owner_name']) . '</td><td>' . e($report['technician'] ?: '-') . '</td><td>' . $cancelledBanner . '<table><tr><th>Pekerjaan</th><th>Status</th><th>Keterangan</th></tr>';
-        if ($summary['checklist_rows']) {
-            foreach ($summary['checklist_rows'] as $job) {
-                echo '<tr><td>' . e($job['title']) . '</td><td>' . e($job['status']) . '</td><td>' . e($job['note'] ?: '-') . '</td></tr>';
-            }
-        } else {
-            echo '<tr><td colspan="3" class="muted">Belum ada jobdesk dipilih untuk schedule ini.</td></tr>';
+        $shortSummary = summarize_maintenance_short($summary);
+        $analysis = maintenance_work_analysis($summary);
+
+        $analysisColor = $analysis['is_warning'] ? '#b91c1c' : '#15803d';
+        $analysisBg = $analysis['is_warning'] ? '#fef2f2' : '#f0fdf4';
+        $analysisBorder = $analysis['is_warning'] ? '#fecaca' : '#bbf7d0';
+
+        $analysisHtml = '<div style="background:' . $analysisBg . ';border:1px solid ' . $analysisBorder . ';color:' . $analysisColor . ';padding:6px 10px;border-radius:6px;font-size:12px;line-height:1.4;">'
+            . e($analysis['text']);
+        if (!empty($analysis['ai_note'])) {
+            $analysisHtml .= '<div style="margin-top:4px;font-size:11px;color:#0369a1;font-weight:600;">🤖 AI Vision: ' . e($analysis['ai_note']) . '</div>';
         }
-        echo '<tr><th>Audit Foto</th><td colspan="2"><span class="badge' . e($summary['challenge_audit_class']) . '">' . e($summary['challenge_audit_status']) . '</span> <strong>' . e($summary['photo_evidence_score']) . '/100</strong><br><span class="muted">' . e($summary['challenge_audit_text']) . '</span>';
-        if (!empty($summary['ai_challenge_audit']['note'])) {
-            echo '<br><small style="color:#0369a1;font-weight:600;">🤖 AI Vision: ' . e($summary['ai_challenge_audit']['note']) . '</small>';
-        }
-        echo '</td></tr>';
-        echo '<tr><th>Waktu Real</th><td colspan="2"><strong>' . e($summary['real_duration_text'] ?? '-') . '</strong></td></tr></table></td><td><a class="btn" href="' . route_url('report_print', ['id' => $report['schedule_id']]) . '">Detail</a></td></tr>';
+        $analysisHtml .= '</div>';
+
+        $actionBtn = '<a class="btn-icon view" href="' . route_url('report_print', ['id' => $report['schedule_id']]) . '" title="Lihat Detail Report" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;background:#e0f2fe;color:#0284c7;border:1px solid #bae6fd;text-decoration:none;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></a>';
+
+        echo '<tr>'
+            . '<td>' . $dateDisplay . '</td>'
+            . '<td><strong>' . e($report['pc_id']) . '</strong></td>'
+            . '<td>' . (!empty($report['alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($report['alias_code']) . '</span>' : '<span class="muted">-</span>') . '</td>'
+            . '<td>' . e($report['owner_name']) . '</td>'
+            . '<td>' . e($report['technician'] ?: '-') . '</td>'
+            . '<td>' . $cancelledBanner . '<div style="font-weight:600;color:#1e293b;line-height:1.4;">' . e($shortSummary) . '</div></td>'
+            . '<td>' . $analysisHtml . '</td>'
+            . '<td style="text-align:center;">' . $actionBtn . '</td>'
+            . '</tr>';
     }
     echo '</tbody></table></div></section>';
     echo '<script>
