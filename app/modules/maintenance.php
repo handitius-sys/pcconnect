@@ -3287,11 +3287,8 @@ function handle_route_reports(PDO $pdo): void
         $analysisBorder = $analysis['is_warning'] ? '#fecaca' : '#bbf7d0';
 
         $analysisHtml = '<div style="background:' . $analysisBg . ';border:1px solid ' . $analysisBorder . ';color:' . $analysisColor . ';padding:6px 10px;border-radius:6px;font-size:12px;line-height:1.4;">'
-            . e($analysis['text']);
-        if (!empty($analysis['ai_note'])) {
-            $analysisHtml .= '<div style="margin-top:4px;font-size:11px;color:#0369a1;font-weight:600;">🤖 AI Vision: ' . e($analysis['ai_note']) . '</div>';
-        }
-        $analysisHtml .= '</div>';
+            . e($analysis['text'])
+            . '</div>';
 
         $actionBtn = '<a class="btn-icon view" href="' . route_url('report_print', ['id' => $report['schedule_id']]) . '" title="Lihat Detail Report" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;background:#e0f2fe;color:#0284c7;border:1px solid #bae6fd;text-decoration:none;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></a>';
 
