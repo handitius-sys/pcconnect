@@ -2334,15 +2334,15 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 <h1>Riwayat Reparasi & Penggantian Sparepart</h1>
                 <p class="muted">Daftar seluruh tindakan corrective maintenance dan sparepart yang pernah diganti pada unit.</p>
             </div>
-            <div class="actions no-print">
+            <div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
                 <?php
     $exportParams = ['type' => 'corrective_repairs'];
     if ($startDate !== '') $exportParams['start_date'] = $startDate;
     if ($endDate !== '') $exportParams['end_date'] = $endDate;
     ?>
-                <a class="btn" href="<?= route_url('export_excel', $exportParams) ?>">Export Excel</a>
-                <a class="btn primary" href="<?= e(route_url('corrective_repairs', array_merge($_GET, ['print' => 1]))) ?>" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>
+                <?= btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Reparasi & Sparepart') ?>
+                <?= btn_icon_print(route_url('corrective_repairs', array_merge($_GET, ['print' => 1])), 'Print Report Reparasi & Sparepart') ?>
             </div>
         </div>
         <?php render_report_print_settings_modal(); ?>

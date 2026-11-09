@@ -7382,9 +7382,9 @@ function handle_route_asset_movements(PDO $pdo): void
         . '    <h1 style="margin:0;">Report Mutasi Aset</h1>'
         . '    <p class="muted" style="margin:4px 0 0 0;">Laporan riwayat mutasi aset, perubahan keanggotaan bundle, pelepasan unit single, dan perpindahan antar unit.</p>'
         . '  </div>'
-        . '  <div class="actions no-print">'
-        . '    <a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a>'
-        . '    <a class="btn primary" href="' . e(route_url('asset_movements', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>'
+        . '  <div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">'
+        . '    ' . btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Mutasi Aset')
+        . '    ' . btn_icon_print(route_url('asset_movements', array_merge($_GET, ['print' => 1])), 'Print Report Mutasi Aset')
         . '  </div>'
         . '</div>'
 
@@ -7684,10 +7684,10 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '    <h1 style="margin:0;">Report Unit Aset</h1>';
     echo '    <p class="muted" style="margin:4px 0 0 0;">Laporan Detail Unit Aset</p>';
     echo '  </div>';
-    echo '  <div class="actions no-print">';
-    echo '    <a class="btn primary" href="' . e($exportUrl) . '">Export Excel</a>';
     $printUrl = route_url('report_asset_items', array_merge($_GET, ['print' => 1]));
-    echo '    <a class="btn primary" href="' . e($printUrl) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a>';
+    echo '  <div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">';
+    echo '    ' . btn_icon_excel($exportUrl, 'Export Excel Unit Aset');
+    echo '    ' . btn_icon_print($printUrl, 'Print Report Unit Aset');
     echo '  </div>';
     echo '</div>';
 

@@ -3170,7 +3170,7 @@ function handle_route_reports(PDO $pdo): void
     $valStart = $startDate !== '' ? $startDate : $todayStr;
     $valEnd = $endDate !== '' ? $endDate : $todayStr;
 
-    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <a class="btn primary" href="' . e(route_url('reports', array_merge($_GET, ['print' => 1]))) . '" target="_blank" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;text-decoration:none;">PRINT</a></div>';
+    echo '<section class="panel"><div class="split"><h1>Report Pengerjaan Maintenance</h1><div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">' . btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Maintenance') . btn_icon_print(route_url('reports', array_merge($_GET, ['print' => 1])), 'Print Report Maintenance') . '</div></div>';
     echo '<form method="get" class="no-print"><input type="hidden" name="route" value="reports"><div class="grid" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;"><label style="margin:0;">Rentang Tanggal<div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;"><input type="date" name="start_date" value="' . e($valStart) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"><span style="font-weight:600;color:#64748b;">s/d</span><input type="date" name="end_date" value="' . e($valEnd) . '" style="height:38px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;"></div></label><label style="margin:0;min-width:180px;">Per PC / Printer<select name="pc_id"><option value="">Semua Aset</option>';
     foreach ($pcs as $pc) {
         echo '<option value="' . e($pc['pc_id']) . '"' . ($pcFilter === $pc['pc_id'] ? ' selected' : '') . '>' . e($pc['pc_id'] . ' - ' . $pc['owner_name']) . '</option>';
@@ -3278,7 +3278,7 @@ function handle_route_maintenance_status_report(PDO $pdo): void
     if ($techFilter > 0) {
         $exportParams['technician_id'] = $techFilter;
     }
-    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions"><a class="btn" href="' . route_url('reports') . '">Report Detail</a><a class="btn" href="' . route_url('export_excel', $exportParams) . '">Export Excel</a> <button type="button" class="btn primary" onclick="window.print()" style="padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">PRINT</button></div></div></section>';
+    echo '<section class="panel"><div class="split"><div><h1>Status Maintenance PC & Printer</h1><p class="muted">Expired berarti schedule belum completed dan tanggal kerja sudah lewat lebih dari 7 hari atau batal karena lewat batas tenggang waktu.</p></div><div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;"><a class="btn" href="' . route_url('reports') . '">Report Detail</a>' . btn_icon_excel(route_url('export_excel', $exportParams), 'Export Excel Status Maintenance') . '<button type="button" class="btn-icon print" onclick="window.print()" title="Print Status Maintenance" aria-label="Print Status Maintenance"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></button></div></div></section>';
     echo '<section class="panel"><div class="grid five"><div class="stat"><strong>' . e($counts['total']) . '</strong><span>Total</span></div><div class="stat"><strong>' . e($counts['completed']) . '</strong><span>Sudah Maintenance</span></div><div class="stat"><strong>' . e($counts['pending']) . '</strong><span>Pending</span></div><div class="stat"><strong>' . e($counts['cancelled']) . '</strong><span>Batal (Tenggang Waktu)</span></div><div class="stat"><strong>' . e($counts['expired']) . '</strong><span>Expired &gt; 7 Hari</span></div></div></section>';
     echo '<section class="panel"><form method="get"><input type="hidden" name="route" value="maintenance_status_report"><div class="grid four"><label>Tipe Aset<select name="asset_type"><option value="">Semua</option><option value="pc"' . ($assetTypeFilter === 'pc' ? ' selected' : '') . '>PC</option><option value="printer"' . ($assetTypeFilter === 'printer' ? ' selected' : '') . '>Printer</option></select></label><label>Status<select name="status_group"><option value="">Semua</option><option value="completed"' . ($statusFilter === 'completed' ? ' selected' : '') . '>Sudah Maintenance</option><option value="pending"' . ($statusFilter === 'pending' ? ' selected' : '') . '>Pending</option><option value="cancelled"' . ($statusFilter === 'cancelled' ? ' selected' : '') . '>Batal (Tenggang Waktu)</option><option value="expired"' . ($statusFilter === 'expired' ? ' selected' : '') . '>Expired &gt; 7 Hari</option></select></label><label>Teknisi<select name="technician_id"><option value="0">Semua Teknisi</option>';
     foreach ($techs as $tech) {
@@ -4028,7 +4028,7 @@ function output_tsv(array $headers, array $rows, string $title = 'Laporan'): voi
                 . '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' . "\r\n"
                 . '</Relationships>';
 
-            $cleanTitle = preg_replace('/[\\\/\?\*\[\]:]/', '', $title);
+            $cleanTitle = str_replace(['\\', '/', '?', '*', '[', ']', ':'], '', $title);
             $cleanTitle = mb_substr($cleanTitle ?: 'Sheet1', 0, 31);
             $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\r\n"
                 . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' . "\r\n"
@@ -4125,7 +4125,7 @@ function output_tsv(array $headers, array $rows, string $title = 'Laporan'): voi
 
             readfile($tempFile);
             @unlink($tempFile);
-            return;
+            exit;
         }
     }
 
@@ -4134,6 +4134,7 @@ function output_tsv(array $headers, array $rows, string $title = 'Laporan'): voi
     foreach ($rows as $row) {
         echo implode("\t", array_map('excel_cell', array_values($row))) . "\r\n";
     }
+    exit;
 }
 
 function excel_cell(mixed $value): string
