@@ -261,7 +261,7 @@ function asset_items_table(PDO $pdo, array $rows): string
 
         $displayCategory = !empty($row['type_name']) && $row['type_name'] !== '-' 
             ? $row['type_name'] 
-            : (!empty($row['asset_type']) ? $row['asset_type'] : (!empty($row['asset_category']) ? $row['asset_category'] : '-'));
+            : (!empty($row['asset_type']) ? $row['asset_type'] : '-');
 
         $isDeleted = strtolower((string)($row['status'] ?? '')) === 'deleted';
         $statusBadge = format_asset_status_badge($row['status'] ?? '');
@@ -7752,7 +7752,7 @@ function handle_route_report_asset_items(PDO $pdo): void
                 $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');
                 $categoryName = !empty($item['display_type_name']) && $item['display_type_name'] !== '-' 
                     ? $item['display_type_name'] 
-                    : (!empty($item['asset_type']) ? $item['asset_type'] : (!empty($item['asset_category']) ? $item['asset_category'] : '-'));
+                    : (!empty($item['asset_type']) ? $item['asset_type'] : '-');
                 $serialNum = !empty($item['serial_number']) ? $item['serial_number'] : '-';
                 $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
                 $compName = !empty($item['company_name']) ? $item['company_name'] : '-';

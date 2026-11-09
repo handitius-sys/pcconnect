@@ -3080,6 +3080,12 @@ function handle_route_reports(PDO $pdo): void
     $user = require_login();
     ensure_maintenance_work_schema($pdo);
     cancel_expired_maintenance_schedules($pdo);
+
+    $pcFilter = trim($_GET['pc_id'] ?? '');
+    $techFilter = (int)($_GET['technician_id'] ?? 0);
+    $startDate = trim((string)($_GET['start_date'] ?? ''));
+    $endDate = trim((string)($_GET['end_date'] ?? ''));
+
     render_header('Report Maintenance', $user);
     $periodLabel = format_report_period_label($startDate, $endDate);
     render_report_document_header('Laporan Preventive Maintenance', $periodLabel, $pdo);
@@ -3091,11 +3097,6 @@ function handle_route_reports(PDO $pdo): void
     $expSql = $hasExpiredDate ? "s.expired_date" : "DATE_ADD(s.scheduled_date, INTERVAL 3 DAY) AS expired_date";
     $hasCancelReason = db_column_exists($pdo, 'maintenance_schedules', 'cancellation_reason');
     $cancelSql = $hasCancelReason ? "s.cancellation_reason" : "NULL AS cancellation_reason";
-
-    $pcFilter = trim($_GET['pc_id'] ?? '');
-    $techFilter = (int)($_GET['technician_id'] ?? 0);
-    $startDate = trim((string)($_GET['start_date'] ?? ''));
-    $endDate = trim((string)($_GET['end_date'] ?? ''));
     $sql = $printerReady
         ? "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id, s.printer_id) pc_id, ai.alias_code, s.asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(ai.custodian_name, p.owner_name, pr.printer_name) owner_name FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id LEFT JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN printers pr ON pr.prn_id=s.printer_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1"
         : "SELECT r.*, s.id schedule_id, COALESCE(ai.asset_code, s.pc_id) pc_id, ai.alias_code, 'pc' asset_type, s.scheduled_date, {$expSql}, s.status schedule_status, {$cancelSql}, s.created_at schedule_created_at, s.photo_challenge_code schedule_challenge_code, u.name technician, COALESCE(ai.custodian_name, p.owner_name) owner_name FROM maintenance_schedules s LEFT JOIN asset_items ai ON ai.id = s.asset_item_id JOIN pcs p ON p.pc_id=s.pc_id LEFT JOIN users u ON u.id=s.technician_id LEFT JOIN maintenance_reports r ON r.id=(SELECT r2.id FROM maintenance_reports r2 WHERE r2.schedule_id=s.id ORDER BY r2.id DESC LIMIT 1) WHERE 1=1";
