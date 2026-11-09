@@ -104,21 +104,8 @@ function expire_stale_mobile_work_or_logout(PDO $pdo, array $user, ?int $schedul
 
 function smart_maintenance_card(array $schedule): string
 {
-    $hardware = $schedule['general_specs'] ? json_decode((string)$schedule['general_specs'], true) : [];
-    $benchmark = $schedule['benchmark'] ? json_decode((string)$schedule['benchmark'], true) : [];
-    $score = 100;
-    if ((float)($hardware['ram_gb'] ?? 8) < 8) {
-        $score -= 15;
-    }
-    if (isset($benchmark['storage_write_mbps']) && (float)$benchmark['storage_write_mbps'] < 80) {
-        $score -= 20;
-    }
-    if (isset($benchmark['cpu_quick_ms']) && (float)$benchmark['cpu_quick_ms'] > 2500) {
-        $score -= 15;
-    }
-    $html = '<section class="panel"><h2>Smart Maintenance</h2><div class="grid two"><div><strong>Health Score</strong><br>' . e(max(0, $score)) . '%</div><div><strong>RAM</strong><br>' . e($hardware['ram_gb'] ?? '-') . ' GB</div><div><strong>Storage</strong><br>' . e(isset($benchmark['storage_write_mbps']) ? round((float)$benchmark['storage_write_mbps'], 1) . ' MB/s' : '-') . '</div><div><strong>Benchmark</strong><br>' . e(isset($benchmark['cpu_quick_ms']) ? round((float)$benchmark['cpu_quick_ms'], 1) . ' ms' : '-') . '</div></div>';
-    $html .= '<p><strong>AI</strong><br>' . e($schedule['ai_recommendation'] ?: 'Belum ada rekomendasi PcNalisa.') . '</p></section>';
-    return $html;
+    // Panel Smart Maintenance dihapus sesuai permintaan
+    return '';
 }
 
 /**
@@ -847,7 +834,7 @@ function mobile_job(PDO $pdo): void
         echo '<p class="muted" style="margin-top:-6px;font-size:13px;">📍 ' . e($schedule['ma_location_label']) . '</p>';
     }
     echo '<p class="muted">Tanggal kerja: ' . e($schedule['scheduled_date']) . '</p><span class="badge">' . e($schedule['asset_type'] ?? 'pc') . '</span> <span class="badge">' . e($schedule['status']) . '</span></section>';
-    echo smart_maintenance_card($schedule);
+    // Panel Smart Maintenance dihapus sesuai permintaan
 
     if (!$hasBeforePhotos && !$locked) {
         $challengeCode = ensure_photo_challenge($pdo, $id, $schedule['photo_challenge_code'] ?? null);
