@@ -396,12 +396,21 @@ Output JSON only with keys: code_matched (bool), detected_code (string|null), qr
                 $methods = $m['supportedGenerationMethods'] ?? [];
                 if (in_array('generateContent', $methods, true)) {
                     $mName = str_replace('models/', '', (string)($m['name'] ?? ''));
-                    if ($mName !== '') {
-                        if (stripos($mName, 'flash') !== false) {
-                            $flashModels[] = $mName;
-                        } else {
-                            $otherModels[] = $mName;
-                        }
+                    // Lewati model non-vision (audio/tts, embedding, dsb.)
+                    if (
+                        $mName === '' ||
+                        stripos($mName, 'tts') !== false ||
+                        stripos($mName, 'audio') !== false ||
+                        stripos($mName, 'embedding') !== false ||
+                        stripos($mName, 'aqa') !== false ||
+                        stripos($mName, 'imagen') !== false
+                    ) {
+                        continue;
+                    }
+                    if (stripos($mName, 'flash') !== false) {
+                        $flashModels[] = $mName;
+                    } else {
+                        $otherModels[] = $mName;
                     }
                 }
             }
