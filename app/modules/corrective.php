@@ -1356,7 +1356,7 @@ function handle_route_ticket_form(PDO $pdo): void
             // Ambil master Komoditas (Asset Groups)
             $groupList = $pdo->query("SELECT id, group_code, group_name FROM asset_groups WHERE is_active=1 ORDER BY group_name")->fetchAll();
             ?>
-            <h2>1. Identitas Unit Aset & Tindakan</h2>
+            <h2>1. Identitas Unit Aset</h2>
             <div class="grid three">
                 <label>Komoditas *
                     <select id="dynGroupId" required onchange="onDynGroupChange()">
@@ -1392,12 +1392,64 @@ function handle_route_ticket_form(PDO $pdo): void
                 </label>
             </div>
 
+            <h2>2. Rincian Masalah & Foto Bukti</h2>
+            <?php
+            // Master Lokasi dari database
+            $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <div id="locationFieldWrapper" style="margin-bottom:16px;">
+                <label>Lokasi / Gedung / Ruangan (Khusus Penanganan Internal)
+                    <select name="location_label" id="locInput">
+                        <option value="">-- Pilih Lokasi dari Database --</option>
+                        <?php foreach ($locationsList as $loc): ?>
+                            <option value="<?= e($loc['location_name']) ?>"><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
+
+            <div class="grid three">
+                <label>Kategori Masalah
+                    <select name="issue_category" id="ticketIssueCat">
+                        <option value="hardware">Kerusakan Hardware / Komponen</option>
+                        <option value="software">Masalah Software / OS / Aplikasi</option>
+                        <option value="network">Jaringan / Koneksi Internet</option>
+                        <option value="printer">Printer / Scanner Error</option>
+                        <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
+                        <option value="electrical">Kelistrikan / Aki / Lampu</option>
+                        <option value="hvac">AC / Pendingin Ruangan</option>
+                        <option value="plumbing">Pipa / Sanitasi Air</option>
+                        <option value="general">Lain-lain / Kerusakan Fisik</option>
+                    </select>
+                </label>
+                <label>Tingkat Prioritas *
+                    <select name="priority" required>
+                        <option value="low">Low (Bisa ditunda)</option>
+                        <option value="medium" selected>Medium (Standard)</option>
+                        <option value="high">High (Mendesak / Mengganggu Operasional)</option>
+                        <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
+                    </select>
+                </label>
+                <label>Foto Kerusakan / Bukti Error
+                    <input type="file" name="photo_before" accept="image/*" capture="environment">
+                </label>
+            </div>
+
+            <label>Judul / Subjek Kendala *
+                <input name="subject" required placeholder="Contoh: Layar bluescreen tidak bisa masuk Windows / Ban mobil bocor / AC tidak dingin">
+            </label>
+
+            <label>Deskripsi Lengkap Gejala Kerusakan
+                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
+            </label>
+
+
             <?php
             // List mekanik internal & workshop
             $mechanics = $pdo->query("SELECT id, name FROM users WHERE role='corrective_maintenance' AND is_active=1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
             $workshops = $pdo->query("SELECT id, workshop_name FROM corrective_workshops ORDER BY workshop_name")->fetchAll(PDO::FETCH_ASSOC);
             ?>
-            <h2>2. Penanganan Oleh</h2>
+            <h2>3. Penanganan Oleh</h2>
             <div style="background:#fff; border:1px solid #e2e8f0; padding:15px; border-radius:6px; margin-bottom:20px;">
                 <div style="display:flex; gap:20px; margin-bottom:15px;">
                     <label style="font-weight:normal; display:flex; align-items:center; gap:5px; cursor:pointer;">
@@ -1436,7 +1488,7 @@ function handle_route_ticket_form(PDO $pdo): void
             <?php
             $allActions = $pdo->query("SELECT id, action_name AS action_title FROM corrective_action_types ORDER BY action_name ASC")->fetchAll(PDO::FETCH_ASSOC);
             ?>
-            <h2>3. Daftar Tindakan & Catatan Perbaikan</h2>
+            <h2>4. Daftar Tindakan & Catatan Perbaikan</h2>
             <div id="actionListWrapper" style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
                 <h3 style="margin-top:0;font-size:15px;color:#0369a1;">Daftar Tindakan / Pekerjaan Perbaikan: <span id="jdNameSpan" style="color:#0ea5e9;">Semua Opsi (Pilih Kategori untuk Menyaring)</span></h3>
                 <div id="dynamicActionRows">
@@ -1512,7 +1564,7 @@ function handle_route_ticket_form(PDO $pdo): void
                 </div>
             </div>
 
-            <h2>4. Informasi Pelapor</h2>
+            <h2>5. Informasi Pelapor</h2>
             <div class="grid three">
                 <label>Nama Pelapor *
                     <input name="reporter_name" id="reporterName" value="<?= e($user['name'] ?? '') ?>" required placeholder="Nama pemakai / PIC">
@@ -1525,57 +1577,6 @@ function handle_route_ticket_form(PDO $pdo): void
                 </label>
             </div>
             <?= function_exists('employee_portal_name_picker_html') ? employee_portal_name_picker_html('ticketReporter', 'reporterName', 'reporterNik') : '' ?>
-
-            <h2>5. Rincian Masalah & Foto Bukti</h2>
-            <?php
-            // Master Lokasi dari database
-            $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
-            ?>
-            <div id="locationFieldWrapper" style="margin-bottom:16px;">
-                <label>Lokasi / Gedung / Ruangan (Khusus Penanganan Internal)
-                    <select name="location_label" id="locInput">
-                        <option value="">-- Pilih Lokasi dari Database --</option>
-                        <?php foreach ($locationsList as $loc): ?>
-                            <option value="<?= e($loc['location_name']) ?>"><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-            </div>
-
-            <div class="grid three">
-                <label>Kategori Masalah
-                    <select name="issue_category" id="ticketIssueCat">
-                        <option value="hardware">Kerusakan Hardware / Komponen</option>
-                        <option value="software">Masalah Software / OS / Aplikasi</option>
-                        <option value="network">Jaringan / Koneksi Internet</option>
-                        <option value="printer">Printer / Scanner Error</option>
-                        <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
-                        <option value="electrical">Kelistrikan / Aki / Lampu</option>
-                        <option value="hvac">AC / Pendingin Ruangan</option>
-                        <option value="plumbing">Pipa / Sanitasi Air</option>
-                        <option value="general">Lain-lain / Kerusakan Fisik</option>
-                    </select>
-                </label>
-                <label>Tingkat Prioritas *
-                    <select name="priority" required>
-                        <option value="low">Low (Bisa ditunda)</option>
-                        <option value="medium" selected>Medium (Standard)</option>
-                        <option value="high">High (Mendesak / Mengganggu Operasional)</option>
-                        <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
-                    </select>
-                </label>
-                <label>Foto Kerusakan / Bukti Error
-                    <input type="file" name="photo_before" accept="image/*" capture="environment">
-                </label>
-            </div>
-
-            <label>Judul / Subjek Kendala *
-                <input name="subject" required placeholder="Contoh: Layar bluescreen tidak bisa masuk Windows / Ban mobil bocor / AC tidak dingin">
-            </label>
-
-            <label>Deskripsi Lengkap Gejala Kerusakan
-                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
-            </label>
 
             <div class="actions" style="margin-top:20px;">
                 <a class="btn" href="<?= route_url('tickets') ?>">Batal</a>
@@ -2273,7 +2274,11 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $whereSql = implode(' AND ', $where);
 
     $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
-                   ma.maintenance_asset_code, ma.name AS maintenance_asset_name, ai.alias_code AS legacy_code
+                   COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
+                   COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
+                   COALESCE(ai.alias_code, ma.alias_code) AS legacy_code,
+                   COALESCE(cr.action_type, 'Reparasi') AS action_taken,
+                   COALESCE(cr.repair_cost, 0) AS service_cost
             FROM corrective_repairs cr
             JOIN corrective_tickets t ON t.id = cr.ticket_id
             LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
