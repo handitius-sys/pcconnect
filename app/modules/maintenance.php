@@ -4082,9 +4082,10 @@ function export_excel(PDO $pdo, string $type): never
                 $r['repaired_at'] ? date('d/m/Y H:i', strtotime($r['repaired_at'])) : '-',
                 $r['ticket_code'],
                 strtoupper((string)$r['ticket_status']),
-                $r['asset_category'] ?: '-',
                 $r['maintenance_asset_code'] ?: '-',
                 $r['legacy_code'] ?: '-',
+                $r['subject'] ?: '-',
+                $r['asset_category'] ?: '-',
                 $r['maintenance_asset_name'] ?: '-',
                 $r['technician_name'] ?: '-',
                 $r['vendor_name'] ?: '-',
@@ -4096,7 +4097,7 @@ function export_excel(PDO $pdo, string $type): never
             ];
         }
 
-        output_tsv(['Tanggal', 'Nomor Tiket', 'Status', 'Kategori Aset', 'Kode Aset', 'Kode Lama (Legacy)', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
+        output_tsv(['Tanggal', 'Nomor Tiket', 'Status', 'Kode Aset', 'Kode Lama (Legacy)', 'Kendala / Subjek', 'Kategori Aset', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
         exit;
     }
 

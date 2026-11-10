@@ -2299,7 +2299,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($_GET['print'])) {
-        $headers = ['No', 'Tanggal & Tiket', 'Status', 'Kode Aset', 'Kode Lama', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
+        $headers = ['No', 'Tanggal', 'No Tiket', 'Status', 'Kode Aset', 'Kode Lama', 'Kendala / Subjek', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
         $printRows = [];
         $no = 1;
         foreach ($repairs as $r) {
@@ -2317,20 +2317,24 @@ function handle_route_corrective_repairs(PDO $pdo): void
                 if (!empty($partsArr)) $partsTxt = implode('; ', $partsArr);
             }
 
-            $ticketTxt = date('d/m/Y H:i', strtotime($r['repaired_at'])) . ' | ' . $r['ticket_code'] . ' - ' . $r['subject'];
+            $dateTxt = date('d/m/Y H:i', strtotime($r['repaired_at']));
+            $ticketCodeTxt = (string)($r['ticket_code'] ?? '-');
             $statusTxt = strtoupper((string)($r['ticket_status'] ?? '-'));
             $assetTxt = !empty($r['maintenance_asset_code']) ? $r['maintenance_asset_code'] : '-';
             $legacyTxt = !empty($r['legacy_code']) ? $r['legacy_code'] : '-';
+            $subjectTxt = (string)($r['subject'] ?? '-');
             $techTxt = !empty($r['vendor_name']) ? $r['vendor_name'] . ' (Vendor)' : (!empty($r['technician_name']) ? $r['technician_name'] : '-');
             $actionTxt = !empty($r['action_taken']) ? $r['action_taken'] : '-';
             $costTxt = 'Rp ' . number_format((float)($r['service_cost'] ?? 0), 0, ',', '.');
 
             $printRows[] = [
                 $no++,
-                $ticketTxt,
+                $dateTxt,
+                $ticketCodeTxt,
                 $statusTxt,
                 $assetTxt,
                 $legacyTxt,
+                $subjectTxt,
                 $techTxt,
                 $actionTxt,
                 $partsTxt,
@@ -2387,10 +2391,12 @@ function handle_route_corrective_repairs(PDO $pdo): void
         <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">
             <thead>
                 <tr>
-                    <th>Tanggal & Tiket</th>
+                    <th>Tanggal</th>
+                    <th>No. Tiket</th>
                     <th>Status</th>
                     <th>Kode Aset</th>
                     <th>Kode Lama (Legacy)</th>
+                    <th>Kendala / Subjek</th>
                     <th>Teknisi / Vendor</th>
                     <th>Tindakan & Solusi</th>
                     <th>Sparepart Diganti</th>
@@ -2400,7 +2406,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </thead>
             <tbody>
                 <?php if (!$repairs): ?>
-                    <tr><td colspan="9" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
+                    <tr><td colspan="11" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
                 <?php else: ?>
                     <?php foreach ($repairs as $r): ?>
                         <?php
@@ -2415,7 +2421,9 @@ function handle_route_corrective_repairs(PDO $pdo): void
                         ?>
                         <tr>
                             <td>
-                                <?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?><br>
+                                <?= e(date('d M Y H:i', strtotime($r['repaired_at']))) ?>
+                            </td>
+                            <td>
                                 <a href="<?= route_url('ticket_detail', ['id' => $r['ticket_id']]) ?>" style="color:#0284c7;font-weight:600;"><?= e($r['ticket_code']) ?></a>
                             </td>
                             <td>
@@ -2426,6 +2434,9 @@ function handle_route_corrective_repairs(PDO $pdo): void
                             </td>
                             <td>
                                 <?= !empty($r['legacy_code']) ? e($r['legacy_code']) : '-' ?>
+                            </td>
+                            <td>
+                                <strong><?= e($r['subject'] ?: '-') ?></strong>
                             </td>
                             <td>
                                 <?= e($r['technician_name'] ?: '-') ?><?= !empty($r['vendor_name']) ? ' (Vendor: ' . e($r['vendor_name']) . ')' : '' ?>
