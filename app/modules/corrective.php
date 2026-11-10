@@ -682,7 +682,7 @@ function handle_route_tickets(PDO $pdo): void
     </section>
 
     <div style="margin-bottom: 18px;">
-        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
+        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
             <?= $renderCmCard((int)($stats['count_total'] ?? 0), 'Total Tiket', 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z', 0) ?>
             <?= $renderCmCard((int)($stats['count_open'] ?? 0), 'Tiket Baru / Terbuka', 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', 1) ?>
             <?= $renderCmCard((int)($stats['count_progress'] ?? 0), 'Sedang Dikerjakan', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', 2) ?>
@@ -748,13 +748,7 @@ function handle_route_tickets(PDO $pdo): void
                 <?php else: ?>
                     <?php foreach ($tickets as $t): ?>
                         <?php
-                        $assetLabel = '-';
-                        if (!empty($t['maintenance_asset_code'])) {
-                            $aliasBadge = !empty($t['item_alias_code']) ? '<br><span style="display:inline-block;padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0284c7;font-size:11px;font-weight:700;margin-top:2px;">Lama: ' . e($t['item_alias_code']) . '</span>' : '';
-                            $assetLabel = '<strong>' . e($t['maintenance_asset_code']) . '</strong>' . $aliasBadge . '<br><small class="muted">' . e(mb_strimwidth((string)$t['maintenance_asset_name'], 0, 35, '...')) . '</small>';
-                        } elseif (!empty($t['pc_id'])) {
-                            $assetLabel = 'PC: <strong>' . e($t['pc_id']) . '</strong>';
-                        }
+                        $assetCodeOnly = !empty($t['maintenance_asset_code']) ? $t['maintenance_asset_code'] : (!empty($t['pc_id']) ? $t['pc_id'] : '-');
                         $totalCost = (float)$t['total_repair_cost'] + (float)$t['total_part_cost'];
 
                         $handledDisplay = 'Belum Ditentukan';
@@ -779,11 +773,10 @@ function handle_route_tickets(PDO $pdo): void
                                 <?php endif; ?>
                                 <div style="margin-top:4px;"><?= ticket_priority_badge($t['priority']) ?></div>
                             </td>
-                            <td><?= $assetLabel ?></td>
+                            <td><strong><?= e($assetCodeOnly) ?></strong></td>
                             <td><?= !empty($t['item_alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($t['item_alias_code']) . '</span>' : '<span class="muted">-</span>' ?></td>
                             <td>
-                                <strong><?= e($t['subject']) ?></strong><br>
-                                <span class="muted" style="font-size:12px;"><?= e(mb_strimwidth((string)$t['description'], 0, 60, '...')) ?></span>
+                                <strong><?= e($t['subject']) ?></strong>
                             </td>
                             <td>
                                 <strong><?= e($t['reporter_name']) ?></strong> <?= $t['reporter_nik'] ? '<span class="muted">(' . e($t['reporter_nik']) . ')</span>' : '' ?><br>
@@ -805,15 +798,20 @@ function handle_route_tickets(PDO $pdo): void
                                 <?php endif; ?>
                             </td>
                             <td style="text-align:center;" class="no-print">
-                                <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Detail Tiket & Penanganan" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none; vertical-align:middle; margin-right:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
-                                <?php if (has_regulation('tickets', 'delete')): ?>
-                                    <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Batalkan tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="action" value="delete_ticket">
-                                        <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
-                                        <button type="submit" title="Hapus Tiket" style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:6px; cursor:pointer; vertical-align:middle;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                                    </form>
-                                <?php endif; ?>
+                                <div style="display:inline-flex; align-items:center; justify-content:center; gap:4px;">
+                                    <a href="<?= route_url('ticket_detail', ['id' => $t['id'], 'view' => 1]) ?>" title="Lihat Detail Tiket (View Only)" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; border-radius:6px; text-decoration:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></a>
+                                    <?php if ($t['status'] !== 'closed' && in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
+                                        <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Penanganan / Tindakan Perbaikan" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>
+                                    <?php endif; ?>
+                                    <?php if (has_regulation('tickets', 'delete')): ?>
+                                        <form method="post" action="<?= route_url('tickets') ?>" style="display:inline; margin:0;" onsubmit="return confirm('Batalkan tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="action" value="delete_ticket">
+                                            <input type="hidden" name="ticket_id" value="<?= (int)$t['id'] ?>">
+                                            <button type="submit" title="Hapus Tiket" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:6px; cursor:pointer;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1869,6 +1867,7 @@ function handle_route_ticket_detail(PDO $pdo): void
     ensure_corrective_maintenance_schema($pdo);
 
     $id = (int)($_GET['id'] ?? 0);
+    $isViewOnly = !empty($_GET['view']);
     $stmt = $pdo->prepare("SELECT t.*, ma.maintenance_asset_code, ma.name AS maintenance_asset_name, 
                                   ma.asset_group_id AS ma_group_id, ma.asset_type_id AS ma_type_id,
                                   ai.asset_group_id AS ai_group_id, ai.asset_type_id AS ai_type_id,
@@ -1918,7 +1917,7 @@ function handle_route_ticket_detail(PDO $pdo): void
             </div>
             <div class="actions">
                 <a class="btn" href="<?= route_url('tickets') ?>">← Kembali ke Daftar</a>
-                <?php if (has_regulation('tickets', 'delete')): ?>
+                <?php if (empty($isViewOnly) && has_regulation('tickets', 'delete')): ?>
                     <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Hapus tiket <?= e($ticket['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="delete_ticket">
@@ -1974,7 +1973,7 @@ function handle_route_ticket_detail(PDO $pdo): void
     </section>
 
     <!-- Form Eksekusi Teknisi -->
-    <?php if ($ticket['status'] !== 'closed' && in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
+    <?php if (empty($isViewOnly) && $ticket['status'] !== 'closed' && in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
         <section class="panel">
             <h2>Input Tindakan Perbaikan & Penggantian Sparepart</h2>
             <form method="post" action="<?= route_url('ticket_action') ?>" enctype="multipart/form-data">
@@ -2398,9 +2397,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                 <a href="<?= route_url('ticket_detail', ['id' => $r['ticket_id']]) ?>" style="color:#0284c7;font-weight:600;"><?= e($r['ticket_code']) ?></a>
                             </td>
                             <td>
-                                <?= ticket_category_badge($r['asset_category']) ?><br>
-                                <?= e($r['maintenance_asset_code'] ?: '-') ?><br>
-                                <small class="muted"><?= e(mb_strimwidth((string)$r['maintenance_asset_name'], 0, 35, '...')) ?></small>
+                                <strong><?= e($r['maintenance_asset_code'] ?: '-') ?></strong>
                             </td>
                             <td>
                                 <?= !empty($r['legacy_code']) ? e($r['legacy_code']) : '-' ?>
