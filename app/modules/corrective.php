@@ -2276,7 +2276,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
                    COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
                    COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
-                   COALESCE(ai.alias_code, ma.alias_code) AS legacy_code,
+                   ai.alias_code AS legacy_code,
                    COALESCE(cr.action_type, 'Reparasi') AS action_taken,
                    COALESCE(cr.repair_cost, 0) AS service_cost
             FROM corrective_repairs cr
