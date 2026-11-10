@@ -2264,49 +2264,61 @@ function handle_route_corrective_repairs(PDO $pdo): void
     $where = ["1=1"];
     $params = [];
     if ($startDate !== '') {
-        $where[] = "DATE(cr.repaired_at) >= ?";
+        $where[] = "DATE(COALESCE(cr.repaired_at, t.created_at)) >= ?";
         $params[] = $startDate;
     }
     if ($endDate !== '') {
-        $where[] = "DATE(cr.repaired_at) <= ?";
+        $where[] = "DATE(COALESCE(cr.repaired_at, t.created_at)) <= ?";
         $params[] = $endDate;
     }
     $whereSql = implode(' AND ', $where);
 
-    $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
+    $sql = "SELECT t.id AS ticket_id, t.ticket_code, t.subject, t.asset_category, t.location_label, 
+                   t.status AS ticket_status, t.created_at AS ticket_created_at,
+                   t.invoice_photo AS ticket_invoice_photo,
+                   t.assigned_technician_name,
                    COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
                    COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
                    ai.alias_code AS legacy_code,
-                   COALESCE(cr.action_type, 'Reparasi') AS action_taken,
-                   COALESCE(cr.repair_cost, 0) AS service_cost
-            FROM corrective_repairs cr
-            JOIN corrective_tickets t ON t.id = cr.ticket_id
+                   cr.id AS repair_id,
+                   COALESCE(cr.repaired_at, t.created_at) AS repaired_at,
+                   COALESCE(cr.technician_name, t.assigned_technician_name, '-') AS technician_name,
+                   cr.vendor_name,
+                   COALESCE(cr.action_type, (SELECT cta.action_title FROM corrective_ticket_actions cta WHERE cta.ticket_id = t.id LIMIT 1), 'Perbaikan Tiket') AS action_taken,
+                   COALESCE(cr.solution_details, t.description, '-') AS solution_details,
+                   COALESCE(cr.repair_cost, 0) AS service_cost,
+                   cr.invoice_photo AS repair_invoice_photo
+            FROM corrective_tickets t
+            LEFT JOIN corrective_repairs cr ON cr.ticket_id = t.id
             LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
             LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
             WHERE {$whereSql}
-            ORDER BY cr.repaired_at DESC, cr.id DESC";
+            ORDER BY COALESCE(cr.repaired_at, t.created_at) DESC, t.id DESC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($_GET['print'])) {
-        $headers = ['No', 'Tanggal & Tiket', 'Kode Aset', 'Kode Lama', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
+        $headers = ['No', 'Tanggal & Tiket', 'Status', 'Kode Aset', 'Kode Lama', 'Teknisi / Vendor', 'Tindakan & Solusi', 'Sparepart Diganti', 'Biaya Jasa Servis'];
         $printRows = [];
         $no = 1;
         foreach ($repairs as $r) {
-            $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
-            $pStmt->execute([(int)$r['id']]);
-            $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
-            $partsArr = [];
-            foreach ($parts as $p) {
-                $pStr = $p['part_name'];
-                if (!empty($p['part_code'])) $pStr .= ' (' . $p['part_code'] . ')';
-                $pStr .= ' x' . $p['qty'] . ' @ Rp ' . number_format((float)$p['price'], 0, ',', '.');
-                $partsArr[] = $pStr;
+            $partsTxt = '-';
+            if (!empty($r['repair_id'])) {
+                $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
+                $pStmt->execute([(int)$r['repair_id']]);
+                $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                $partsArr = [];
+                foreach ($parts as $p) {
+                    $pStr = $p['new_part_name'] ?? $p['part_name'] ?? 'Part';
+                    if (!empty($p['part_code'])) $pStr .= ' (' . $p['part_code'] . ')';
+                    $partsArr[] = $pStr;
+                }
+                if (!empty($partsArr)) $partsTxt = implode('; ', $partsArr);
             }
-            $partsTxt = !empty($partsArr) ? implode('; ', $partsArr) : '-';
 
             $ticketTxt = date('d/m/Y H:i', strtotime($r['repaired_at'])) . ' | ' . $r['ticket_code'] . ' - ' . $r['subject'];
+            $statusTxt = strtoupper((string)($r['ticket_status'] ?? '-'));
             $assetTxt = !empty($r['maintenance_asset_code']) ? $r['maintenance_asset_code'] : '-';
             $legacyTxt = !empty($r['legacy_code']) ? $r['legacy_code'] : '-';
             $techTxt = !empty($r['vendor_name']) ? $r['vendor_name'] . ' (Vendor)' : (!empty($r['technician_name']) ? $r['technician_name'] : '-');
@@ -2316,6 +2328,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             $printRows[] = [
                 $no++,
                 $ticketTxt,
+                $statusTxt,
                 $assetTxt,
                 $legacyTxt,
                 $techTxt,
@@ -2336,7 +2349,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
         <div class="split">
             <div>
                 <h1>Riwayat Reparasi & Penggantian Sparepart</h1>
-                <p class="muted">Daftar seluruh tindakan corrective maintenance dan sparepart yang pernah diganti pada unit.</p>
+                <p class="muted">Daftar seluruh tindakan corrective maintenance, tiket kendala unit, dan sparepart yang pernah diganti.</p>
             </div>
             <div class="actions no-print" style="display:inline-flex;gap:6px;align-items:center;">
                 <a class="btn primary" href="<?= route_url('tickets') ?>">Daftar Tiket Aktif</a>
@@ -2375,6 +2388,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             <thead>
                 <tr>
                     <th>Tanggal & Tiket</th>
+                    <th>Status</th>
                     <th>Kode Aset</th>
                     <th>Kode Lama (Legacy)</th>
                     <th>Teknisi / Vendor</th>
@@ -2386,14 +2400,17 @@ function handle_route_corrective_repairs(PDO $pdo): void
             </thead>
             <tbody>
                 <?php if (!$repairs): ?>
-                    <tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
+                    <tr><td colspan="9" class="muted" style="text-align:center;padding:24px;">Belum ada riwayat perbaikan.</td></tr>
                 <?php else: ?>
                     <?php foreach ($repairs as $r): ?>
                         <?php
-                        $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
-                        $pStmt->execute([(int)$r['id']]);
-                        $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
-                        $invPhoto = $r['invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
+                        $parts = [];
+                        if (!empty($r['repair_id'])) {
+                            $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
+                            $pStmt->execute([(int)$r['repair_id']]);
+                            $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                        }
+                        $invPhoto = $r['repair_invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
                         $isPdf = $invPhoto && str_ends_with(strtolower($invPhoto), '.pdf');
                         ?>
                         <tr>
@@ -2402,39 +2419,43 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                 <a href="<?= route_url('ticket_detail', ['id' => $r['ticket_id']]) ?>" style="color:#0284c7;font-weight:600;"><?= e($r['ticket_code']) ?></a>
                             </td>
                             <td>
+                                <?= ticket_status_badge($r['ticket_status']) ?>
+                            </td>
+                            <td>
                                 <strong><?= e($r['maintenance_asset_code'] ?: '-') ?></strong>
                             </td>
                             <td>
                                 <?= !empty($r['legacy_code']) ? e($r['legacy_code']) : '-' ?>
                             </td>
                             <td>
-                                <?= e($r['technician_name']) ?><?= $r['vendor_name'] ? ' (Vendor: ' . e($r['vendor_name']) . ')' : '' ?>
+                                <?= e($r['technician_name'] ?: '-') ?><?= !empty($r['vendor_name']) ? ' (Vendor: ' . e($r['vendor_name']) . ')' : '' ?>
                             </td>
                             <td>
-                                <?= e($r['action_type']) ?> - <?= e(mb_strimwidth((string)$r['solution_details'], 0, 90, '...')) ?>
+                                <strong><?= e($r['action_taken']) ?></strong><br>
+                                <span class="muted" style="font-size:11px;"><?= e(mb_strimwidth((string)$r['solution_details'], 0, 90, '...')) ?></span>
                             </td>
                             <td>
                                 <?php if (!$parts): ?>
                                     <span class="muted">-</span>
                                 <?php else: ?>
                                     <?php foreach ($parts as $p): ?>
-                                        • <?= e($p['new_part_name']) ?> (Rp <?= number_format((float)$p['part_cost'], 0, ',', '.') ?>)<br>
+                                        • <?= e($p['new_part_name'] ?? $p['part_name'] ?? 'Part') ?> (Rp <?= number_format((float)($p['part_cost'] ?? $p['price'] ?? 0), 0, ',', '.') ?>)<br>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                Rp <?= number_format((float)$r['repair_cost'], 0, ',', '.') ?>
+                                Rp <?= number_format((float)$r['service_cost'], 0, ',', '.') ?>
                             </td>
                             <td style="text-align:center;" class="no-print">
                                 <?php if (!$invPhoto): ?>
                                     <span class="muted">-</span>
                                 <?php elseif ($isPdf): ?>
-                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" class="btn secondary" style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px; text-decoration:none;" title="Buka Dokumen PDF">
-                                        📄 Buka PDF
+                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" class="btn secondary" style="font-size:11px;padding:3px 8px;text-decoration:none;">
+                                        📄 PDF
                                     </a>
                                 <?php else: ?>
-                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;" title="Klik untuk memperbesar foto kwitansi" style="display:inline-block; vertical-align:middle;">
-                                        <img src="<?= e(url($invPhoto)) ?>" alt="Kwitansi" style="width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #cbd5e1; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;">
+                                    <a href="<?= e(url($invPhoto)) ?>" target="_blank" onclick="openInvoiceImageViewer(this.href); return false;">
+                                        <img src="<?= e(url($invPhoto)) ?>" alt="Invoice" style="max-height:36px;border-radius:4px;border:1px solid #cbd5e1;cursor:pointer;">
                                     </a>
                                 <?php endif; ?>
                             </td>
@@ -2446,14 +2467,10 @@ function handle_route_corrective_repairs(PDO $pdo): void
         </div>
     </section>
     <?php
-    render_invoice_camera_modal_and_script();
+    render_invoice_image_viewer_modal();
     render_footer();
 }
 
-/**
- * Modul: Daftar Walkaround
- * Proses: Menampilkan log pemantauan keliling (Walkaround) yang dilakukan teknisi tanpa adanya tiket resmi.
- */
 function handle_route_walkarounds(PDO $pdo): void
 {
     $user = require_regulation('walkarounds', 'view');

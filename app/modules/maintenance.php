@@ -4022,11 +4022,11 @@ function export_excel(PDO $pdo, string $type): never
         $where = ["1=1"];
         $params = [];
         if ($startDate !== '') {
-            $where[] = "DATE(cr.repaired_at) >= ?";
+            $where[] = "DATE(COALESCE(cr.repaired_at, t.created_at)) >= ?";
             $params[] = $startDate;
         }
         if ($endDate !== '') {
-            $where[] = "DATE(cr.repaired_at) <= ?";
+            $where[] = "DATE(COALESCE(cr.repaired_at, t.created_at)) <= ?";
             $params[] = $endDate;
         }
         if ($category !== '') {
@@ -4034,45 +4034,61 @@ function export_excel(PDO $pdo, string $type): never
             $params[] = $category;
         }
         if ($q !== '') {
-            $where[] = "(t.ticket_code LIKE ? OR ma.maintenance_asset_code LIKE ? OR ma.name LIKE ? OR cr.technician_name LIKE ? OR cr.vendor_name LIKE ? OR cr.action_type LIKE ? OR cr.solution_details LIKE ?)";
+            $where[] = "(t.ticket_code LIKE ? OR ai.asset_code LIKE ? OR ma.maintenance_asset_code LIKE ? OR ma.name LIKE ? OR cr.technician_name LIKE ? OR cr.vendor_name LIKE ? OR cr.action_type LIKE ? OR cr.solution_details LIKE ?)";
             $kw = '%' . $q . '%';
-            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw, $kw]);
+            $params = array_merge($params, [$kw, $kw, $kw, $kw, $kw, $kw, $kw, $kw]);
         }
 
-        $sql = "SELECT cr.*, t.ticket_code, t.subject, t.asset_category, t.location_label, t.invoice_photo AS ticket_invoice_photo,
-                       ma.maintenance_asset_code, ma.name AS maintenance_asset_name, ai.alias_code AS legacy_code
-                FROM corrective_repairs cr
-                JOIN corrective_tickets t ON t.id = cr.ticket_id
+        $sql = "SELECT t.ticket_code, t.subject, t.asset_category, t.status AS ticket_status,
+                       t.location_label, t.invoice_photo AS ticket_invoice_photo,
+                       COALESCE(ai.asset_code, ma.maintenance_asset_code, t.pc_id) AS maintenance_asset_code,
+                       ai.alias_code AS legacy_code,
+                       COALESCE(ai.asset_name, ma.name, t.pc_id) AS maintenance_asset_name,
+                       COALESCE(cr.repaired_at, t.created_at) AS repaired_at,
+                       COALESCE(cr.technician_name, t.assigned_technician_name, '-') AS technician_name,
+                       cr.vendor_name,
+                       COALESCE(cr.action_type, (SELECT cta.action_title FROM corrective_ticket_actions cta WHERE cta.ticket_id = t.id LIMIT 1), 'Perbaikan Tiket') AS action_taken,
+                       COALESCE(cr.solution_details, t.description, '-') AS solution_details,
+                       COALESCE(cr.repair_cost, 0) AS repair_cost,
+                       cr.invoice_photo AS repair_invoice_photo,
+                       cr.id AS repair_id
+                FROM corrective_tickets t
+                LEFT JOIN corrective_repairs cr ON cr.ticket_id = t.id
                 LEFT JOIN asset_items ai ON ai.id = t.asset_item_id
                 LEFT JOIN maintenance_assets ma ON ma.id = t.maintenance_asset_id
                 WHERE " . implode(' AND ', $where) . "
-                ORDER BY cr.repaired_at DESC, cr.id DESC";
+                ORDER BY COALESCE(cr.repaired_at, t.created_at) DESC, t.id DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $exportRows = [];
         foreach ($repairs as $r) {
-            $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
-            $pStmt->execute([(int)$r['id']]);
-            $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
             $partsArr = [];
-            foreach ($parts as $p) {
-                $partsArr[] = $p['new_part_name'] . ' (Rp ' . number_format((float)$p['part_cost'], 0, ',', '.') . ')';
+            if (!empty($r['repair_id'])) {
+                $pStmt = $pdo->prepare("SELECT * FROM corrective_repair_parts WHERE repair_id = ?");
+                $pStmt->execute([(int)$r['repair_id']]);
+                $parts = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($parts as $p) {
+                    $pName = $p['new_part_name'] ?? $p['part_name'] ?? 'Part';
+                    $pCost = (float)($p['part_cost'] ?? $p['price'] ?? 0);
+                    $partsArr[] = $pName . ' (Rp ' . number_format($pCost, 0, ',', '.') . ')';
+                }
             }
             $partsStr = !empty($partsArr) ? implode('; ', $partsArr) : '-';
-            $invPhoto = $r['invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
+            $invPhoto = $r['repair_invoice_photo'] ?: ($r['ticket_invoice_photo'] ?? null);
 
             $exportRows[] = [
                 $r['repaired_at'] ? date('d/m/Y H:i', strtotime($r['repaired_at'])) : '-',
                 $r['ticket_code'],
+                strtoupper((string)$r['ticket_status']),
                 $r['asset_category'] ?: '-',
                 $r['maintenance_asset_code'] ?: '-',
                 $r['legacy_code'] ?: '-',
                 $r['maintenance_asset_name'] ?: '-',
                 $r['technician_name'] ?: '-',
                 $r['vendor_name'] ?: '-',
-                $r['action_type'] ?: '-',
+                $r['action_taken'] ?: '-',
                 $r['solution_details'] ?: '-',
                 $partsStr,
                 $r['repair_cost'],
@@ -4080,7 +4096,7 @@ function export_excel(PDO $pdo, string $type): never
             ];
         }
 
-        output_tsv(['Tanggal Reparasi', 'Nomor Tiket', 'Kategori Aset', 'Kode Aset', 'Kode Lama (Legacy)', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
+        output_tsv(['Tanggal', 'Nomor Tiket', 'Status', 'Kategori Aset', 'Kode Aset', 'Kode Lama (Legacy)', 'Nama Unit Aset', 'Teknisi', 'Vendor', 'Jenis Tindakan', 'Solusi & Catatan Pengerjaan', 'Sparepart Diganti', 'Biaya Jasa Servis (Rp)', 'Link Foto/Scan Kwitansi'], $exportRows);
         exit;
     }
 
