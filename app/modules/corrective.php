@@ -2467,7 +2467,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
         </div>
     </section>
     <?php
-    render_invoice_image_viewer_modal();
+    render_invoice_camera_modal_and_script();
     render_footer();
 }
 
