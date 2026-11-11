@@ -1424,20 +1424,13 @@ function handle_route_ticket_form(PDO $pdo): void
             </div>
 
             <h2>2. Rincian Masalah & Foto Bukti</h2>
-            <?php
-            // Master Lokasi dari database
-            $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
-            ?>
-            <div id="locationFieldWrapper" style="margin-bottom:16px;">
-                <label>Lokasi / Gedung / Ruangan (Khusus Penanganan Internal)
-                    <select name="location_label" id="locInput">
-                        <option value="">-- Pilih Lokasi dari Database --</option>
-                        <?php foreach ($locationsList as $loc): ?>
-                            <option value="<?= e($loc['location_name']) ?>"><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-            </div>
+            <label>Judul / Subjek Kendala *
+                <input name="subject" required placeholder="Contoh: Layar bluescreen tidak bisa masuk Windows / Ban mobil bocor / AC tidak dingin">
+            </label>
+
+            <label>Deskripsi Lengkap Gejala Kerusakan
+                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
+            </label>
 
             <div class="grid three">
                 <label>Kategori Masalah
@@ -1466,13 +1459,20 @@ function handle_route_ticket_form(PDO $pdo): void
                 </label>
             </div>
 
-            <label>Judul / Subjek Kendala *
-                <input name="subject" required placeholder="Contoh: Layar bluescreen tidak bisa masuk Windows / Ban mobil bocor / AC tidak dingin">
-            </label>
-
-            <label>Deskripsi Lengkap Gejala Kerusakan
-                <textarea name="description" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik saat terjadi masalah..."></textarea>
-            </label>
+            <?php
+            // Master Lokasi dari database
+            $locationsList = $pdo->query("SELECT id, location_code, location_name FROM asset_locations WHERE is_active=1 ORDER BY location_name")->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <div id="locationFieldWrapper" style="margin-bottom:16px;">
+                <label>Lokasi / Gedung / Ruangan (Khusus Penanganan Internal)
+                    <select name="location_label" id="locInput">
+                        <option value="">-- Pilih Lokasi dari Database --</option>
+                        <?php foreach ($locationsList as $loc): ?>
+                            <option value="<?= e($loc['location_name']) ?>"><?= e($loc['location_code'] . ' - ' . $loc['location_name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
 
 
             <?php
