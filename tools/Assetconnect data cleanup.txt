@@ -1,0 +1,74 @@
+-- ============================================================================
+-- SCRIPT PEMBERSIHAN DATA TRANSAKSI & RESET COUNTER ID KE 1
+-- (DATA "PENDATAAN PC", DATA MASTER, DAN USERS TETAP DIPERTAHANKAN)
+-- ============================================================================
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- 1. Lepaskan tautan ID Unit Aset / Bundle pada tabel Pendataan PC (data PC tetap utuh)
+UPDATE `pcs`
+SET `asset_item_id` = NULL,
+    `asset_bundle_id` = NULL,
+    `maintenance_asset_id` = NULL;
+
+UPDATE `printers`
+SET `asset_item_id` = NULL,
+    `maintenance_asset_id` = NULL;
+
+-- 2. Bersihkan Transaksi Peminjaman Aset & Reset ID ke 1
+TRUNCATE TABLE `asset_loan_items`;
+TRUNCATE TABLE `asset_loans`;
+
+-- 3. Bersihkan Transaksi Preventive Maintenance & Reset ID ke 1
+TRUNCATE TABLE `maintenance_timeline`;
+TRUNCATE TABLE `maintenance_reports`;
+TRUNCATE TABLE `schedule_jobs`;
+TRUNCATE TABLE `maintenance_schedules`;
+
+-- 4. Bersihkan Transaksi Aset Corrective & Reparasi & Reset ID ke 1
+TRUNCATE TABLE `corrective_repair_parts`;
+TRUNCATE TABLE `corrective_repairs`;
+TRUNCATE TABLE `corrective_ticket_actions`;
+TRUNCATE TABLE `corrective_tickets`;
+TRUNCATE TABLE `asset_repair_parts`;
+TRUNCATE TABLE `asset_repairs`;
+TRUNCATE TABLE `asset_walkarounds`;
+
+-- 5. Bersihkan Transaksi Mutasi, Bundle, dan Daftar Unit Aset & Reset ID ke 1
+TRUNCATE TABLE `asset_movements`;
+TRUNCATE TABLE `maintenance_asset_items`;
+TRUNCATE TABLE `maintenance_assets`;
+TRUNCATE TABLE `asset_bundle_members`;
+TRUNCATE TABLE `asset_bundles`;
+TRUNCATE TABLE `asset_item_members`;
+TRUNCATE TABLE `asset_specification_logs`;
+TRUNCATE TABLE `asset_specifications`;
+TRUNCATE TABLE `asset_identifiers`;
+TRUNCATE TABLE `asset_items`;
+
+-- 6. Pastikan seluruh counter AUTO_INCREMENT kembali ke 1
+ALTER TABLE `asset_loan_items` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_loans` AUTO_INCREMENT = 1;
+ALTER TABLE `maintenance_timeline` AUTO_INCREMENT = 1;
+ALTER TABLE `maintenance_reports` AUTO_INCREMENT = 1;
+ALTER TABLE `schedule_jobs` AUTO_INCREMENT = 1;
+ALTER TABLE `maintenance_schedules` AUTO_INCREMENT = 1;
+ALTER TABLE `corrective_repair_parts` AUTO_INCREMENT = 1;
+ALTER TABLE `corrective_repairs` AUTO_INCREMENT = 1;
+ALTER TABLE `corrective_ticket_actions` AUTO_INCREMENT = 1;
+ALTER TABLE `corrective_tickets` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_repair_parts` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_repairs` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_walkarounds` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_movements` AUTO_INCREMENT = 1;
+ALTER TABLE `maintenance_asset_items` AUTO_INCREMENT = 1;
+ALTER TABLE `maintenance_assets` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_bundle_members` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_bundles` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_item_members` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_specification_logs` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_specifications` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_identifiers` AUTO_INCREMENT = 1;
+ALTER TABLE `asset_items` AUTO_INCREMENT = 1;
+
+SET FOREIGN_KEY_CHECKS = 1;

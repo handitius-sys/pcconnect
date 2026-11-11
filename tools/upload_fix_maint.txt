@@ -1,0 +1,3 @@
+cd /share/ZFS28_DATA/Web/PcConnect
+put app/modules/maintenance.php app/modules/maintenance.php
+quit

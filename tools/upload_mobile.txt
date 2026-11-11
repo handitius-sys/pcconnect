@@ -1,0 +1,3 @@
+cd /share/ZFS28_DATA/Web/PcConnect/app/modules
+put app/modules/mobile.php mobile.php
+quit

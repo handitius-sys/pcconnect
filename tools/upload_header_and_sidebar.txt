@@ -1,0 +1,5 @@
+put app/lib/bootstrap.php /share/ZFS28_DATA/Web/PcConnect/app/lib/bootstrap.php
+put app/modules/asset.php /share/ZFS28_DATA/Web/PcConnect/app/modules/asset.php
+put app/modules/asset_mutations.php /share/ZFS28_DATA/Web/PcConnect/app/modules/asset_mutations.php
+quit
+

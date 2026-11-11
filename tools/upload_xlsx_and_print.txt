@@ -1,0 +1,7 @@
+cd /share/ZFS28_DATA/Web/PcConnect/app/modules
+put app/modules/maintenance.php
+put app/modules/asset.php
+put app/modules/asset_loan.php
+put app/modules/corrective.php
+quit
+

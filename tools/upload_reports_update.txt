@@ -1,0 +1,6 @@
+cd /share/ZFS28_DATA/Web/PcConnect
+put app/lib/bootstrap.php app/lib/bootstrap.php
+put app/modules/asset.php app/modules/asset.php
+put app/modules/asset_loan.php app/modules/asset_loan.php
+put app/modules/maintenance.php app/modules/maintenance.php
+quit

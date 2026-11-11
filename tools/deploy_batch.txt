@@ -1,0 +1,4 @@
+cd /share/ZFS28_DATA/Web/PcConnect
+put app/modules/asset_loan.php app/modules/asset_loan.php
+quit
+
