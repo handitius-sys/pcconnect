@@ -7714,70 +7714,74 @@ function handle_route_report_asset_items(PDO $pdo): void
     echo '  </form>';
     echo '</section>';
 
-    // 10. Tampilan Tabel Terstruktur Berdasarkan Komoditas
-    if (empty($grouped)) {
+    // 10. Tampilan Tabel Laporan Unit Aset (Satu Laporan Tunggal / Tanpa Pemisahan Kategori)
+    if (empty($allItems)) {
         echo '<section class="panel"><p class="muted" style="text-align:center;padding:24px;">Tidak ada data unit aset yang sesuai dengan filter.</p></section>';
     } else {
-        foreach ($grouped as $groupNameLabel => $items) {
-            echo '<section class="panel" style="margin-bottom:24px;">';
-            echo '  <div class="split" style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:14px;">';
-            echo '    <h2 style="margin:0;color:#0f172a;font-size:15px;font-weight:700;">Komoditas: ' . e($groupNameLabel) . '</h2>';
-            echo '    <span style="font-size:12px;color:#475569;font-weight:600;">(Total ' . count($items) . ' Unit)</span>';
-            echo '  </div>';
-            echo '  <div style="overflow-x:auto;">';
-            echo '    <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">';
-            echo '      <thead>';
+        echo '<section class="panel" style="margin-bottom:24px;">';
+        echo '  <div class="split" style="border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:14px;">';
+        echo '    <h2 style="margin:0;color:#0f172a;font-size:15px;font-weight:700;">Daftar Seluruh Unit Aset</h2>';
+        echo '    <span style="font-size:12px;color:#475569;font-weight:600;">(Total ' . count($allItems) . ' Unit)</span>';
+        echo '  </div>';
+        echo '  <div style="overflow-x:auto;">';
+        echo '    <table class="report-table-plain report-target-table sortable-table" style="font-size:12px;">';
+        echo '      <thead>';
+        echo '        <tr>';
+        echo '          <th style="width:40px;">No</th>';
+        echo '          <th>Komoditas</th>';
+        echo '          <th>Kode Unit</th>';
+        echo '          <th>Kode Lama (Legacy)</th>';
+        echo '          <th>Nama Aset / Model</th>';
+        echo '          <th>Brand / Merk</th>';
+        echo '          <th>Kategori</th>';
+        echo '          <th>Mode</th>';
+        echo '          <th>Serial Number</th>';
+        echo '          <th>Lokasi / Room</th>';
+        echo '          <th>Company</th>';
+        echo '          <th>Status</th>';
+        echo '        </tr>';
+        echo '      </thead>';
+        echo '      <tbody>';
+        $no = 1;
+        foreach ($allItems as $item) {
+            $gName = trim((string)($item['group_name'] ?? ''));
+            $gCode = trim((string)($item['group_code'] ?? ''));
+            $komoditasLabel = $gName . ($gCode !== '' ? ' (' . $gCode . ')' : '');
+
+            $rawMode = (string)($item['asset_mode'] ?? 'standalone');
+            $modeLabel = $rawMode === 'group' ? 'Bundle (Parent)' : ($rawMode === 'child' ? 'Bundle (Child)' : 'Single');
+            $statusBadge = format_asset_status_badge($item['status'] ?? '');
+
+            $assetName = !empty($item['asset_name']) ? $item['asset_name'] : (!empty($item['model']) ? $item['model'] : '-');
+            $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');
+            $categoryName = !empty($item['display_type_name']) && $item['display_type_name'] !== '-' 
+                ? $item['display_type_name'] 
+                : (!empty($item['asset_type']) ? $item['asset_type'] : '-');
+            $serialNum = !empty($item['serial_number']) ? $item['serial_number'] : '-';
+            $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
+            $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
+
+            $legacyReportCell = !empty($item['alias_code']) ? e($item['alias_code']) : '-';
+            $plainStatus = strtoupper(e((string)($item['status'] ?? '-')));
             echo '        <tr>';
-            echo '          <th style="width:40px;">No</th>';
-            echo '          <th>Kode Unit</th>';
-            echo '          <th>Kode Lama (Legacy)</th>';
-            echo '          <th>Nama Aset / Model</th>';
-            echo '          <th>Brand / Merk</th>';
-            echo '          <th>Kategori</th>';
-            echo '          <th>Mode</th>';
-            echo '          <th>Serial Number</th>';
-            echo '          <th>Lokasi / Room</th>';
-            echo '          <th>Company</th>';
-            echo '          <th>Status</th>';
+            echo '          <td>' . $no++ . '</td>';
+            echo '          <td>' . e($komoditasLabel) . '</td>';
+            echo '          <td>' . e($item['asset_code']) . '</td>';
+            echo '          <td>' . $legacyReportCell . '</td>';
+            echo '          <td>' . e($assetName) . '</td>';
+            echo '          <td>' . e($brandName) . '</td>';
+            echo '          <td>' . e($categoryName) . '</td>';
+            echo '          <td>' . e($modeLabel) . '</td>';
+            echo '          <td>' . e($serialNum) . '</td>';
+            echo '          <td>' . e($locName) . '</td>';
+            echo '          <td>' . e($compName) . '</td>';
+            echo '          <td>' . $plainStatus . '</td>';
             echo '        </tr>';
-            echo '      </thead>';
-            echo '      <tbody>';
-            $no = 1;
-            foreach ($items as $item) {
-                $rawMode = (string)($item['asset_mode'] ?? 'standalone');
-                $modeLabel = $rawMode === 'group' ? 'Bundle (Parent)' : ($rawMode === 'child' ? 'Bundle (Child)' : 'Single');
-                $statusBadge = format_asset_status_badge($item['status'] ?? '');
-
-                $assetName = !empty($item['asset_name']) ? $item['asset_name'] : (!empty($item['model']) ? $item['model'] : '-');
-                $brandName = !empty($item['brand_name']) ? $item['brand_name'] : (!empty($item['brand']) ? $item['brand'] : '-');
-                $categoryName = !empty($item['display_type_name']) && $item['display_type_name'] !== '-' 
-                    ? $item['display_type_name'] 
-                    : (!empty($item['asset_type']) ? $item['asset_type'] : '-');
-                $serialNum = !empty($item['serial_number']) ? $item['serial_number'] : '-';
-                $locName = !empty($item['display_location']) && $item['display_location'] !== '-' ? $item['display_location'] : (!empty($item['location_name']) ? $item['location_name'] : (!empty($item['location_label']) ? $item['location_label'] : '-'));
-                $compName = !empty($item['company_name']) ? $item['company_name'] : '-';
-
-                $legacyReportCell = !empty($item['alias_code']) ? e($item['alias_code']) : '-';
-                $plainStatus = strtoupper(e((string)($item['status'] ?? '-')));
-                echo '        <tr>';
-                echo '          <td>' . $no++ . '</td>';
-                echo '          <td>' . e($item['asset_code']) . '</td>';
-                echo '          <td>' . $legacyReportCell . '</td>';
-                echo '          <td>' . e($assetName) . '</td>';
-                echo '          <td>' . e($brandName) . '</td>';
-                echo '          <td>' . e($categoryName) . '</td>';
-                echo '          <td>' . e($modeLabel) . '</td>';
-                echo '          <td>' . e($serialNum) . '</td>';
-                echo '          <td>' . e($locName) . '</td>';
-                echo '          <td>' . e($compName) . '</td>';
-                echo '          <td>' . $plainStatus . '</td>';
-                echo '        </tr>';
-            }
-            echo '      </tbody>';
-            echo '    </table>';
-            echo '  </div>';
-            echo '</section>';
         }
+        echo '      </tbody>';
+        echo '    </table>';
+        echo '  </div>';
+        echo '</section>';
     }
 
     render_footer();

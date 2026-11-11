@@ -864,23 +864,8 @@ function handle_route_tickets(PDO $pdo): void
                             <td style="text-align:center;" class="no-print">
                                 <div style="display:inline-flex; align-items:center; justify-content:center; gap:4px;">
                                     <a href="<?= route_url('ticket_detail', ['id' => $t['id'], 'view' => 1]) ?>" title="Lihat Detail Tiket (View Only)" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; border-radius:6px; text-decoration:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></a>
-                                    <?php if (has_regulation('tickets', 'edit') || in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
-                                        <button type="button" onclick="openEditTicketModal(<?= htmlspecialchars(json_encode([
-                                            'id' => (int)$t['id'],
-                                            'ticket_code' => $t['ticket_code'],
-                                            'subject' => $t['subject'],
-                                            'description' => $t['description'] ?? '',
-                                            'issue_category' => $t['issue_category'] ?? 'hardware',
-                                            'priority' => $t['priority'] ?? 'medium',
-                                            'reporter_name' => $t['reporter_name'] ?? '',
-                                            'reporter_nik' => $t['reporter_nik'] ?? '',
-                                            'reporter_contact' => $t['reporter_contact'] ?? '',
-                                            'asset_code' => $t['maintenance_asset_code'] ?? ($t['pc_id'] ?? '-'),
-                                            'asset_name' => $t['maintenance_asset_name'] ?? '-'
-                                        ]), ENT_QUOTES, 'UTF-8') ?>)" title="Edit Kendala & Pelapor" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#fef3c7; color:#d97706; border:1px solid #fde68a; border-radius:6px; cursor:pointer;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>
-                                    <?php endif; ?>
-                                    <?php if ($t['status'] !== 'closed' && in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
-                                        <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Penanganan / Tindakan Perbaikan" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg></a>
+                                    <?php if ($t['status'] !== 'closed' && (has_regulation('tickets', 'edit') || in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true))): ?>
+                                        <a href="<?= route_url('ticket_detail', ['id' => $t['id']]) ?>" title="Edit" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:6px; text-decoration:none;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></a>
                                     <?php endif; ?>
                                     <?php if (has_regulation('tickets', 'delete')): ?>
                                         <form method="post" action="<?= route_url('tickets') ?>" style="display:inline; margin:0;" onsubmit="return confirm('Batalkan tiket <?= e($t['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
@@ -901,105 +886,7 @@ function handle_route_tickets(PDO $pdo): void
     </section>
     </section>
     
-    <!-- Modal Edit Kendala / Masalah & Pelapor -->
-    <div id="editTicketModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.7); z-index:99999; align-items:center; justify-content:center; padding:16px;">
-        <div style="background:#fff; border-radius:12px; width:100%; max-width:600px; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4); display:flex; flex-direction:column; max-height:92vh;">
-            <div style="background:#0f172a; color:#fff; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-weight:700; font-size:15px; display:flex; align-items:center; gap:8px;">
-                    <span>✏️</span> Edit Kendala & Pelapor Tiket <span id="modalTicketCode" style="color:#38bdf8;"></span>
-                </div>
-                <button type="button" onclick="closeEditTicketModal()" style="background:none; border:none; color:#cbd5e1; font-size:22px; cursor:pointer; line-height:1; padding:0 4px;" title="Tutup">&times;</button>
-            </div>
-            <form method="post" action="<?= route_url('tickets') ?>" style="margin:0; display:flex; flex-direction:column; overflow:hidden;">
-                <?= csrf_field() ?>
-                <input type="hidden" name="action" value="edit_ticket_issue">
-                <input type="hidden" name="ticket_id" id="modalTicketId">
-                <input type="hidden" name="redirect_route" id="modalRedirectRoute" value="tickets">
 
-                <div style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
-                    <div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:12.5px; color:#0369a1;">
-                        Unit Aset: <strong id="modalAssetInfo" style="color:#0284c7;">-</strong>
-                    </div>
-
-                    <label style="font-weight:600; font-size:13px; color:#1e293b;">Judul / Subjek Kendala *
-                        <input name="subject" id="modalSubject" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Contoh: Layar bluescreen / AC tidak dingin">
-                    </label>
-
-                    <label style="font-weight:600; font-size:13px; color:#1e293b;">Deskripsi Lengkap Gejala Kerusakan
-                        <textarea name="description" id="modalDescription" rows="3" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px; min-height:75px;" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik..."></textarea>
-                    </label>
-
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                        <label style="font-weight:600; font-size:13px; color:#1e293b;">Kategori Masalah
-                            <select name="issue_category" id="modalIssueCat" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
-                                <option value="hardware">Kerusakan Hardware / Komponen</option>
-                                <option value="software">Masalah Software / OS / Aplikasi</option>
-                                <option value="network">Jaringan / Koneksi Internet</option>
-                                <option value="printer">Printer / Scanner Error</option>
-                                <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
-                                <option value="electrical">Kelistrikan / Aki / Lampu</option>
-                                <option value="hvac">AC / Pendingin Ruangan</option>
-                                <option value="plumbing">Pipa / Sanitasi Air</option>
-                                <option value="general">Lain-lain / Kerusakan Fisik</option>
-                            </select>
-                        </label>
-                        <label style="font-weight:600; font-size:13px; color:#1e293b;">Tingkat Prioritas *
-                            <select name="priority" id="modalPriority" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
-                                <option value="low">Low (Bisa ditunda)</option>
-                                <option value="medium">Medium (Standard)</option>
-                                <option value="high">High (Mendesak / Mengganggu Operasional)</option>
-                                <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
-                            </select>
-                        </label>
-                    </div>
-
-                    <div style="border-top:1px dashed #e2e8f0; padding-top:12px; margin-top:4px;">
-                        <span style="font-size:13px; font-weight:700; color:#334155; display:block; margin-bottom:10px;">👤 Informasi Pelapor</span>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                            <label style="font-weight:600; font-size:12.5px; color:#475569;">Nama Pelapor *
-                                <input name="reporter_name" id="modalReporterName" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Nama pemakai / PIC">
-                            </label>
-                            <label style="font-weight:600; font-size:12.5px; color:#475569;">NIK Pelapor
-                                <input name="reporter_nik" id="modalReporterNik" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="NIK Karyawan">
-                            </label>
-                        </div>
-                        <label style="font-weight:600; font-size:12.5px; color:#475569; display:block; margin-top:10px;">Kontak / No. Telp Pelapor
-                            <input name="reporter_contact" id="modalReporterContact" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="0812xxxxxx">
-                        </label>
-                    </div>
-                </div>
-
-                <div style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" onclick="closeEditTicketModal()" class="btn" style="padding:8px 16px;">Batal</button>
-                    <button type="submit" class="btn primary" style="padding:8px 18px; font-weight:600;">💾 Simpan Perubahan</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script>
-    function openEditTicketModal(data, redirectRoute) {
-        var modal = document.getElementById('editTicketModal');
-        if (!modal || !data) return;
-        document.getElementById('modalTicketId').value = data.id || '';
-        document.getElementById('modalTicketCode').textContent = '#' + (data.ticket_code || '');
-        document.getElementById('modalAssetInfo').textContent = (data.asset_code ? data.asset_code + ' - ' : '') + (data.asset_name || '-');
-        document.getElementById('modalSubject').value = data.subject || '';
-        document.getElementById('modalDescription').value = data.description || '';
-        document.getElementById('modalIssueCat').value = data.issue_category || 'hardware';
-        document.getElementById('modalPriority').value = data.priority || 'medium';
-        document.getElementById('modalReporterName').value = data.reporter_name || '';
-        document.getElementById('modalReporterNik').value = data.reporter_nik || '';
-        document.getElementById('modalReporterContact').value = data.reporter_contact || '';
-        document.getElementById('modalRedirectRoute').value = redirectRoute || 'tickets';
-        modal.style.display = 'flex';
-    }
-
-    function closeEditTicketModal() {
-        var modal = document.getElementById('editTicketModal');
-        if (modal) modal.style.display = 'none';
-    }
-    </script>
 
     render_footer();
 }
@@ -2097,23 +1984,7 @@ function handle_route_ticket_detail(PDO $pdo): void
             </div>
             <div class="actions">
                 <a class="btn" href="<?= route_url('tickets') ?>">← Kembali ke Daftar</a>
-                <?php if (has_regulation('tickets', 'edit') || in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
-                    <button type="button" class="btn warning" onclick="openEditTicketModal(<?= htmlspecialchars(json_encode([
-                        'id' => (int)$ticket['id'],
-                        'ticket_code' => $ticket['ticket_code'],
-                        'subject' => $ticket['subject'],
-                        'description' => $ticket['description'] ?? '',
-                        'issue_category' => $ticket['issue_category'] ?? 'hardware',
-                        'priority' => $ticket['priority'] ?? 'medium',
-                        'reporter_name' => $ticket['reporter_name'] ?? '',
-                        'reporter_nik' => $ticket['reporter_nik'] ?? '',
-                        'reporter_contact' => $ticket['reporter_contact'] ?? '',
-                        'asset_code' => $ticket['maintenance_asset_code'] ?? ($ticket['pc_id'] ?? '-'),
-                        'asset_name' => $ticket['maintenance_asset_name'] ?? '-'
-                    ]), ENT_QUOTES, 'UTF-8') ?>, 'ticket_detail')" style="display:inline-flex; align-items:center; gap:6px;">
-                        <span>✏️</span> Edit Kendala & Pelapor
-                    </button>
-                <?php endif; ?>
+
                 <?php if (empty($isViewOnly) && has_regulation('tickets', 'delete')): ?>
                     <form method="post" action="<?= route_url('tickets') ?>" style="display:inline;" onsubmit="return confirm('Hapus tiket <?= e($ticket['ticket_code']) ?> beserta seluruh data perbaikan terkait?');">
                         <?= csrf_field() ?>
@@ -2169,14 +2040,79 @@ function handle_route_ticket_detail(PDO $pdo): void
         </div>
     </section>
 
-    <!-- Form Eksekusi Teknisi -->
+    <!-- Form Eksekusi & Edit Tiket -->
     <?php if (empty($isViewOnly) && $ticket['status'] !== 'closed' && in_array($user['role'], ['admin', 'maintenance_admin', 'technician', 'corrective_maintenance'], true)): ?>
         <section class="panel">
-            <h2>Input Tindakan Perbaikan & Penggantian Sparepart</h2>
+            <h2>Edit & Input Tindakan Perbaikan</h2>
             <form method="post" action="<?= route_url('ticket_action') ?>" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="ticket_id" value="<?= $ticket['id'] ?>">
 
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:20px;">
+                    <h3 style="margin-top:0; margin-bottom:12px; font-size:14px; color:#0f172a; display:flex; align-items:center; gap:6px;">
+                        <span>✏️</span> Edit Informasi Kendala & Pelapor
+                    </h3>
+                    
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <label style="font-weight:600; font-size:13px; color:#1e293b; margin:0;">Judul / Subjek Kendala *
+                            <input name="subject" value="<?= e($ticket['subject']) ?>" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Contoh: Layar bluescreen / AC tidak dingin">
+                        </label>
+
+                        <label style="font-weight:600; font-size:13px; color:#1e293b; margin:0;">Deskripsi Lengkap Gejala Kerusakan
+                            <textarea name="description" rows="3" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px; min-height:75px;" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik..."><?= e($ticket['description'] ?? '') ?></textarea>
+                        </label>
+
+                        <div class="grid two" style="gap:12px;">
+                            <label style="font-weight:600; font-size:13px; color:#1e293b; margin:0;">Kategori Masalah
+                                <select name="issue_category" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
+                                    <?php
+                                    $cats = [
+                                        'hardware' => 'Kerusakan Hardware / Komponen',
+                                        'software' => 'Masalah Software / OS / Aplikasi',
+                                        'network' => 'Jaringan / Koneksi Internet',
+                                        'printer' => 'Printer / Scanner Error',
+                                        'engine' => 'Mesin / Ban / Rem (Kendaraan)',
+                                        'electrical' => 'Kelistrikan / Aki / Lampu',
+                                        'hvac' => 'AC / Pendingin Ruangan',
+                                        'plumbing' => 'Pipa / Sanitasi Air',
+                                        'general' => 'Lain-lain / Kerusakan Fisik'
+                                    ];
+                                    $currCat = $ticket['issue_category'] ?? 'hardware';
+                                    foreach ($cats as $cVal => $cLbl) {
+                                        $sel = ($currCat === $cVal) ? 'selected' : '';
+                                        echo '<option value="' . e($cVal) . '" ' . $sel . '>' . e($cLbl) . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                            </label>
+                            <label style="font-weight:600; font-size:13px; color:#1e293b; margin:0;">Tingkat Prioritas *
+                                <select name="priority" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
+                                    <option value="low" <?= ($ticket['priority'] ?? '') === 'low' ? 'selected' : '' ?>>Low (Bisa ditunda)</option>
+                                    <option value="medium" <?= ($ticket['priority'] ?? 'medium') === 'medium' ? 'selected' : '' ?>>Medium (Standard)</option>
+                                    <option value="high" <?= ($ticket['priority'] ?? '') === 'high' ? 'selected' : '' ?>>High (Mendesak / Mengganggu Operasional)</option>
+                                    <option value="critical" <?= ($ticket['priority'] ?? '') === 'critical' ? 'selected' : '' ?>>CRITICAL (Operasional Terhenti Total)</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div style="border-top:1px dashed #cbd5e1; padding-top:12px; margin-top:4px;">
+                            <span style="font-size:13px; font-weight:700; color:#334155; display:block; margin-bottom:8px;">👤 Data Pelapor</span>
+                            <div class="grid three" style="gap:12px;">
+                                <label style="font-weight:600; font-size:12.5px; color:#475569; margin:0;">Nama Pelapor *
+                                    <input name="reporter_name" value="<?= e($ticket['reporter_name']) ?>" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Nama pemakai / PIC">
+                                </label>
+                                <label style="font-weight:600; font-size:12.5px; color:#475569; margin:0;">NIK Pelapor
+                                    <input name="reporter_nik" value="<?= e($ticket['reporter_nik'] ?? '') ?>" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="NIK Karyawan">
+                                </label>
+                                <label style="font-weight:600; font-size:12.5px; color:#475569; margin:0;">Kontak / No. Telp Pelapor
+                                    <input name="reporter_contact" value="<?= e($ticket['reporter_contact'] ?? '') ?>" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="0812xxxxxx">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top:0; margin-bottom:12px; font-size:14px; color:#0f172a;">🛠️ Tindakan Perbaikan & Solusi Teknisi</h3>
                 <div class="grid three">
                     <label>Ubah Status Tiket
                         <select name="update_status" required>
@@ -2353,105 +2289,7 @@ function handle_route_ticket_detail(PDO $pdo): void
     render_invoice_camera_modal_and_script();
     ?>
     
-    <!-- Modal Edit Kendala / Masalah & Pelapor -->
-    <div id="editTicketModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.7); z-index:99999; align-items:center; justify-content:center; padding:16px;">
-        <div style="background:#fff; border-radius:12px; width:100%; max-width:600px; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4); display:flex; flex-direction:column; max-height:92vh;">
-            <div style="background:#0f172a; color:#fff; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-weight:700; font-size:15px; display:flex; align-items:center; gap:8px;">
-                    <span>✏️</span> Edit Kendala & Pelapor Tiket <span id="modalTicketCode" style="color:#38bdf8;"></span>
-                </div>
-                <button type="button" onclick="closeEditTicketModal()" style="background:none; border:none; color:#cbd5e1; font-size:22px; cursor:pointer; line-height:1; padding:0 4px;" title="Tutup">&times;</button>
-            </div>
-            <form method="post" action="<?= route_url('tickets') ?>" style="margin:0; display:flex; flex-direction:column; overflow:hidden;">
-                <?= csrf_field() ?>
-                <input type="hidden" name="action" value="edit_ticket_issue">
-                <input type="hidden" name="ticket_id" id="modalTicketId">
-                <input type="hidden" name="redirect_route" id="modalRedirectRoute" value="tickets">
 
-                <div style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
-                    <div style="padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; font-size:12.5px; color:#0369a1;">
-                        Unit Aset: <strong id="modalAssetInfo" style="color:#0284c7;">-</strong>
-                    </div>
-
-                    <label style="font-weight:600; font-size:13px; color:#1e293b;">Judul / Subjek Kendala *
-                        <input name="subject" id="modalSubject" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Contoh: Layar bluescreen / AC tidak dingin">
-                    </label>
-
-                    <label style="font-weight:600; font-size:13px; color:#1e293b;">Deskripsi Lengkap Gejala Kerusakan
-                        <textarea name="description" id="modalDescription" rows="3" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px; min-height:75px;" placeholder="Jelaskan kronologi, pesan error, atau kondisi fisik..."></textarea>
-                    </label>
-
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                        <label style="font-weight:600; font-size:13px; color:#1e293b;">Kategori Masalah
-                            <select name="issue_category" id="modalIssueCat" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
-                                <option value="hardware">Kerusakan Hardware / Komponen</option>
-                                <option value="software">Masalah Software / OS / Aplikasi</option>
-                                <option value="network">Jaringan / Koneksi Internet</option>
-                                <option value="printer">Printer / Scanner Error</option>
-                                <option value="engine">Mesin / Ban / Rem (Kendaraan)</option>
-                                <option value="electrical">Kelistrikan / Aki / Lampu</option>
-                                <option value="hvac">AC / Pendingin Ruangan</option>
-                                <option value="plumbing">Pipa / Sanitasi Air</option>
-                                <option value="general">Lain-lain / Kerusakan Fisik</option>
-                            </select>
-                        </label>
-                        <label style="font-weight:600; font-size:13px; color:#1e293b;">Tingkat Prioritas *
-                            <select name="priority" id="modalPriority" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;">
-                                <option value="low">Low (Bisa ditunda)</option>
-                                <option value="medium">Medium (Standard)</option>
-                                <option value="high">High (Mendesak / Mengganggu Operasional)</option>
-                                <option value="critical">CRITICAL (Operasional Terhenti Total)</option>
-                            </select>
-                        </label>
-                    </div>
-
-                    <div style="border-top:1px dashed #e2e8f0; padding-top:12px; margin-top:4px;">
-                        <span style="font-size:13px; font-weight:700; color:#334155; display:block; margin-bottom:10px;">👤 Informasi Pelapor</span>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                            <label style="font-weight:600; font-size:12.5px; color:#475569;">Nama Pelapor *
-                                <input name="reporter_name" id="modalReporterName" required style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="Nama pemakai / PIC">
-                            </label>
-                            <label style="font-weight:600; font-size:12.5px; color:#475569;">NIK Pelapor
-                                <input name="reporter_nik" id="modalReporterNik" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="NIK Karyawan">
-                            </label>
-                        </div>
-                        <label style="font-weight:600; font-size:12.5px; color:#475569; display:block; margin-top:10px;">Kontak / No. Telp Pelapor
-                            <input name="reporter_contact" id="modalReporterContact" style="width:100%; height:38px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; margin-top:4px;" placeholder="0812xxxxxx">
-                        </label>
-                    </div>
-                </div>
-
-                <div style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" onclick="closeEditTicketModal()" class="btn" style="padding:8px 16px;">Batal</button>
-                    <button type="submit" class="btn primary" style="padding:8px 18px; font-weight:600;">💾 Simpan Perubahan</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script>
-    function openEditTicketModal(data, redirectRoute) {
-        var modal = document.getElementById('editTicketModal');
-        if (!modal || !data) return;
-        document.getElementById('modalTicketId').value = data.id || '';
-        document.getElementById('modalTicketCode').textContent = '#' + (data.ticket_code || '');
-        document.getElementById('modalAssetInfo').textContent = (data.asset_code ? data.asset_code + ' - ' : '') + (data.asset_name || '-');
-        document.getElementById('modalSubject').value = data.subject || '';
-        document.getElementById('modalDescription').value = data.description || '';
-        document.getElementById('modalIssueCat').value = data.issue_category || 'hardware';
-        document.getElementById('modalPriority').value = data.priority || 'medium';
-        document.getElementById('modalReporterName').value = data.reporter_name || '';
-        document.getElementById('modalReporterNik').value = data.reporter_nik || '';
-        document.getElementById('modalReporterContact').value = data.reporter_contact || '';
-        document.getElementById('modalRedirectRoute').value = redirectRoute || 'tickets';
-        modal.style.display = 'flex';
-    }
-
-    function closeEditTicketModal() {
-        var modal = document.getElementById('editTicketModal');
-        if (modal) modal.style.display = 'none';
-    }
-    </script>
 
     render_footer();
 }
@@ -2475,6 +2313,15 @@ function handle_route_ticket_action(PDO $pdo): void
     $vendorName = trim((string)($_POST['vendor_name'] ?? ''));
     $vendorInv = trim((string)($_POST['vendor_invoice_no'] ?? ''));
     $repairCost = (float)($_POST['repair_cost'] ?? 0);
+
+    // Update kendala & data pelapor dari form edit jika diisi
+    $subject = trim((string)($_POST['subject'] ?? ''));
+    $description = trim((string)($_POST['description'] ?? ''));
+    $reporterName = trim((string)($_POST['reporter_name'] ?? ''));
+    $reporterNik = trim((string)($_POST['reporter_nik'] ?? ''));
+    $reporterContact = trim((string)($_POST['reporter_contact'] ?? ''));
+    $issueCategory = trim((string)($_POST['issue_category'] ?? ''));
+    $priority = trim((string)($_POST['priority'] ?? ''));
 
     $stmt = $pdo->prepare("SELECT * FROM corrective_tickets WHERE id = ?");
     $stmt->execute([$ticketId]);
@@ -2537,12 +2384,27 @@ function handle_route_ticket_action(PDO $pdo): void
         }
     }
 
-    // Update status tiket
+    // Update status tiket beserta kendala & pelapor
     $resolvedAt = ($status === 'resolved' || $status === 'closed') ? date('Y-m-d H:i:s') : $ticket['resolved_at'];
     $closedAt = ($status === 'closed') ? date('Y-m-d H:i:s') : $ticket['closed_at'];
 
-    $pdo->prepare("UPDATE corrective_tickets SET status = ?, assigned_technician_name = ?, resolved_at = ?, closed_at = ? WHERE id = ?")
-        ->execute([$status, $techName, $resolvedAt, $closedAt, $ticketId]);
+    $updSubject = $subject !== '' ? $subject : $ticket['subject'];
+    $updDesc = $subject !== '' ? $description : ($ticket['description'] ?? '');
+    $updRepName = $reporterName !== '' ? $reporterName : $ticket['reporter_name'];
+    $updRepNik = $reporterName !== '' ? ($reporterNik ?: null) : ($ticket['reporter_nik'] ?? null);
+    $updRepContact = $reporterName !== '' ? ($reporterContact ?: null) : ($ticket['reporter_contact'] ?? null);
+    $updCat = $issueCategory !== '' ? $issueCategory : ($ticket['issue_category'] ?? 'hardware');
+    $updPriority = $priority !== '' ? $priority : ($ticket['priority'] ?? 'medium');
+
+    $pdo->prepare("UPDATE corrective_tickets SET 
+        status = ?, assigned_technician_name = ?, resolved_at = ?, closed_at = ?,
+        subject = ?, description = ?, reporter_name = ?, reporter_nik = ?, reporter_contact = ?, issue_category = ?, priority = ?
+        WHERE id = ?")
+        ->execute([
+            $status, $techName, $resolvedAt, $closedAt,
+            $updSubject, $updDesc, $updRepName, $updRepNik, $updRepContact, $updCat, $updPriority,
+            $ticketId
+        ]);
 
     flash('Tindakan perbaikan berhasil disimpan.');
     redirect_to('ticket_detail', ['id' => $ticketId]);
