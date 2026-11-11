@@ -542,6 +542,36 @@ function resolve_maintenance_asset_id_from_raw_input(PDO $pdo, string $rawInput)
  * Modul: Daftar Tiket
  * Proses: Menampilkan seluruh tiket permintaan perbaikan (Helpdesk/Troubleshooting) beserta statusnya.
  */
+/**
+ * Membersihkan tampilan Judul / Subjek Kendala agar murni judul kendala tanpa kode aset/spesifikasi
+ */
+function format_clean_ticket_subject(?string $subject, ?string $fallbackAction = null): string
+{
+    $s = trim((string)$subject);
+    if ($s === '') {
+        return $fallbackAction ?: '-';
+    }
+
+    // Jika subject format lama/otomatis: "Perbaikan [Job Desk ...] KODE - NAMA"
+    if (preg_match('/^Perbaikan\s*\[([^\]]+)\]\s*(.*)$/i', $s, $m)) {
+        if (!empty($fallbackAction) && $fallbackAction !== 'Perbaikan Tiket' && $fallbackAction !== 'Reparasi') {
+            return $fallbackAction;
+        }
+        $jobDesk = trim($m[1]);
+        return $jobDesk ?: ($fallbackAction ?: 'Perbaikan Unit');
+    }
+
+    // Jika format "Perbaikan KODE - NAMA" tanpa keluhan nyata
+    if (preg_match('/^Perbaikan\s+([A-Z0-9_-]+)\s*-\s*(.*)$/i', $s, $m)) {
+        if (!empty($fallbackAction) && $fallbackAction !== 'Perbaikan Tiket' && $fallbackAction !== 'Reparasi') {
+            return $fallbackAction;
+        }
+        return $fallbackAction ?: 'Perbaikan Unit';
+    }
+
+    return $s;
+}
+
 function handle_route_tickets(PDO $pdo): void
 {
     $user = require_regulation('tickets', 'view');
@@ -617,6 +647,7 @@ function handle_route_tickets(PDO $pdo): void
                    c.company_name,
                    u.name AS handled_user_name,
                    w.workshop_name AS handled_workshop_name,
+                   (SELECT cta.action_title FROM corrective_ticket_actions cta WHERE cta.ticket_id = t.id LIMIT 1) AS first_action_title,
                    (SELECT COUNT(*) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS repair_count,
                    (SELECT COALESCE(SUM(cr.repair_cost), 0) FROM corrective_repairs cr WHERE cr.ticket_id = t.id) AS total_repair_cost,
                    (SELECT COALESCE(SUM(crp.part_cost), 0) FROM corrective_repairs cr JOIN corrective_repair_parts crp ON crp.repair_id = cr.id WHERE cr.ticket_id = t.id) AS total_part_cost
@@ -645,21 +676,21 @@ function handle_route_tickets(PDO $pdo): void
 
     $renderCmCard = function($number, $label, $iconPath, $themeIdx) {
         $themes = [
-            ['#eff6ff', '#1e3a8a', '#3b82f6'], // 0: blue
-            ['#fef2f2', '#7f1d1d', '#ef4444'], // 1: red
-            ['#fffbeb', '#78350f', '#f59e0b'], // 2: yellow/amber
-            ['#f3e8ff', '#581c87', '#a855f7'], // 3: purple
-            ['#f0fdf4', '#14532d', '#22c55e'], // 4: green
+            ['#f0f9ff', '#e0f2fe', '#bae6fd', '#0284c7', 'rgba(2,132,199,0.06)'], // 0: sky/blue
+            ['#fff1f2', '#ffe4e6', '#fecdd3', '#e11d48', 'rgba(225,29,72,0.06)'], // 1: rose/red
+            ['#fffbeb', '#fef3c7', '#fde68a', '#d97706', 'rgba(217,119,6,0.06)'], // 2: amber
+            ['#fdf4ff', '#fae8ff', '#f5d0fe', '#a21caf', 'rgba(162,28,175,0.06)'], // 3: purple
+            ['#f0fdf4', '#dcfce7', '#bbf7d0', '#16a34a', 'rgba(22,163,74,0.06)'], // 4: green
         ];
         $t = $themes[$themeIdx % count($themes)];
-        $svg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="' . $t[2] . '"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' . $iconPath . '"/></svg>';
-        $bgImage = "data:image/svg+xml;base64," . base64_encode($svg);
 
-        return '<div class="stat" style="background-color: ' . $t[0] . '; color: ' . $t[1] . '; border-left: 5px solid ' . $t[2] . '; position: relative; overflow: hidden; padding: 16px 18px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 0; min-width: 0; flex: 1 1 0;">'
-             . '<div style="position: absolute; right: -15px; top: -15px; width: 110px; height: 110px; opacity: 0.15; background-image: url(\'' . $bgImage . '\'); background-size: contain; background-repeat: no-repeat; transform: rotate(-10deg);"></div>'
-             . '<div style="position: relative; z-index: 1;">'
-             . '<strong style="font-size: 30px; display: block; margin-bottom: 2px; line-height: 1; color: ' . $t[1] . ';">' . e($number) . '</strong>'
-             . '<span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.85; color: ' . $t[1] . ';">' . e($label) . '</span>'
+        return '<div style="background:linear-gradient(135deg, ' . $t[0] . ' 0%, ' . $t[1] . ' 100%);border:1px solid ' . $t[2] . ';border-left:4px solid ' . $t[3] . ';border-radius:14px;padding:12px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px ' . $t[4] . ';min-width:0;">'
+             . '<div style="position:absolute;right:-10px;top:-10px;width:75px;height:75px;opacity:0.16;transform:rotate(-10deg);pointer-events:none;">'
+             . '<svg viewBox="0 0 24 24" fill="none" stroke="' . $t[3] . '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="' . $iconPath . '"/></svg>'
+             . '</div>'
+             . '<div style="position:relative;z-index:1;">'
+             . '<div style="font-size:24px;font-weight:800;color:' . $t[3] . ';margin-top:3px;line-height:1.2;">' . e($number) . '</div>'
+             . '<div style="font-size:12px;font-weight:700;color:' . $t[3] . ';opacity:0.85;margin-top:2px;">' . e($label) . '</div>'
              . '</div></div>';
     };
 
@@ -681,8 +712,8 @@ function handle_route_tickets(PDO $pdo): void
         </div>
     </section>
 
-    <div style="margin-bottom: 18px;">
-        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+    <div style="margin-bottom: 20px;">
+        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
             <?= $renderCmCard((int)($stats['count_total'] ?? 0), 'Total Tiket', 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z', 0) ?>
             <?= $renderCmCard((int)($stats['count_open'] ?? 0), 'Tiket Baru / Terbuka', 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', 1) ?>
             <?= $renderCmCard((int)($stats['count_progress'] ?? 0), 'Sedang Dikerjakan', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', 2) ?>
@@ -776,7 +807,7 @@ function handle_route_tickets(PDO $pdo): void
                             <td><strong><?= e($assetCodeOnly) ?></strong></td>
                             <td><?= !empty($t['item_alias_code']) ? '<span style="display:inline-block;padding:2px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;border:1px solid #fde68a;font-family:monospace;">' . e($t['item_alias_code']) . '</span>' : '<span class="muted">-</span>' ?></td>
                             <td>
-                                <strong><?= e($t['subject']) ?></strong>
+                                <strong><?= e(format_clean_ticket_subject($t['subject'], $t['first_action_title'] ?? null)) ?></strong>
                             </td>
                             <td>
                                 <strong><?= e($t['reporter_name']) ?></strong> <?= $t['reporter_nik'] ? '<span class="muted">(' . e($t['reporter_nik']) . ')</span>' : '' ?><br>
@@ -2322,7 +2353,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
             $statusTxt = strtoupper((string)($r['ticket_status'] ?? '-'));
             $assetTxt = !empty($r['maintenance_asset_code']) ? $r['maintenance_asset_code'] : '-';
             $legacyTxt = !empty($r['legacy_code']) ? $r['legacy_code'] : '-';
-            $subjectTxt = (string)($r['subject'] ?? '-');
+            $subjectTxt = format_clean_ticket_subject($r['subject'] ?? '', $r['action_taken'] ?? null);
             $techTxt = !empty($r['vendor_name']) ? $r['vendor_name'] . ' (Vendor)' : (!empty($r['technician_name']) ? $r['technician_name'] : '-');
             $actionTxt = !empty($r['action_taken']) ? $r['action_taken'] : '-';
             $costTxt = 'Rp ' . number_format((float)($r['service_cost'] ?? 0), 0, ',', '.');
@@ -2436,7 +2467,7 @@ function handle_route_corrective_repairs(PDO $pdo): void
                                 <?= !empty($r['legacy_code']) ? e($r['legacy_code']) : '-' ?>
                             </td>
                             <td>
-                                <strong><?= e($r['subject'] ?: '-') ?></strong>
+                                <strong><?= e(format_clean_ticket_subject($r['subject'] ?? '', $r['action_taken'] ?? null)) ?></strong>
                             </td>
                             <td>
                                 <?= e($r['technician_name'] ?: '-') ?><?= !empty($r['vendor_name']) ? ' (Vendor: ' . e($r['vendor_name']) . ')' : '' ?>
